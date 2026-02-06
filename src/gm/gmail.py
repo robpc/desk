@@ -71,6 +71,36 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
+    def create_label(self, name: str) -> dict:
+        """Create a new label.
+
+        Args:
+            name: Label name. Use "/" for nested labels (e.g., "Projects/Orion").
+
+        Returns:
+            The created label dict with id, name, etc.
+
+        Raises:
+            ValueError: If label already exists.
+        """
+        # Check if label already exists
+        existing = self._get_label_id(name)
+        if existing:
+            raise ValueError(f"Label already exists: {name}")
+
+        try:
+            label = self.service.users().labels().create(
+                userId=self.user_id,
+                body={
+                    "name": name,
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                }
+            ).execute()
+            return label
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
     def add_label(self, message_id: str, label_name: str) -> None:
         """Add a label to a message."""
         # First, find or create the label

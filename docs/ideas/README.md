@@ -27,8 +27,9 @@ idea → exploring → planned → adr-created → (implemented)
 
 | ID | Title | Status | Effort | Value |
 |----|-------|--------|--------|-------|
-| 001 | [Convenience Commands](001-convenience-commands.md) | idea | S | QoL shortcuts |
-| 002 | [Batch Operations](002-batch-operations.md) | idea | M | Bulk efficiency |
+| 001 | [Convenience Commands](001-convenience-commands.md) | implemented | S | QoL shortcuts |
+| 002 | [Batch Operations](002-batch-operations.md) | implemented | M | Bulk efficiency |
+| 003 | [Label Management](003-label-management.md) | partial | S | Complete label workflow without leaving CLI |
 
 ## Adding an Idea
 

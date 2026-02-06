@@ -273,6 +273,34 @@ def labels(as_json: bool) -> None:
         console.print(label["name"])
 
 
+@main.command("create-label")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def create_label(name: str, as_json: bool) -> None:
+    """Create a new label.
+
+    Use "/" for nested labels (appears hierarchically in Gmail UI).
+
+    Examples:
+
+        gmail create-label "Work"
+
+        gmail create-label "Projects/Orion"
+    """
+    client = _get_client()
+
+    try:
+        label = client.create_label(name)
+    except ValueError as e:
+        console.print(f"[yellow]{e}[/yellow]")
+        return
+
+    if as_json:
+        print(json.dumps(label, indent=2))
+    else:
+        console.print(f"[green]Created label '{name}'[/green]")
+
+
 @main.command()
 @click.argument("label_name")
 @click.argument("message_ids", nargs=-1)
