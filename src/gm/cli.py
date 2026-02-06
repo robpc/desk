@@ -1,14 +1,23 @@
 """Gmail CLI - Command-line interface."""
 
 import json
+import shutil
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.table import Table
 
 from gm import __version__
-from gm.auth import get_auth_status, get_credentials, login
+from gm.auth import (
+    AuthMethod,
+    get_auth_status,
+    get_credentials,
+    login,
+    login_with_gcloud,
+)
+from gm.config import CONFIG_DIR, CREDENTIALS_FILE, SCOPES
 from gm.gmail import GmailClient
 
 console = Console()
@@ -24,6 +33,77 @@ def main(ctx: click.Context, verbose: bool) -> None:
     ctx.obj["verbose"] = verbose
 
 
+# --- Setup command ---
+
+
+@main.command()
+@click.option(
+    "--credentials",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to credentials.json file",
+)
+@click.option("--gcloud", "use_gcloud", is_flag=True, help="Use gcloud for authentication")
+@click.pass_context
+def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> None:
+    """Set up Gmail CLI authentication.
+
+    For personal use (simplest):
+
+        gm setup --gcloud
+
+    For team setup (with shared credentials):
+
+        gm setup --credentials ~/Downloads/credentials.json
+    """
+    verbose = ctx.obj.get("verbose", False)
+
+    if use_gcloud:
+        console.print("Authenticating with gcloud...")
+        creds = login_with_gcloud(verbose=verbose)
+        if creds:
+            console.print("[green]Authentication successful![/green]")
+            console.print("You can now use gm commands.")
+        else:
+            console.print("[red]gcloud authentication failed.[/red]")
+            console.print("Make sure gcloud is installed and try again.")
+            sys.exit(1)
+        return
+
+    if credentials:
+        # Copy credentials to config dir
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy(credentials, CREDENTIALS_FILE)
+        console.print(f"Copied credentials to {CREDENTIALS_FILE}")
+        console.print()
+        console.print("Now running authentication flow...")
+        login(verbose=verbose)
+        console.print("[green]Authentication successful![/green]")
+        return
+
+    # Interactive setup
+    console.print("[bold]Gmail CLI Setup[/bold]")
+    console.print()
+
+    # Check if gcloud is available
+    status = get_auth_status()
+
+    if status["gcloud_available"]:
+        console.print("Choose setup method:")
+        console.print()
+        console.print("  [bold]1.[/bold] gcloud (simplest, for personal use)")
+        console.print("     Run: [cyan]gm setup --gcloud[/cyan]")
+        console.print()
+        console.print("  [bold]2.[/bold] Team credentials (for shared projects)")
+        console.print("     Run: [cyan]gm setup --credentials /path/to/credentials.json[/cyan]")
+    else:
+        console.print("gcloud not found. Using team credentials setup.")
+        console.print()
+        console.print("To set up:")
+        console.print("  1. Get credentials.json from your team's 1Password vault")
+        console.print("  2. Run: [cyan]gm setup --credentials /path/to/credentials.json[/cyan]")
+
+
 # --- Auth commands ---
 
 
@@ -33,22 +113,31 @@ def auth() -> None:
     pass
 
 
-@auth.command()
+@auth.command("login")
+@click.option("--gcloud", "use_gcloud", is_flag=True, help="Use gcloud for authentication")
 @click.pass_context
-def login_cmd(ctx: click.Context) -> None:
-    """Authenticate with Gmail."""
+def auth_login(ctx: click.Context, use_gcloud: bool) -> None:
+    """Authenticate with Gmail.
+
+    Use --gcloud for gcloud-based auth, or ensure credentials.json exists.
+    """
     verbose = ctx.obj.get("verbose", False)
-    login(verbose=verbose)
-    console.print("[green]Authentication successful![/green]")
+
+    if use_gcloud:
+        creds = login_with_gcloud(verbose=verbose)
+        if creds:
+            console.print("[green]Authentication successful![/green]")
+        else:
+            console.print("[red]gcloud authentication failed.[/red]")
+            sys.exit(1)
+    else:
+        login(verbose=verbose)
+        console.print("[green]Authentication successful![/green]")
 
 
-# Rename to avoid conflict with login function
-login_cmd.name = "login"
-
-
-@auth.command()
+@auth.command("status")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def status(as_json: bool) -> None:
+def auth_status(as_json: bool) -> None:
     """Check authentication status."""
     info = get_auth_status()
 
@@ -57,14 +146,19 @@ def status(as_json: bool) -> None:
         return
 
     if info["authenticated"]:
-        console.print("[green]Authenticated[/green]")
+        method_display = {
+            AuthMethod.GCLOUD_ADC: "gcloud ADC",
+            AuthMethod.OAUTH_CLIENT: "OAuth credentials",
+        }.get(info["method"], info["method"])
+
+        console.print(f"[green]Authenticated[/green] via {method_display}")
     else:
         console.print("[red]Not authenticated[/red]")
-        if not info["credentials_file"]:
-            console.print(f"  Missing: {info['credentials_path']}")
-        if not info["token_file"]:
-            console.print(f"  Missing: {info['token_path']}")
-            console.print("  Run: gm auth login")
+        console.print()
+        if info["gcloud_available"]:
+            console.print("Quick setup: [cyan]gm setup --gcloud[/cyan]")
+        else:
+            console.print("Run: [cyan]gm setup[/cyan] for setup instructions")
 
 
 # --- Gmail commands ---
@@ -74,7 +168,8 @@ def _get_client() -> GmailClient:
     """Get authenticated Gmail client or exit."""
     creds = get_credentials()
     if not creds:
-        console.print("[red]Not authenticated. Run: gm auth login[/red]")
+        console.print("[red]Not authenticated.[/red]")
+        console.print("Run: [cyan]gm setup[/cyan]")
         sys.exit(1)
     return GmailClient(creds)
 

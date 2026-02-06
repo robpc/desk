@@ -7,7 +7,7 @@ name = "gmail-cli"
 version = "0.1.0"
 description = "Command-line tool for managing Gmail"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [
     { name = "Rob Cannon" }
