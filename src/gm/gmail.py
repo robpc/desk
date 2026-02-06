@@ -89,14 +89,68 @@ class GmailClient:
 
     def archive(self, message_id: str) -> None:
         """Archive a message (remove from inbox)."""
+        self.modify(message_id, remove_labels=["INBOX"])
+
+    def mark_read(self, message_id: str) -> None:
+        """Mark a message as read."""
+        self.modify(message_id, remove_labels=["UNREAD"])
+
+    def trash(self, message_id: str) -> None:
+        """Move a message to trash."""
+        self.modify(message_id, add_labels=["TRASH"], remove_labels=["INBOX"])
+
+    def modify(
+        self,
+        message_id: str,
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+    ) -> None:
+        """Modify message labels (generic operation).
+
+        Args:
+            message_id: The message ID
+            add_labels: Label IDs or names to add
+            remove_labels: Label IDs or names to remove
+        """
+        body = {}
+
+        if add_labels:
+            # Resolve label names to IDs for user labels
+            body["addLabelIds"] = [self._resolve_label(l) for l in add_labels]
+
+        if remove_labels:
+            body["removeLabelIds"] = [self._resolve_label(l) for l in remove_labels]
+
+        if not body:
+            return  # Nothing to do
+
         try:
             self.service.users().messages().modify(
                 userId=self.user_id,
                 id=message_id,
-                body={"removeLabelIds": ["INBOX"]}
+                body=body,
             ).execute()
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
+
+    def _resolve_label(self, label: str) -> str:
+        """Resolve a label name to its ID. System labels are returned as-is."""
+        # System labels are uppercase and can be used directly
+        system_labels = [
+            "INBOX", "SPAM", "TRASH", "UNREAD", "STARRED", "IMPORTANT",
+            "SENT", "DRAFT", "CATEGORY_PERSONAL", "CATEGORY_SOCIAL",
+            "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS",
+        ]
+        if label.upper() in system_labels:
+            return label.upper()
+
+        # User label - look up ID
+        label_id = self._get_label_id(label)
+        if label_id:
+            return label_id
+
+        # Return as-is and let API error if invalid
+        return label
 
     def _get_label_id(self, label_name: str) -> str | None:
         """Get label ID by name."""

@@ -270,5 +270,59 @@ def archive(message_id: str) -> None:
     console.print(f"[green]Archived {message_id}[/green]")
 
 
+@main.command("mark-read")
+@click.argument("message_id")
+def mark_read(message_id: str) -> None:
+    """Mark a message as read."""
+    client = _get_client()
+    client.mark_read(message_id)
+    console.print(f"[green]Marked {message_id} as read[/green]")
+
+
+@main.command()
+@click.argument("message_id")
+def trash(message_id: str) -> None:
+    """Move a message to trash."""
+    client = _get_client()
+    client.trash(message_id)
+    console.print(f"[green]Moved {message_id} to trash[/green]")
+
+
+@main.command()
+@click.argument("message_id")
+@click.option("--add-label", "-a", "add_labels", multiple=True, help="Label to add (repeatable)")
+@click.option("--remove-label", "-r", "remove_labels", multiple=True, help="Label to remove (repeatable)")
+def modify(message_id: str, add_labels: tuple[str], remove_labels: tuple[str]) -> None:
+    """Modify message labels (generic operation).
+
+    Compose arbitrary label changes. System labels (INBOX, UNREAD, STARRED, etc.)
+    and user labels are both supported.
+
+    Examples:
+
+        gmail modify ID --remove-label INBOX --remove-label UNREAD
+
+        gmail modify ID --add-label Work --remove-label INBOX
+    """
+    if not add_labels and not remove_labels:
+        console.print("[yellow]Nothing to do. Use --add-label or --remove-label.[/yellow]")
+        return
+
+    client = _get_client()
+    client.modify(
+        message_id,
+        add_labels=list(add_labels) if add_labels else None,
+        remove_labels=list(remove_labels) if remove_labels else None,
+    )
+
+    changes = []
+    if add_labels:
+        changes.append(f"+{', +'.join(add_labels)}")
+    if remove_labels:
+        changes.append(f"-{', -'.join(remove_labels)}")
+
+    console.print(f"[green]Modified {message_id}: {' '.join(changes)}[/green]")
+
+
 if __name__ == "__main__":
     main()
