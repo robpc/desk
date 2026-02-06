@@ -322,6 +322,10 @@ def archive(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
         gmail archive ID1 ID2 ID3
 
         gmail search "from:bot" --json | jq -r '.[].id' | gmail archive --stdin
+
+    Tip: To archive AND mark read in one API call, use modify:
+
+        gmail modify ID -r INBOX -r UNREAD
     """
     ids = _collect_ids(message_ids, stdin)
     if not ids:
@@ -351,6 +355,10 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
         gmail mark-read ID1 ID2 ID3
 
         gmail search "is:unread" --json | jq -r '.[].id' | gmail mark-read --stdin
+
+    Tip: To mark read AND archive in one API call, use modify:
+
+        gmail modify ID -r UNREAD -r INBOX
     """
     ids = _collect_ids(message_ids, stdin)
     if not ids:
@@ -380,6 +388,10 @@ def trash(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
         gmail trash ID1 ID2 ID3
 
         gmail search "from:spam" --json | jq -r '.[].id' | gmail trash --stdin
+
+    Tip: To trash AND mark read in one API call, use modify:
+
+        gmail modify ID -a TRASH -r INBOX -r UNREAD
     """
     ids = _collect_ids(message_ids, stdin)
     if not ids:
