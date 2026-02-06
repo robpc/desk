@@ -289,6 +289,76 @@ def trash(message_id: str) -> None:
 
 
 @main.command()
+@click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def unread(max_results: int, as_json: bool) -> None:
+    """List unread messages.
+
+    Shortcut for: gmail search "is:unread"
+
+    Examples:
+
+        gmail unread
+
+        gmail unread --max 10
+    """
+    client = _get_client()
+    messages = client.search("is:unread", max_results=max_results)
+
+    if as_json:
+        print(json.dumps(messages, indent=2))
+        return
+
+    if not messages:
+        console.print("No unread messages.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="dim", width=16)
+    table.add_column("From", width=30)
+    table.add_column("Subject", width=40)
+    table.add_column("Date", width=20)
+
+    for msg in messages:
+        table.add_row(
+            msg["id"],
+            msg["from"][:30],
+            msg["subject"][:40],
+            msg["date"][:20],
+        )
+
+    console.print(table)
+
+
+@main.command()
+@click.argument("message_id")
+def star(message_id: str) -> None:
+    """Star a message."""
+    client = _get_client()
+    client.star(message_id)
+    console.print(f"[green]Starred {message_id}[/green]")
+
+
+@main.command()
+@click.argument("message_id")
+def unstar(message_id: str) -> None:
+    """Remove star from a message."""
+    client = _get_client()
+    client.unstar(message_id)
+    console.print(f"[green]Unstarred {message_id}[/green]")
+
+
+@main.command("remove-label")
+@click.argument("message_id")
+@click.argument("label_name")
+def remove_label(message_id: str, label_name: str) -> None:
+    """Remove a label from a message."""
+    client = _get_client()
+    client.remove_label(message_id, label_name)
+    console.print(f"[green]Removed label '{label_name}' from {message_id}[/green]")
+
+
+@main.command()
 @click.argument("message_id")
 @click.option("--add-label", "-a", "add_labels", multiple=True, help="Label to add (repeatable)")
 @click.option("--remove-label", "-r", "remove_labels", multiple=True, help="Label to remove (repeatable)")

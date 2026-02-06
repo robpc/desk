@@ -99,6 +99,22 @@ class GmailClient:
         """Move a message to trash."""
         self.modify(message_id, add_labels=["TRASH"], remove_labels=["INBOX"])
 
+    def star(self, message_id: str) -> None:
+        """Star a message."""
+        self.modify(message_id, add_labels=["STARRED"])
+
+    def unstar(self, message_id: str) -> None:
+        """Remove star from a message."""
+        self.modify(message_id, remove_labels=["STARRED"])
+
+    def remove_label(self, message_id: str, label_name: str) -> None:
+        """Remove a label from a message."""
+        label_id = self._get_label_id(label_name)
+        if not label_id:
+            # Try as system label
+            label_id = self._resolve_label(label_name)
+        self.modify(message_id, remove_labels=[label_id])
+
     def modify(
         self,
         message_id: str,

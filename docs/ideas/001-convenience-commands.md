@@ -1,7 +1,7 @@
 ---
 id: 001
 title: Convenience Commands
-status: idea
+status: implemented
 effort: S
 value: Quality-of-life improvements for common operations
 created: 2025-02-06
@@ -54,3 +54,13 @@ S - Each is a one-liner wrapper around existing functionality.
 Per ADR-002, we prefer Gmail's vocabulary. All of these (unread, star) are Gmail concepts, so they fit the philosophy.
 
 Batch support (multiple IDs) is a separate, higher-effort idea.
+
+## Implementation (2025-02-06)
+
+Implemented all candidates:
+- `gmail unread` - lists unread messages (supports `--max`, `--json`)
+- `gmail star ID` - star a message
+- `gmail unstar ID` - remove star from a message
+- `gmail remove-label ID LABEL` - remove a label from a message
+
+Added corresponding methods to `GmailClient`: `star()`, `unstar()`, `remove_label()`.
