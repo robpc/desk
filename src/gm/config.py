@@ -3,7 +3,7 @@
 from pathlib import Path
 
 # Config directory
-CONFIG_DIR = Path.home() / ".gm"
+CONFIG_DIR = Path.home() / ".gmail-cli"
 CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
 TOKEN_FILE = CONFIG_DIR / "token.json"
 

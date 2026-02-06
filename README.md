@@ -9,12 +9,12 @@ A command-line tool for managing Gmail. Unix philosophy: simple commands that co
 pip install -e .
 
 # First-time setup (see Setup section below)
-gm auth login
+gmail auth login
 
 # Use it
-gm search "from:boss is:unread"
-gm read <message-id>
-gm labels
+gmail search "from:boss is:unread"
+gmail read <message-id>
+gmail labels
 ```
 
 ## Setup
@@ -49,14 +49,14 @@ This tool requires you to bring your own Google Cloud credentials. This takes ab
 ### 4. Install Credentials
 
 ```bash
-mkdir -p ~/.gm
-mv ~/Downloads/client_secret_*.json ~/.gm/credentials.json
+mkdir -p ~/.gmail-cli
+mv ~/Downloads/client_secret_*.json ~/.gmail-cli/credentials.json
 ```
 
 ### 5. Authenticate
 
 ```bash
-gm auth login
+gmail auth login
 ```
 
 This opens your browser. Log in with your Google account and approve access. Done!
@@ -64,22 +64,22 @@ This opens your browser. Log in with your Google account and approve access. Don
 ## Commands
 
 ```bash
-gm auth login          # Authenticate with Gmail
-gm auth status         # Check authentication status
+gmail auth login          # Authenticate with Gmail
+gmail auth status         # Check authentication status
 
-gm search "query"      # Search messages (Gmail search syntax)
-gm read <id>           # Read a message
-gm send                # Send a message
-gm label <id> <label>  # Add label to message
-gm archive <id>        # Archive message
-gm labels              # List available labels
+gmail search "query"      # Search messages (Gmail search syntax)
+gmail read <id>           # Read a message
+gmail send                # Send a message
+gmail label <id> <label>  # Add label to message
+gmail archive <id>        # Archive message
+gmail labels              # List available labels
 ```
 
 ### Output Formats
 
 ```bash
-gm search "is:unread" --json    # JSON output for piping
-gm search "is:unread" | jq .    # Compose with other tools
+gmail search "is:unread" --json    # JSON output for piping
+gmail search "is:unread" | jq .    # Compose with other tools
 ```
 
 ## Development

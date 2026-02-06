@@ -44,7 +44,7 @@ Token lifecycle:
 
 ### Alternative 1: Shared OAuth Client (Ship credentials with CLI)
 
-**Description**: Embed client_id/secret in the CLI, users just run `gm auth login`
+**Description**: Embed client_id/secret in the CLI, users just run `gmail auth login`
 
 **Pros**:
 - Simplest user experience
@@ -120,7 +120,7 @@ Token lifecycle:
 2. Enable Gmail API
 3. Create OAuth client (Desktop app type)
 4. Download `credentials.json` to `~/.gm/`
-5. Run `gm auth login` - browser opens, user approves
+5. Run `gmail auth login` - browser opens, user approves
 6. Token saved to `~/.gm/token.json`
 7. Done - subsequent commands use stored token
 

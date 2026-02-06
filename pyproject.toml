@@ -27,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-gm = "gm.cli:main"
+gmail = "gm.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gm"]

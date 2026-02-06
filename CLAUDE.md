@@ -4,26 +4,26 @@ Guidance for Claude Code when working on Gmail CLI.
 
 ## Project Overview
 
-**Gmail CLI** (`gm`) is a command-line tool for managing Gmail. Unix philosophy: simple commands that compose with pipes. Each user brings their own Google Cloud OAuth credentials.
+**Gmail CLI** (`gmail`) is a command-line tool for managing Gmail. Unix philosophy: simple commands that compose with pipes. Each user brings their own Google Cloud OAuth credentials.
 
 ## Quick Start
 
 ```bash
 # Setup (one-time)
 pip install -e .
-gm auth login
+gmail auth login
 
 # Usage
-gm search "from:boss is:unread"
-gm read <message-id>
-gm send --to "user@example.com" --subject "Hello" --body "..."
-gm label <message-id> work
+gmail search "from:boss is:unread"
+gmail read <message-id>
+gmail send --to "user@example.com" --subject "Hello" --body "..."
+gmail label <message-id> work
 ```
 
 ## Architecture
 
 ```
-gm (CLI entry point)
+gmail (CLI entry point)
 ├── auth login     → OAuth flow, stores tokens
 ├── auth status    → Show current auth state
 ├── search         → List messages matching query
@@ -33,7 +33,7 @@ gm (CLI entry point)
 ├── archive        → Archive messages
 └── labels         → List available labels
 
-Config/Tokens: ~/.gm/
+Config/Tokens: ~/.gmail-cli/
 ├── credentials.json  ← User provides (from their Google Cloud project)
 └── token.json        ← Generated during auth, contains refresh token
 ```
@@ -99,8 +99,8 @@ idea → exploring → planned → create ADR → implement
 - **`--verbose` flag**: Show API calls, token refreshes, etc.
 - **`--dry-run` flag**: Show what would happen without executing
 - **`--json` output**: Machine-readable output for chaining
-- **`gm auth status`**: Verify authentication state
-- **Debug logging**: `GM_DEBUG=1 gm search ...`
+- **`gmail auth status`**: Verify authentication state
+- **Debug logging**: `GM_DEBUG=1 gmail search ...`
 
 ### Agent workflow:
 1. **Before asking user to test**: Check if there's a verification tool available
@@ -109,7 +109,7 @@ idea → exploring → planned → create ADR → implement
 4. **Use the tool yourself**: Run commands to verify behavior before declaring done
 
 ### Examples:
-- Auth issues → Check `gm auth status` output
+- Auth issues → Check `gmail auth status` output
 - API errors → Use `--verbose` to see request/response
 - Output formatting → Use `--json` and pipe through `jq`
 
@@ -122,15 +122,15 @@ idea → exploring → planned → create ADR → implement
 - `--json` for structured output when needed
 
 ### Self-Documenting CLI
-- `gm --help` shows all commands
-- `gm <command> --help` shows command details
+- `gmail --help` shows all commands
+- `gmail <command> --help` shows command details
 - Error messages include suggested fixes
 - Examples in help text
 
 ### User-Owned Credentials
 - Users create their own Google Cloud project
-- Credentials stored in `~/.gm/credentials.json`
-- Tokens stored in `~/.gm/token.json`
+- Credentials stored in `~/.gmail-cli/credentials.json`
+- Tokens stored in `~/.gmail-cli/token.json`
 - No shared secrets, no server component
 
 ## Code Style
