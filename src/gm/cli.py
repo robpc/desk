@@ -174,6 +174,28 @@ def _get_client() -> GmailClient:
     return GmailClient(creds)
 
 
+def _collect_ids(message_ids: tuple[str, ...], stdin: bool) -> list[str]:
+    """Collect message IDs from arguments and/or stdin.
+
+    Args:
+        message_ids: IDs passed as arguments
+        stdin: Whether to read IDs from stdin
+
+    Returns:
+        List of message IDs
+    """
+    ids = list(message_ids)
+
+    if stdin:
+        # Read IDs from stdin, one per line
+        for line in sys.stdin:
+            line = line.strip()
+            if line:
+                ids.append(line)
+
+    return ids
+
+
 @main.command()
 @click.argument("query")
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
@@ -252,40 +274,125 @@ def labels(as_json: bool) -> None:
 
 
 @main.command()
-@click.argument("message_id")
 @click.argument("label_name")
-def label(message_id: str, label_name: str) -> None:
-    """Add a label to a message."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Add a label to messages.
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail label Work ID1 ID2 ID3
+
+        gmail search "from:boss" --json | jq -r '.[].id' | gmail label Important --stdin
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.add_label(message_id, label_name)
-    console.print(f"[green]Added label '{label_name}' to {message_id}[/green]")
+    # Resolve label name to ID
+    label_id = client._get_label_id(label_name)
+    if not label_id:
+        label_id = client._resolve_label(label_name)
+
+    client.batch_modify(ids, add_labels=[label_id])
+
+    if as_json:
+        print(json.dumps({"action": "label", "label": label_name, "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Added label '{label_name}' to {len(ids)} message(s)[/green]")
 
 
 @main.command()
-@click.argument("message_id")
-def archive(message_id: str) -> None:
-    """Archive a message (remove from inbox)."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def archive(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Archive messages (remove from inbox).
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail archive ID1 ID2 ID3
+
+        gmail search "from:bot" --json | jq -r '.[].id' | gmail archive --stdin
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.archive(message_id)
-    console.print(f"[green]Archived {message_id}[/green]")
+    client.batch_modify(ids, remove_labels=["INBOX"])
+
+    if as_json:
+        print(json.dumps({"action": "archive", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Archived {len(ids)} message(s)[/green]")
 
 
 @main.command("mark-read")
-@click.argument("message_id")
-def mark_read(message_id: str) -> None:
-    """Mark a message as read."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def mark_read(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Mark messages as read.
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail mark-read ID1 ID2 ID3
+
+        gmail search "is:unread" --json | jq -r '.[].id' | gmail mark-read --stdin
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.mark_read(message_id)
-    console.print(f"[green]Marked {message_id} as read[/green]")
+    client.batch_modify(ids, remove_labels=["UNREAD"])
+
+    if as_json:
+        print(json.dumps({"action": "mark-read", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Marked {len(ids)} message(s) as read[/green]")
 
 
 @main.command()
-@click.argument("message_id")
-def trash(message_id: str) -> None:
-    """Move a message to trash."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def trash(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Move messages to trash.
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail trash ID1 ID2 ID3
+
+        gmail search "from:spam" --json | jq -r '.[].id' | gmail trash --stdin
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.trash(message_id)
-    console.print(f"[green]Moved {message_id} to trash[/green]")
+    client.batch_modify(ids, add_labels=["TRASH"], remove_labels=["INBOX"])
+
+    if as_json:
+        print(json.dumps({"action": "trash", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Moved {len(ids)} message(s) to trash[/green]")
 
 
 @main.command()
@@ -331,56 +438,126 @@ def unread(max_results: int, as_json: bool) -> None:
 
 
 @main.command()
-@click.argument("message_id")
-def star(message_id: str) -> None:
-    """Star a message."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def star(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Star messages.
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail star ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.star(message_id)
-    console.print(f"[green]Starred {message_id}[/green]")
+    client.batch_modify(ids, add_labels=["STARRED"])
+
+    if as_json:
+        print(json.dumps({"action": "star", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Starred {len(ids)} message(s)[/green]")
 
 
 @main.command()
-@click.argument("message_id")
-def unstar(message_id: str) -> None:
-    """Remove star from a message."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def unstar(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Remove star from messages.
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail unstar ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.unstar(message_id)
-    console.print(f"[green]Unstarred {message_id}[/green]")
+    client.batch_modify(ids, remove_labels=["STARRED"])
+
+    if as_json:
+        print(json.dumps({"action": "unstar", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Unstarred {len(ids)} message(s)[/green]")
 
 
 @main.command("remove-label")
-@click.argument("message_id")
 @click.argument("label_name")
-def remove_label(message_id: str, label_name: str) -> None:
-    """Remove a label from a message."""
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Remove a label from messages.
+
+    Supports multiple IDs and stdin for batch operations.
+
+    Examples:
+
+        gmail remove-label Work ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.remove_label(message_id, label_name)
-    console.print(f"[green]Removed label '{label_name}' from {message_id}[/green]")
+    # Resolve label name to ID
+    label_id = client._get_label_id(label_name)
+    if not label_id:
+        label_id = client._resolve_label(label_name)
+
+    client.batch_modify(ids, remove_labels=[label_id])
+
+    if as_json:
+        print(json.dumps({"action": "remove-label", "label": label_name, "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Removed label '{label_name}' from {len(ids)} message(s)[/green]")
 
 
 @main.command()
-@click.argument("message_id")
+@click.argument("message_ids", nargs=-1)
 @click.option("--add-label", "-a", "add_labels", multiple=True, help="Label to add (repeatable)")
 @click.option("--remove-label", "-r", "remove_labels", multiple=True, help="Label to remove (repeatable)")
-def modify(message_id: str, add_labels: tuple[str], remove_labels: tuple[str]) -> None:
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def modify(message_ids: tuple[str, ...], add_labels: tuple[str], remove_labels: tuple[str], stdin: bool, as_json: bool) -> None:
     """Modify message labels (generic operation).
 
     Compose arbitrary label changes. System labels (INBOX, UNREAD, STARRED, etc.)
     and user labels are both supported.
 
+    Supports multiple IDs and stdin for batch operations.
+
     Examples:
 
         gmail modify ID --remove-label INBOX --remove-label UNREAD
 
-        gmail modify ID --add-label Work --remove-label INBOX
+        gmail modify ID1 ID2 ID3 --add-label Work --remove-label INBOX
+
+        gmail search "from:bot" --json | jq -r '.[].id' | gmail modify --stdin --remove-label INBOX
     """
     if not add_labels and not remove_labels:
         console.print("[yellow]Nothing to do. Use --add-label or --remove-label.[/yellow]")
         return
 
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
     client = _get_client()
-    client.modify(
-        message_id,
+    client.batch_modify(
+        ids,
         add_labels=list(add_labels) if add_labels else None,
         remove_labels=list(remove_labels) if remove_labels else None,
     )
@@ -391,7 +568,10 @@ def modify(message_id: str, add_labels: tuple[str], remove_labels: tuple[str]) -
     if remove_labels:
         changes.append(f"-{', -'.join(remove_labels)}")
 
-    console.print(f"[green]Modified {message_id}: {' '.join(changes)}[/green]")
+    if as_json:
+        print(json.dumps({"action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Modified {len(ids)} message(s): {' '.join(changes)}[/green]")
 
 
 if __name__ == "__main__":

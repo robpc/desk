@@ -1,7 +1,7 @@
 ---
 id: 002
 title: Batch Operations
-status: idea
+status: implemented
 effort: M
 value: Efficiency for bulk email management
 created: 2025-02-06
@@ -68,3 +68,21 @@ M - Need to update CLI argument handling, add batchModify to gmail.py, handle er
 ## Notes
 
 This pairs well with `--json` output for piping search results to actions.
+
+## Implementation (2025-02-06)
+
+Implemented Option C (both multiple args AND stdin):
+
+**Commands updated**: `archive`, `trash`, `mark-read`, `star`, `unstar`, `label`, `remove-label`, `modify`
+
+**Features**:
+- Multiple message IDs as arguments: `gmail archive ID1 ID2 ID3`
+- Stdin support for piping: `gmail search "..." --json | jq -r '.[].id' | gmail archive --stdin`
+- `--json` output: `{"action": "archive", "count": 5, "ids": [...]}`
+- Uses Gmail's `batchModify` API for efficiency (single API call)
+
+**API changes**:
+- Added `GmailClient.batch_modify()` method
+- Added `_collect_ids()` helper for CLI
+
+**Note**: `label` and `remove-label` argument order changed to `LABEL_NAME [MESSAGE_IDS]...` to support variable IDs.

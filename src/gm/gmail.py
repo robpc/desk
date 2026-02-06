@@ -149,6 +149,43 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
+    def batch_modify(
+        self,
+        message_ids: list[str],
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+    ) -> None:
+        """Batch modify labels on multiple messages.
+
+        Uses Gmail's batchModify API for efficiency (single API call).
+
+        Args:
+            message_ids: List of message IDs
+            add_labels: Label IDs or names to add
+            remove_labels: Label IDs or names to remove
+        """
+        if not message_ids:
+            return
+
+        body = {"ids": message_ids}
+
+        if add_labels:
+            body["addLabelIds"] = [self._resolve_label(l) for l in add_labels]
+
+        if remove_labels:
+            body["removeLabelIds"] = [self._resolve_label(l) for l in remove_labels]
+
+        if "addLabelIds" not in body and "removeLabelIds" not in body:
+            return  # Nothing to do
+
+        try:
+            self.service.users().messages().batchModify(
+                userId=self.user_id,
+                body=body,
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
     def _resolve_label(self, label: str) -> str:
         """Resolve a label name to its ID. System labels are returned as-is."""
         # System labels are uppercase and can be used directly
