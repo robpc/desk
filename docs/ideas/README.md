@@ -27,7 +27,8 @@ idea → exploring → planned → adr-created → (implemented)
 
 | ID | Title | Status | Effort | Value |
 |----|-------|--------|--------|-------|
-| - | - | - | - | - |
+| 001 | [Convenience Commands](001-convenience-commands.md) | idea | S | QoL shortcuts |
+| 002 | [Batch Operations](002-batch-operations.md) | idea | M | Bulk efficiency |
 
 ## Adding an Idea
 
