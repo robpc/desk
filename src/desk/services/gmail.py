@@ -135,6 +135,10 @@ class GmailClient:
         """Mark a message as read."""
         self.modify(message_id, remove_labels=["UNREAD"])
 
+    def mark_unread(self, message_id: str) -> None:
+        """Mark a message as unread."""
+        self.modify(message_id, add_labels=["UNREAD"])
+
     def trash(self, message_id: str) -> None:
         """Move a message to trash."""
         self.modify(message_id, add_labels=["TRASH"], remove_labels=["INBOX"])

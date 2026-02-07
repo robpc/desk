@@ -30,6 +30,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 001 | [Convenience Commands](001-convenience-commands.md) | implemented | S | QoL shortcuts |
 | 002 | [Batch Operations](002-batch-operations.md) | implemented | M | Bulk efficiency |
 | 003 | [Label Management](003-label-management.md) | partial | S | Complete label workflow without leaving CLI |
+| 009 | [Mark Unread Command](009-mark-unread.md) | implemented | S | Complete symmetry with mark-read |
 
 ## Adding an Idea
 

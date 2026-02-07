@@ -227,6 +227,31 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
         console.print(f"[green]Marked {len(ids)} message(s) as read[/green]")
 
 
+@mail.command("mark-unread")
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def mark_unread(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+    """Mark messages as unread.
+
+    Examples:
+
+        desk mail mark-unread ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    client = _get_client()
+    client.batch_modify(ids, add_labels=["UNREAD"])
+
+    if as_json:
+        print(json.dumps({"action": "mark-unread", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Marked {len(ids)} message(s) as unread[/green]")
+
+
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")

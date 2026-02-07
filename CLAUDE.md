@@ -50,6 +50,7 @@ desk (CLI entry point)
 │   ├── remove-label   → Remove label from messages
 │   ├── archive        → Archive messages
 │   ├── mark-read      → Mark messages as read
+│   ├── mark-unread    → Mark messages as unread
 │   ├── trash          → Move to trash
 │   ├── star / unstar  → Star/unstar messages
 │   └── modify         → Generic label changes

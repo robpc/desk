@@ -1,11 +1,11 @@
 ---
 id: 009
 title: Mark Unread Command
-status: idea
+status: implemented
 effort: S
 value: Complete symmetry with mark-read
 created: 2025-02-06
-updated: 2026-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -48,3 +48,15 @@ S - 15 minutes. Copy mark-read, change label.
 ## Notes
 
 Gap in convenience commands that should be filled.
+
+## Implementation (2026-02-07)
+
+Implemented as described:
+
+```bash
+desk mail mark-unread ID1 ID2 ID3
+desk mail mark-unread --stdin              # batch from stdin
+desk mail mark-unread ID1 --json           # JSON output
+```
+
+Added `mark_unread` method to `GmailClient` and `mark-unread` command to CLI. Follows same pattern as `mark-read`.
