@@ -1,7 +1,7 @@
 ---
 id: "025"
 title: Pagination Consistency
-status: planned
+status: implemented
 effort: S
 value: Uniform pagination across all list commands
 created: 2026-02-07

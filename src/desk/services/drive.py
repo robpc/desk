@@ -15,28 +15,37 @@ class DriveClient:
     def __init__(self, credentials: Credentials):
         self.service = build("drive", "v3", credentials=credentials)
 
-    def search(self, query: str, max_results: int = 20) -> list[dict]:
+    def search(
+        self, query: str, max_results: int = 20, page_token: str | None = None
+    ) -> dict:
         """Search for files matching query.
 
         Args:
             query: Drive search query (e.g., "name contains 'report'")
             max_results: Maximum number of results
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of file metadata dicts
+            Dict with 'files' list and 'nextPageToken' (if more results exist)
         """
         try:
-            results = (
-                self.service.files()
-                .list(
-                    q=query,
-                    pageSize=max_results,
-                    fields="files(id, name, mimeType, modifiedTime, size, owners, webViewLink)",
-                    orderBy="modifiedTime desc",
-                )
-                .execute()
-            )
-            return results.get("files", [])
+            request_kwargs = {
+                "q": query,
+                "pageSize": max_results,
+                "fields": (
+                    "nextPageToken, files(id, name, mimeType, modifiedTime, size, owners, webViewLink)"
+                ),
+                "orderBy": "modifiedTime desc",
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.files().list(**request_kwargs).execute()
+
+            result = {"files": results.get("files", [])}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
@@ -99,26 +108,33 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
-    def recent(self, max_results: int = 20) -> list[dict]:
+    def recent(
+        self, max_results: int = 20, page_token: str | None = None
+    ) -> dict:
         """List recently modified files.
 
         Args:
             max_results: Maximum number of results
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of file metadata dicts
+            Dict with 'files' list and 'nextPageToken' (if more results exist)
         """
         try:
-            results = (
-                self.service.files()
-                .list(
-                    pageSize=max_results,
-                    fields="files(id, name, mimeType, modifiedTime, webViewLink)",
-                    orderBy="modifiedTime desc",
-                )
-                .execute()
-            )
-            return results.get("files", [])
+            request_kwargs = {
+                "pageSize": max_results,
+                "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, webViewLink)",
+                "orderBy": "modifiedTime desc",
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.files().list(**request_kwargs).execute()
+
+            result = {"files": results.get("files", [])}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 

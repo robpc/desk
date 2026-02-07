@@ -32,8 +32,10 @@ def drive() -> None:
 @drive.command()
 @click.argument("query")
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def search(query: str, max_results: int, as_json: bool) -> None:
+def search(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """Search for files in Drive.
 
     Uses Drive search query syntax.
@@ -44,18 +46,26 @@ def search(query: str, max_results: int, as_json: bool) -> None:
 
         desk drive search "mimeType = 'application/vnd.google-apps.spreadsheet'"
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    files = client.search(query, max_results=max_results)
+    result = client.search(query, max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(files, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    files = result.get("files", [])
     if not files:
         console.print("No files found.")
         return
 
     _print_file_table(files)
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @drive.command()
@@ -110,26 +120,36 @@ def info(file_id: str, as_json: bool) -> None:
 
 @drive.command()
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def recent(max_results: int, as_json: bool) -> None:
+def recent(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """List recently modified files.
 
     Examples:
 
         desk drive recent --max 10
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    files = client.recent(max_results=max_results)
+    result = client.recent(max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(files, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    files = result.get("files", [])
     if not files:
         console.print("No recent files.")
         return
 
     _print_file_table(files)
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @drive.command()

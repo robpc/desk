@@ -15,23 +15,29 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=credentials)
         self.user_id = "me"
 
-    def search(self, query: str, max_results: int = 20) -> list[dict]:
+    def search(
+        self, query: str, max_results: int = 20, page_token: str | None = None
+    ) -> dict:
         """Search for messages matching query.
 
         Args:
             query: Gmail search query (same syntax as Gmail search box)
             max_results: Maximum number of results to return
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of message summaries with id, threadId, snippet
+            Dict with 'messages' list and 'nextPageToken' (if more results exist)
         """
         try:
-            results = (
-                self.service.users()
-                .messages()
-                .list(userId=self.user_id, q=query, maxResults=max_results)
-                .execute()
-            )
+            request_kwargs = {
+                "userId": self.user_id,
+                "q": query,
+                "maxResults": max_results,
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.users().messages().list(**request_kwargs).execute()
 
             messages = results.get("messages", [])
 
@@ -51,7 +57,10 @@ class GmailClient:
                 )
                 detailed.append(self._parse_message_metadata(detail))
 
-            return detailed
+            result = {"messages": detailed}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
 
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -60,23 +69,29 @@ class GmailClient:
     # Threads
     # -------------------------------------------------------------------------
 
-    def search_threads(self, query: str, max_results: int = 20) -> list[dict]:
+    def search_threads(
+        self, query: str, max_results: int = 20, page_token: str | None = None
+    ) -> dict:
         """Search for threads matching query.
 
         Args:
             query: Gmail search query (same syntax as Gmail search box)
             max_results: Maximum number of threads to return
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of thread summaries with id, snippet, message count
+            Dict with 'threads' list and 'nextPageToken' (if more results exist)
         """
         try:
-            results = (
-                self.service.users()
-                .threads()
-                .list(userId=self.user_id, q=query, maxResults=max_results)
-                .execute()
-            )
+            request_kwargs = {
+                "userId": self.user_id,
+                "q": query,
+                "maxResults": max_results,
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.users().threads().list(**request_kwargs).execute()
 
             threads = results.get("threads", [])
 
@@ -105,7 +120,10 @@ class GmailClient:
                     "date": headers.get("Date", ""),
                 })
 
-            return detailed
+            result = {"threads": detailed}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
 
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -546,19 +564,27 @@ class GmailClient:
     # Drafts
     # -------------------------------------------------------------------------
 
-    def list_drafts(self, max_results: int = 20) -> list[dict]:
+    def list_drafts(
+        self, max_results: int = 20, page_token: str | None = None
+    ) -> dict:
         """List drafts.
 
+        Args:
+            max_results: Maximum number of drafts to return
+            page_token: Token for fetching next page of results
+
         Returns:
-            List of draft summaries with id, message snippet, and headers
+            Dict with 'drafts' list and 'nextPageToken' (if more results exist)
         """
         try:
-            results = (
-                self.service.users()
-                .drafts()
-                .list(userId=self.user_id, maxResults=max_results)
-                .execute()
-            )
+            request_kwargs = {
+                "userId": self.user_id,
+                "maxResults": max_results,
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.users().drafts().list(**request_kwargs).execute()
 
             drafts = results.get("drafts", [])
 
@@ -584,7 +610,10 @@ class GmailClient:
                     "subject": headers.get("Subject", ""),
                 })
 
-            return detailed
+            result = {"drafts": detailed}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
 
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")

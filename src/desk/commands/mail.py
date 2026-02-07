@@ -43,8 +43,10 @@ def mail() -> None:
 @mail.command()
 @click.argument("query")
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def search(query: str, max_results: int, as_json: bool) -> None:
+def search(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """Search for messages.
 
     Uses Gmail search syntax (same as Gmail search box).
@@ -54,14 +56,21 @@ def search(query: str, max_results: int, as_json: bool) -> None:
         desk mail search "from:boss is:unread"
 
         desk mail search "after:2024/01/01 has:attachment"
+
+        desk mail search "is:unread" --json | jq '.nextPageToken'
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    messages = client.search(query, max_results=max_results)
+    result = client.search(query, max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(messages, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    messages = result.get("messages", [])
     if not messages:
         console.print("No messages found.")
         return
@@ -82,6 +91,9 @@ def search(query: str, max_results: int, as_json: bool) -> None:
 
     console.print(table)
 
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
+
 
 # -----------------------------------------------------------------------------
 # Threads
@@ -91,8 +103,10 @@ def search(query: str, max_results: int, as_json: bool) -> None:
 @mail.command()
 @click.argument("query")
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def threads(query: str, max_results: int, as_json: bool) -> None:
+def threads(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """Search for threads (conversations).
 
     Like search, but groups messages by conversation.
@@ -103,13 +117,18 @@ def threads(query: str, max_results: int, as_json: bool) -> None:
 
         desk mail threads "subject:project update" --json
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    thread_list = client.search_threads(query, max_results=max_results)
+    result = client.search_threads(query, max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(thread_list, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    thread_list = result.get("threads", [])
     if not thread_list:
         console.print("No threads found.")
         return
@@ -131,6 +150,9 @@ def threads(query: str, max_results: int, as_json: bool) -> None:
         )
 
     console.print(table)
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @mail.command()
@@ -524,8 +546,10 @@ def forward(
 
 @mail.command()
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def drafts(max_results: int, as_json: bool) -> None:
+def drafts(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """List drafts.
 
     Examples:
@@ -534,13 +558,18 @@ def drafts(max_results: int, as_json: bool) -> None:
 
         desk mail drafts --json
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    draft_list = client.list_drafts(max_results=max_results)
+    result = client.list_drafts(max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(draft_list, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    draft_list = result.get("drafts", [])
     if not draft_list:
         console.print("No drafts.")
         return
@@ -558,6 +587,9 @@ def drafts(max_results: int, as_json: bool) -> None:
         )
 
     console.print(table)
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @mail.group()
@@ -1181,19 +1213,26 @@ def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool,
 
 @mail.command()
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def unread(max_results: int, as_json: bool) -> None:
+def unread(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """List unread messages.
 
     Shortcut for: desk mail search "is:unread"
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    messages = client.search("is:unread", max_results=max_results)
+    result = client.search("is:unread", max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(messages, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    messages = result.get("messages", [])
     if not messages:
         console.print("No unread messages.")
         return
@@ -1213,6 +1252,9 @@ def unread(max_results: int, as_json: bool) -> None:
         )
 
     console.print(table)
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @mail.command()

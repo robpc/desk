@@ -13,54 +13,76 @@ class CalendarClient:
     def __init__(self, credentials: Credentials):
         self.service = build("calendar", "v3", credentials=credentials)
 
-    def today(self, calendar_id: str = "primary") -> list[dict]:
+    def today(
+        self, calendar_id: str = "primary", page_token: str | None = None
+    ) -> dict:
         """Get today's events.
 
+        Args:
+            calendar_id: Calendar ID
+            page_token: Token for fetching next page of results
+
         Returns:
-            List of event dicts
+            Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
         now = datetime.now().astimezone()
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
-        return self._list_events(calendar_id, start, end)
+        return self._list_events(calendar_id, start, end, page_token=page_token)
 
-    def week(self, calendar_id: str = "primary") -> list[dict]:
+    def week(
+        self, calendar_id: str = "primary", page_token: str | None = None
+    ) -> dict:
         """Get this week's events (Monday through Sunday).
 
+        Args:
+            calendar_id: Calendar ID
+            page_token: Token for fetching next page of results
+
         Returns:
-            List of event dicts
+            Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
         now = datetime.now().astimezone()
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         # Go to start of current week (Monday)
         start = start - timedelta(days=start.weekday())
         end = start + timedelta(days=7)
-        return self._list_events(calendar_id, start, end)
+        return self._list_events(calendar_id, start, end, page_token=page_token)
 
-    def next(self, max_results: int = 10, calendar_id: str = "primary") -> list[dict]:
+    def next(
+        self,
+        max_results: int = 10,
+        calendar_id: str = "primary",
+        page_token: str | None = None,
+    ) -> dict:
         """Get next upcoming events.
 
         Args:
             max_results: Maximum number of events
             calendar_id: Calendar ID
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of event dicts
+            Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
         now = datetime.now().astimezone()
         try:
-            results = (
-                self.service.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=now.isoformat(),
-                    maxResults=max_results,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
-            return [self._parse_event(e) for e in results.get("items", [])]
+            request_kwargs = {
+                "calendarId": calendar_id,
+                "timeMin": now.isoformat(),
+                "maxResults": max_results,
+                "singleEvents": True,
+                "orderBy": "startTime",
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.events().list(**request_kwargs).execute()
+
+            result = {"events": [self._parse_event(e) for e in results.get("items", [])]}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
@@ -213,49 +235,74 @@ class CalendarClient:
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
-    def find(self, query: str, max_results: int = 10, calendar_id: str = "primary") -> list[dict]:
+    def find(
+        self,
+        query: str,
+        max_results: int = 10,
+        calendar_id: str = "primary",
+        page_token: str | None = None,
+    ) -> dict:
         """Search for events by text.
 
         Args:
             query: Search text
             max_results: Maximum results
             calendar_id: Calendar ID
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of matching events
+            Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
         try:
-            results = (
-                self.service.events()
-                .list(
-                    calendarId=calendar_id,
-                    q=query,
-                    maxResults=max_results,
-                    singleEvents=True,
-                    orderBy="startTime",
-                    timeMin=datetime.now().astimezone().isoformat(),
-                )
-                .execute()
-            )
-            return [self._parse_event(e) for e in results.get("items", [])]
+            request_kwargs = {
+                "calendarId": calendar_id,
+                "q": query,
+                "maxResults": max_results,
+                "singleEvents": True,
+                "orderBy": "startTime",
+                "timeMin": datetime.now().astimezone().isoformat(),
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.events().list(**request_kwargs).execute()
+
+            result = {"events": [self._parse_event(e) for e in results.get("items", [])]}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
-    def _list_events(self, calendar_id: str, start: datetime, end: datetime) -> list[dict]:
-        """List events in a time range."""
+    def _list_events(
+        self,
+        calendar_id: str,
+        start: datetime,
+        end: datetime,
+        page_token: str | None = None,
+    ) -> dict:
+        """List events in a time range.
+
+        Returns:
+            Dict with 'events' list and 'nextPageToken' (if more results exist)
+        """
         try:
-            results = (
-                self.service.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=start.isoformat(),
-                    timeMax=end.isoformat(),
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
-            return [self._parse_event(e) for e in results.get("items", [])]
+            request_kwargs = {
+                "calendarId": calendar_id,
+                "timeMin": start.isoformat(),
+                "timeMax": end.isoformat(),
+                "singleEvents": True,
+                "orderBy": "startTime",
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.events().list(**request_kwargs).execute()
+
+            result = {"events": [self._parse_event(e) for e in results.get("items", [])]}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
@@ -289,29 +336,35 @@ class CalendarClient:
             dt = dt.replace(tzinfo=local_tz)
         return {"dateTime": dt.isoformat()}
 
-    def invitations(self, max_results: int = 20, calendar_id: str = "primary") -> list[dict]:
+    def invitations(
+        self,
+        max_results: int = 20,
+        calendar_id: str = "primary",
+        page_token: str | None = None,
+    ) -> dict:
         """List pending invitations (events where user needs to respond).
 
         Args:
             max_results: Maximum number of results
             calendar_id: Calendar ID
+            page_token: Token for fetching next page of results
 
         Returns:
-            List of events where user's response status is 'needsAction'
+            Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
         now = datetime.now().astimezone()
         try:
-            results = (
-                self.service.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=now.isoformat(),
-                    maxResults=max_results,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
+            request_kwargs = {
+                "calendarId": calendar_id,
+                "timeMin": now.isoformat(),
+                "maxResults": max_results,
+                "singleEvents": True,
+                "orderBy": "startTime",
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.events().list(**request_kwargs).execute()
 
             # Filter for events where user needs to respond
             invitations = []
@@ -322,7 +375,10 @@ class CalendarClient:
                         invitations.append(self._parse_event(event))
                         break
 
-            return invitations
+            result = {"events": invitations}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 

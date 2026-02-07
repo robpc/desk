@@ -30,8 +30,9 @@ def cal() -> None:
 
 
 @cal.command()
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def today(as_json: bool) -> None:
+def today(page_token: str | None, as_json: bool) -> None:
     """Show today's events.
 
     Examples:
@@ -39,18 +40,23 @@ def today(as_json: bool) -> None:
         desk cal today
     """
     client = _get_client()
-    events = client.today()
+    result = client.today(page_token=page_token)
 
     if as_json:
-        print(json.dumps(events, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    events = result.get("events", [])
     _print_events(events, "Today")
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @cal.command()
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def week(as_json: bool) -> None:
+def week(page_token: str | None, as_json: bool) -> None:
     """Show this week's events.
 
     Examples:
@@ -58,33 +64,47 @@ def week(as_json: bool) -> None:
         desk cal week
     """
     client = _get_client()
-    events = client.week()
+    result = client.week(page_token=page_token)
 
     if as_json:
-        print(json.dumps(events, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    events = result.get("events", [])
     _print_events(events, "This week")
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @cal.command("next")
 @click.option("--max", "-n", "max_results", default=10, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def next_events(max_results: int, as_json: bool) -> None:
+def next_events(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """Show upcoming events.
 
     Examples:
 
         desk cal next --max 5
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    events = client.next(max_results=max_results)
+    result = client.next(max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(events, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    events = result.get("events", [])
     _print_events(events, "Upcoming")
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @cal.command("list")
@@ -264,8 +284,10 @@ def update(
 @cal.command()
 @click.argument("query")
 @click.option("--max", "-n", "max_results", default=10, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def find(query: str, max_results: int, as_json: bool) -> None:
+def find(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """Search for events by text.
 
     Examples:
@@ -274,20 +296,30 @@ def find(query: str, max_results: int, as_json: bool) -> None:
 
         desk cal find "review" --max 5
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    events = client.find(query, max_results=max_results)
+    result = client.find(query, max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(events, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    events = result.get("events", [])
     _print_events(events, f"Results for '{query}'")
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @cal.command()
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def invitations(max_results: int, as_json: bool) -> None:
+def invitations(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
     """List pending invitations.
 
     Shows events where you haven't yet responded (needsAction).
@@ -298,18 +330,26 @@ def invitations(max_results: int, as_json: bool) -> None:
 
         desk cal invitations --max 10
     """
+    # --limit takes precedence if provided
+    if limit is not None:
+        max_results = limit
+
     client = _get_client()
-    events = client.invitations(max_results=max_results)
+    result = client.invitations(max_results=max_results, page_token=page_token)
 
     if as_json:
-        print(json.dumps(events, indent=2))
+        print(json.dumps(result, indent=2))
         return
 
+    events = result.get("events", [])
     if not events:
         console.print("No pending invitations.")
         return
 
     _print_events(events, "Pending Invitations")
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @cal.command()
