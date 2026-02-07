@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: Docs Comments
-status: idea
+status: implemented
 effort: M
 value: Enable document review and feedback workflows
 created: 2026-02-07

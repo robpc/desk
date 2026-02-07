@@ -1,7 +1,7 @@
 ---
 id: "023"
 title: Drive Comments
-status: idea
+status: implemented
 effort: S
 value: Enable feedback on any Drive file
 created: 2026-02-07

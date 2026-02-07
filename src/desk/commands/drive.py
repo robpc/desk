@@ -449,6 +449,122 @@ def transfer_owner(file_id: str, email: str, dry_run: bool, as_json: bool) -> No
         console.print(f"[green]Transferred ownership to {email}[/green]")
 
 
+@drive.command()
+@click.argument("file_id")
+@click.option("--include-resolved", is_flag=True, help="Include resolved comments")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def comments(file_id: str, include_resolved: bool, as_json: bool) -> None:
+    """List comments on a file.
+
+    Works with all file types including Google Docs, Sheets, and Slides.
+
+    Examples:
+
+        desk drive comments <file-id>
+
+        desk drive comments <file-id> --include-resolved
+    """
+    client = _get_client()
+    comment_list = client.list_comments(file_id, include_resolved=include_resolved)
+
+    if as_json:
+        print(json.dumps(comment_list, indent=2))
+        return
+
+    if not comment_list:
+        console.print("No comments.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="dim", width=12)
+    table.add_column("Author", width=20)
+    table.add_column("Anchor", width=20)
+    table.add_column("Content", width=35)
+    table.add_column("Replies", width=7, justify="right")
+
+    for c in comment_list:
+        anchor = c.get("anchor", "")[:20] if c.get("anchor") else ""
+        status = "[resolved] " if c.get("resolved") else ""
+        table.add_row(
+            c["id"],
+            c.get("author", "")[:20],
+            anchor,
+            status + c.get("content", "")[:35],
+            str(c.get("replyCount", 0)),
+        )
+
+    console.print(table)
+
+
+@drive.command("add-comment")
+@click.argument("file_id")
+@click.option("--text", "-t", required=True, help="Comment text")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def add_comment(file_id: str, text: str, as_json: bool) -> None:
+    """Add a comment to a file.
+
+    Works with all file types including Google Docs, Sheets, and Slides.
+
+    Examples:
+
+        desk drive add-comment <file-id> --text "Please review this section"
+    """
+    client = _get_client()
+    result = client.add_comment(file_id, text)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Added comment[/green]")
+        console.print(f"[dim]Comment ID: {result['id']}[/dim]")
+
+
+@drive.command("resolve-comment")
+@click.argument("file_id")
+@click.argument("comment_id")
+@click.option("--reopen", is_flag=True, help="Reopen instead of resolve")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def resolve_comment(file_id: str, comment_id: str, reopen: bool, as_json: bool) -> None:
+    """Resolve or reopen a comment.
+
+    Examples:
+
+        desk drive resolve-comment <file-id> <comment-id>
+
+        desk drive resolve-comment <file-id> <comment-id> --reopen
+    """
+    client = _get_client()
+    result = client.resolve_comment(file_id, comment_id, resolved=not reopen)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        action = "Reopened" if reopen else "Resolved"
+        console.print(f"[green]{action} comment {comment_id}[/green]")
+
+
+@drive.command("reply-comment")
+@click.argument("file_id")
+@click.argument("comment_id")
+@click.option("--text", "-t", required=True, help="Reply text")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def reply_comment(file_id: str, comment_id: str, text: str, as_json: bool) -> None:
+    """Reply to a comment.
+
+    Examples:
+
+        desk drive reply-comment <file-id> <comment-id> --text "Done, thanks!"
+    """
+    client = _get_client()
+    result = client.reply_comment(file_id, comment_id, text)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Added reply[/green]")
+        console.print(f"[dim]Reply ID: {result['id']}[/dim]")
+
+
 def _print_file_table(files: list[dict]) -> None:
     """Print a list of Drive files as a table."""
     table = Table(show_header=True)

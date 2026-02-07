@@ -435,6 +435,161 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    def list_comments(self, file_id: str, include_resolved: bool = False) -> list[dict]:
+        """List comments on a file.
+
+        Args:
+            file_id: The file ID
+            include_resolved: Include resolved comments
+
+        Returns:
+            List of comment dicts
+        """
+        try:
+            results = (
+                self.service.comments()
+                .list(
+                    fileId=file_id,
+                    fields="comments(id, author, content, createdTime, resolved, quotedFileContent, replies)",
+                )
+                .execute()
+            )
+            comments = results.get("comments", [])
+
+            # Filter resolved if needed
+            if not include_resolved:
+                comments = [c for c in comments if not c.get("resolved")]
+
+            # Parse into clean format
+            return [
+                {
+                    "id": c.get("id", ""),
+                    "author": c.get("author", {}).get("displayName", ""),
+                    "authorEmail": c.get("author", {}).get("emailAddress", ""),
+                    "content": c.get("content", ""),
+                    "createdTime": c.get("createdTime", ""),
+                    "resolved": c.get("resolved", False),
+                    "anchor": c.get("quotedFileContent", {}).get("value", ""),
+                    "replyCount": len(c.get("replies", [])),
+                }
+                for c in comments
+            ]
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
+    def add_comment(self, file_id: str, content: str) -> dict:
+        """Add a comment to a file.
+
+        Args:
+            file_id: The file ID
+            content: Comment text
+
+        Returns:
+            Created comment dict
+        """
+        try:
+            result = (
+                self.service.comments()
+                .create(
+                    fileId=file_id,
+                    body={"content": content},
+                    fields="id, author, content, createdTime",
+                )
+                .execute()
+            )
+            return {
+                "id": result.get("id", ""),
+                "author": result.get("author", {}).get("displayName", ""),
+                "content": result.get("content", ""),
+                "createdTime": result.get("createdTime", ""),
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
+    def resolve_comment(self, file_id: str, comment_id: str, resolved: bool = True) -> dict:
+        """Resolve or reopen a comment.
+
+        Args:
+            file_id: The file ID
+            comment_id: The comment ID
+            resolved: True to resolve, False to reopen
+
+        Returns:
+            Updated comment dict
+        """
+        try:
+            # Get the current comment content (required for update)
+            current = (
+                self.service.comments()
+                .get(fileId=file_id, commentId=comment_id, fields="content")
+                .execute()
+            )
+
+            result = (
+                self.service.comments()
+                .update(
+                    fileId=file_id,
+                    commentId=comment_id,
+                    body={"content": current.get("content", "")},
+                    fields="id, content, resolved",
+                )
+                .execute()
+            )
+
+            # Resolve/reopen by updating via replies if needed
+            # The comments API resolves via the resolved field
+            if resolved:
+                # Create a reply that resolves
+                self.service.replies().create(
+                    fileId=file_id,
+                    commentId=comment_id,
+                    body={"content": "", "action": "resolve"},
+                    fields="id",
+                ).execute()
+            else:
+                # Reopen by creating a reply with reopen action
+                self.service.replies().create(
+                    fileId=file_id,
+                    commentId=comment_id,
+                    body={"content": "", "action": "reopen"},
+                    fields="id",
+                ).execute()
+
+            return {"id": comment_id, "resolved": resolved}
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
+    def reply_comment(self, file_id: str, comment_id: str, content: str) -> dict:
+        """Reply to a comment.
+
+        Args:
+            file_id: The file ID
+            comment_id: The comment ID to reply to
+            content: Reply text
+
+        Returns:
+            Created reply dict
+        """
+        try:
+            result = (
+                self.service.replies()
+                .create(
+                    fileId=file_id,
+                    commentId=comment_id,
+                    body={"content": content},
+                    fields="id, author, content, createdTime",
+                )
+                .execute()
+            )
+            return {
+                "id": result.get("id", ""),
+                "author": result.get("author", {}).get("displayName", ""),
+                "content": result.get("content", ""),
+                "createdTime": result.get("createdTime", ""),
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
     def _export(self, file_id: str, mime_type: str) -> str:
         """Export a Google Workspace file."""
         content = self.service.files().export(fileId=file_id, mimeType=mime_type).execute()
