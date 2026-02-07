@@ -1,8 +1,8 @@
 """Gmail API wrapper."""
 
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.oauth2.credentials import Credentials
 
 
 class GmailClient:
@@ -23,23 +23,29 @@ class GmailClient:
             List of message summaries with id, threadId, snippet
         """
         try:
-            results = self.service.users().messages().list(
-                userId=self.user_id,
-                q=query,
-                maxResults=max_results
-            ).execute()
+            results = (
+                self.service.users()
+                .messages()
+                .list(userId=self.user_id, q=query, maxResults=max_results)
+                .execute()
+            )
 
             messages = results.get("messages", [])
 
             # Fetch snippets for each message
             detailed = []
             for msg in messages:
-                detail = self.service.users().messages().get(
-                    userId=self.user_id,
-                    id=msg["id"],
-                    format="metadata",
-                    metadataHeaders=["From", "Subject", "Date"]
-                ).execute()
+                detail = (
+                    self.service.users()
+                    .messages()
+                    .get(
+                        userId=self.user_id,
+                        id=msg["id"],
+                        format="metadata",
+                        metadataHeaders=["From", "Subject", "Date"],
+                    )
+                    .execute()
+                )
                 detailed.append(self._parse_message_metadata(detail))
 
             return detailed
@@ -54,11 +60,12 @@ class GmailClient:
             Message with full content
         """
         try:
-            message = self.service.users().messages().get(
-                userId=self.user_id,
-                id=message_id,
-                format="full"
-            ).execute()
+            message = (
+                self.service.users()
+                .messages()
+                .get(userId=self.user_id, id=message_id, format="full")
+                .execute()
+            )
             return self._parse_full_message(message)
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -89,14 +96,19 @@ class GmailClient:
             raise ValueError(f"Label already exists: {name}")
 
         try:
-            label = self.service.users().labels().create(
-                userId=self.user_id,
-                body={
-                    "name": name,
-                    "labelListVisibility": "labelShow",
-                    "messageListVisibility": "show",
-                }
-            ).execute()
+            label = (
+                self.service.users()
+                .labels()
+                .create(
+                    userId=self.user_id,
+                    body={
+                        "name": name,
+                        "labelListVisibility": "labelShow",
+                        "messageListVisibility": "show",
+                    },
+                )
+                .execute()
+            )
             return label
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -110,9 +122,7 @@ class GmailClient:
 
         try:
             self.service.users().messages().modify(
-                userId=self.user_id,
-                id=message_id,
-                body={"addLabelIds": [label_id]}
+                userId=self.user_id, id=message_id, body={"addLabelIds": [label_id]}
             ).execute()
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -162,10 +172,10 @@ class GmailClient:
 
         if add_labels:
             # Resolve label names to IDs for user labels
-            body["addLabelIds"] = [self._resolve_label(l) for l in add_labels]
+            body["addLabelIds"] = [self._resolve_label(lbl) for lbl in add_labels]
 
         if remove_labels:
-            body["removeLabelIds"] = [self._resolve_label(l) for l in remove_labels]
+            body["removeLabelIds"] = [self._resolve_label(lbl) for lbl in remove_labels]
 
         if not body:
             return  # Nothing to do
@@ -200,10 +210,10 @@ class GmailClient:
         body = {"ids": message_ids}
 
         if add_labels:
-            body["addLabelIds"] = [self._resolve_label(l) for l in add_labels]
+            body["addLabelIds"] = [self._resolve_label(lbl) for lbl in add_labels]
 
         if remove_labels:
-            body["removeLabelIds"] = [self._resolve_label(l) for l in remove_labels]
+            body["removeLabelIds"] = [self._resolve_label(lbl) for lbl in remove_labels]
 
         if "addLabelIds" not in body and "removeLabelIds" not in body:
             return  # Nothing to do
@@ -220,9 +230,19 @@ class GmailClient:
         """Resolve a label name to its ID. System labels are returned as-is."""
         # System labels are uppercase and can be used directly
         system_labels = [
-            "INBOX", "SPAM", "TRASH", "UNREAD", "STARRED", "IMPORTANT",
-            "SENT", "DRAFT", "CATEGORY_PERSONAL", "CATEGORY_SOCIAL",
-            "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS",
+            "INBOX",
+            "SPAM",
+            "TRASH",
+            "UNREAD",
+            "STARRED",
+            "IMPORTANT",
+            "SENT",
+            "DRAFT",
+            "CATEGORY_PERSONAL",
+            "CATEGORY_SOCIAL",
+            "CATEGORY_PROMOTIONS",
+            "CATEGORY_UPDATES",
+            "CATEGORY_FORUMS",
         ]
         if label.upper() in system_labels:
             return label.upper()

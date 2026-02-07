@@ -1,4 +1,4 @@
-"""OAuth authentication for Gmail API.
+"""OAuth authentication for Google Workspace APIs.
 
 Supports two authentication methods:
 1. gcloud Application Default Credentials (ADC) - simplest, requires gcloud
@@ -7,7 +7,6 @@ Supports two authentication methods:
 
 import subprocess
 import sys
-from pathlib import Path
 
 from google.auth import default as google_auth_default
 from google.auth.exceptions import DefaultCredentialsError
@@ -15,7 +14,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-from gm.config import CREDENTIALS_FILE, GCLOUD_SCOPES, SCOPES, TOKEN_FILE, ensure_config_dir
+from desk.config import CREDENTIALS_FILE, GCLOUD_SCOPES, SCOPES, TOKEN_FILE, ensure_config_dir
 
 
 class AuthMethod:
@@ -101,12 +100,12 @@ def login(verbose: bool = False) -> Credentials:
         print()
         print("  Option 1 - Use gcloud (simplest):")
         print("    gcloud auth application-default login \\")
-        print(f'      --scopes={",".join(SCOPES)}')
+        print(f"      --scopes={','.join(SCOPES)}")
         print()
         print("  Option 2 - Use team credentials:")
         print("    1. Get credentials.json from your team's 1Password vault")
         print(f"    2. Copy to {CREDENTIALS_FILE}")
-        print("    3. Run: gm auth login")
+        print("    3. Run: desk auth login")
         print()
         sys.exit(1)
 
@@ -177,8 +176,11 @@ def _gcloud_available() -> bool:
 
 def _save_credentials(creds: Credentials) -> None:
     """Save credentials to token file."""
+    import os
+
     ensure_config_dir()
     TOKEN_FILE.write_text(creds.to_json())
+    os.chmod(TOKEN_FILE, 0o600)
 
 
 def get_auth_status() -> dict:
