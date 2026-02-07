@@ -1,7 +1,7 @@
 ---
 id: "015"
 title: Gmail Filters Management
-status: idea
+status: implemented
 effort: M
 value: Enable programmatic inbox rule management for automation
 created: 2026-02-07

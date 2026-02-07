@@ -992,3 +992,183 @@ class GmailClient:
                         return body
 
         return ""
+
+    # -------------------------------------------------------------------------
+    # Filters (Gmail Settings)
+    # -------------------------------------------------------------------------
+
+    def list_filters(self) -> list[dict]:
+        """List all email filters.
+
+        Returns:
+            List of filter dicts with id, criteria, and action
+        """
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .filters()
+                .list(userId=self.user_id)
+                .execute()
+            )
+            filters = result.get("filter", [])
+            return [self._parse_filter(f) for f in filters]
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def get_filter(self, filter_id: str) -> dict:
+        """Get a filter by ID.
+
+        Args:
+            filter_id: The filter ID
+
+        Returns:
+            Filter dict with criteria and action
+        """
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .filters()
+                .get(userId=self.user_id, id=filter_id)
+                .execute()
+            )
+            return self._parse_filter(result)
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def create_filter(
+        self,
+        from_addr: str | None = None,
+        to_addr: str | None = None,
+        subject: str | None = None,
+        query: str | None = None,
+        has_attachment: bool | None = None,
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+        archive: bool = False,
+        mark_read: bool = False,
+        star: bool = False,
+        forward: str | None = None,
+        never_spam: bool = False,
+    ) -> dict:
+        """Create an email filter.
+
+        Args:
+            from_addr: Filter by sender
+            to_addr: Filter by recipient
+            subject: Filter by subject (contains)
+            query: Raw Gmail search query
+            has_attachment: Filter messages with attachments
+            add_labels: Labels to add
+            remove_labels: Labels to remove
+            archive: Skip inbox
+            mark_read: Mark as read
+            star: Star the message
+            forward: Email to forward to
+            never_spam: Never mark as spam
+
+        Returns:
+            Created filter dict
+        """
+        # Build criteria
+        criteria = {}
+        if from_addr:
+            criteria["from"] = from_addr
+        if to_addr:
+            criteria["to"] = to_addr
+        if subject:
+            criteria["subject"] = subject
+        if query:
+            criteria["query"] = query
+        if has_attachment is not None:
+            criteria["hasAttachment"] = has_attachment
+
+        if not criteria:
+            raise ValueError("At least one filter criteria is required")
+
+        # Build action
+        action = {}
+        if add_labels:
+            action["addLabelIds"] = [self._resolve_label(lbl) for lbl in add_labels]
+        if remove_labels:
+            action["removeLabelIds"] = [self._resolve_label(lbl) for lbl in remove_labels]
+        if archive:
+            action.setdefault("removeLabelIds", []).append("INBOX")
+        if mark_read:
+            action.setdefault("removeLabelIds", []).append("UNREAD")
+        if star:
+            action.setdefault("addLabelIds", []).append("STARRED")
+        if forward:
+            action["forward"] = forward
+        if never_spam:
+            action.setdefault("removeLabelIds", []).append("SPAM")
+
+        if not action:
+            raise ValueError("At least one filter action is required")
+
+        body = {"criteria": criteria, "action": action}
+
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .filters()
+                .create(userId=self.user_id, body=body)
+                .execute()
+            )
+            return self._parse_filter(result)
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def delete_filter(self, filter_id: str) -> None:
+        """Delete a filter.
+
+        Args:
+            filter_id: The filter ID
+        """
+        try:
+            self.service.users().settings().filters().delete(
+                userId=self.user_id, id=filter_id
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def _parse_filter(self, f: dict) -> dict:
+        """Parse a filter response into clean dict."""
+        criteria = f.get("criteria", {})
+        action = f.get("action", {})
+
+        # Parse action into human-readable form
+        actions = []
+        if action.get("addLabelIds"):
+            for label_id in action["addLabelIds"]:
+                if label_id == "STARRED":
+                    actions.append("star")
+                else:
+                    actions.append(f"+{label_id}")
+        if action.get("removeLabelIds"):
+            for label_id in action["removeLabelIds"]:
+                if label_id == "INBOX":
+                    actions.append("archive")
+                elif label_id == "UNREAD":
+                    actions.append("mark-read")
+                elif label_id == "SPAM":
+                    actions.append("never-spam")
+                else:
+                    actions.append(f"-{label_id}")
+        if action.get("forward"):
+            actions.append(f"forward:{action['forward']}")
+
+        return {
+            "id": f.get("id", ""),
+            "criteria": {
+                "from": criteria.get("from", ""),
+                "to": criteria.get("to", ""),
+                "subject": criteria.get("subject", ""),
+                "query": criteria.get("query", ""),
+                "hasAttachment": criteria.get("hasAttachment"),
+            },
+            "action": action,
+            "actionSummary": ", ".join(actions) if actions else "(no actions)",
+        }

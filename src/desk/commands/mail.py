@@ -1435,6 +1435,196 @@ def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry
         console.print(f"[green]Removed label '{label_name}' from {len(ids)} message(s)[/green]")
 
 
+# -----------------------------------------------------------------------------
+# Filters
+# -----------------------------------------------------------------------------
+
+
+@mail.command()
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def filters(as_json: bool) -> None:
+    """List all email filters.
+
+    Examples:
+
+        desk mail filters
+
+        desk mail filters --json
+    """
+    client = _get_client()
+    filter_list = client.list_filters()
+
+    if as_json:
+        print(json.dumps(filter_list, indent=2))
+        return
+
+    if not filter_list:
+        console.print("No filters.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="dim", width=20)
+    table.add_column("Criteria", width=35)
+    table.add_column("Actions", width=30)
+
+    for f in filter_list:
+        criteria = f.get("criteria", {})
+        criteria_parts = []
+        if criteria.get("from"):
+            criteria_parts.append(f"from:{criteria['from']}")
+        if criteria.get("to"):
+            criteria_parts.append(f"to:{criteria['to']}")
+        if criteria.get("subject"):
+            criteria_parts.append(f"subject:{criteria['subject']}")
+        if criteria.get("query"):
+            criteria_parts.append(criteria["query"])
+        if criteria.get("hasAttachment"):
+            criteria_parts.append("has:attachment")
+
+        table.add_row(
+            f["id"],
+            " ".join(criteria_parts)[:35],
+            f.get("actionSummary", "")[:30],
+        )
+
+    console.print(table)
+
+
+@mail.command("filter")
+@click.argument("filter_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def filter_detail(filter_id: str, as_json: bool) -> None:
+    """Get details of a specific filter.
+
+    Examples:
+
+        desk mail filter <filter-id>
+    """
+    client = _get_client()
+    f = client.get_filter(filter_id)
+
+    if as_json:
+        print(json.dumps(f, indent=2))
+        return
+
+    console.print(f"[bold]Filter ID:[/bold] {f['id']}")
+    console.print()
+    console.print("[bold]Criteria:[/bold]")
+    criteria = f.get("criteria", {})
+    if criteria.get("from"):
+        console.print(f"  From: {criteria['from']}")
+    if criteria.get("to"):
+        console.print(f"  To: {criteria['to']}")
+    if criteria.get("subject"):
+        console.print(f"  Subject contains: {criteria['subject']}")
+    if criteria.get("query"):
+        console.print(f"  Query: {criteria['query']}")
+    if criteria.get("hasAttachment"):
+        console.print("  Has attachment: yes")
+    console.print()
+    console.print("[bold]Actions:[/bold]")
+    console.print(f"  {f.get('actionSummary', 'none')}")
+
+
+@mail.command("create-filter")
+@click.option("--from", "from_addr", help="Filter by sender")
+@click.option("--to", "to_addr", help="Filter by recipient")
+@click.option("--subject", help="Filter by subject (contains)")
+@click.option("--query", help="Raw Gmail search query")
+@click.option("--has-attachment", is_flag=True, help="Messages with attachments")
+@click.option("--add-label", "add_labels", multiple=True, help="Label to add (repeatable)")
+@click.option("--remove-label", "remove_labels", multiple=True, help="Label to remove (repeatable)")
+@click.option("--archive", is_flag=True, help="Skip inbox")
+@click.option("--mark-read", is_flag=True, help="Mark as read")
+@click.option("--star", is_flag=True, help="Star the message")
+@click.option("--forward", help="Email to forward to")
+@click.option("--never-spam", is_flag=True, help="Never mark as spam")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def create_filter(
+    from_addr: str | None,
+    to_addr: str | None,
+    subject: str | None,
+    query: str | None,
+    has_attachment: bool,
+    add_labels: tuple[str, ...],
+    remove_labels: tuple[str, ...],
+    archive: bool,
+    mark_read: bool,
+    star: bool,
+    forward: str | None,
+    never_spam: bool,
+    as_json: bool,
+) -> None:
+    """Create an email filter.
+
+    At least one criteria and one action required.
+
+    Examples:
+
+        desk mail create-filter --from "boss@example.com" --add-label Important
+
+        desk mail create-filter --subject "Invoice" --archive --add-label Invoices
+
+        desk mail create-filter --query "list:news@example.com" --archive --mark-read
+    """
+    client = _get_client()
+
+    try:
+        f = client.create_filter(
+            from_addr=from_addr,
+            to_addr=to_addr,
+            subject=subject,
+            query=query,
+            has_attachment=has_attachment if has_attachment else None,
+            add_labels=list(add_labels) if add_labels else None,
+            remove_labels=list(remove_labels) if remove_labels else None,
+            archive=archive,
+            mark_read=mark_read,
+            star=star,
+            forward=forward,
+            never_spam=never_spam,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps(f, indent=2))
+    else:
+        console.print(f"[green]Created filter[/green]")
+        console.print(f"[dim]Filter ID: {f['id']}[/dim]")
+
+
+@mail.command("delete-filter")
+@click.argument("filter_id")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def delete_filter(filter_id: str, yes: bool, as_json: bool) -> None:
+    """Delete an email filter.
+
+    Examples:
+
+        desk mail delete-filter <filter-id>
+
+        desk mail delete-filter <filter-id> --yes
+    """
+    if not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            sys.exit(1)
+        if not click.confirm(f"Delete filter {filter_id}?"):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    client = _get_client()
+    client.delete_filter(filter_id)
+
+    if as_json:
+        print(json.dumps({"action": "delete-filter", "filterId": filter_id}))
+    else:
+        console.print(f"[green]Deleted filter {filter_id}[/green]")
+
+
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--add-label", "-a", "add_labels", multiple=True, help="Label to add (repeatable)")

@@ -13,6 +13,7 @@ LEGACY_CONFIG_DIR = Path.home() / ".gmail-cli"
 # Google Workspace API scopes
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.settings.basic",  # For filters and vacation
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/documents",
