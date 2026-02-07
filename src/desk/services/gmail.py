@@ -1,5 +1,8 @@
 """Gmail API wrapper."""
 
+import base64
+from email.mime.text import MIMEText
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -150,6 +153,50 @@ class GmailClient:
     def unstar(self, message_id: str) -> None:
         """Remove star from a message."""
         self.modify(message_id, remove_labels=["STARRED"])
+
+    def send(
+        self,
+        to: list[str],
+        subject: str,
+        body: str,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+    ) -> dict:
+        """Send an email.
+
+        Args:
+            to: List of recipient email addresses
+            subject: Email subject
+            body: Plain text body
+            cc: List of CC recipients
+            bcc: List of BCC recipients
+
+        Returns:
+            The sent message metadata (id, threadId, labelIds)
+        """
+        # Build MIME message
+        message = MIMEText(body)
+        message["to"] = ", ".join(to)
+        message["subject"] = subject
+
+        if cc:
+            message["cc"] = ", ".join(cc)
+        if bcc:
+            message["bcc"] = ", ".join(bcc)
+
+        # Encode to base64
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        try:
+            result = (
+                self.service.users()
+                .messages()
+                .send(userId=self.user_id, body={"raw": raw})
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
 
     def remove_label(self, message_id: str, label_name: str) -> None:
         """Remove a label from a message."""

@@ -43,6 +43,7 @@ desk (CLI entry point)
 ├── mail               → Gmail operations
 │   ├── search         → List messages matching query
 │   ├── read           → Display message content
+│   ├── send           → Send an email
 │   ├── unread         → List unread messages
 │   ├── labels         → List available labels
 │   ├── create-label   → Create a new label

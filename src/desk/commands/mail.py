@@ -103,6 +103,80 @@ def read(message_id: str, as_json: bool) -> None:
 
 
 @mail.command()
+@click.option("--to", "-t", "to_addrs", multiple=True, required=True, help="Recipient (repeatable)")
+@click.option("--cc", "cc_addrs", multiple=True, help="CC recipient (repeatable)")
+@click.option("--bcc", "bcc_addrs", multiple=True, help="BCC recipient (repeatable)")
+@click.option("--subject", "-s", required=True, help="Email subject")
+@click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
+@click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
+@click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def send(
+    to_addrs: tuple[str, ...],
+    cc_addrs: tuple[str, ...],
+    bcc_addrs: tuple[str, ...],
+    subject: str,
+    body_text: str | None,
+    body_file: str | None,
+    from_stdin: bool,
+    as_json: bool,
+) -> None:
+    """Send an email.
+
+    Body can be provided via --body, --body-file, or --stdin.
+
+    Examples:
+
+        desk mail send --to "user@example.com" --subject "Hello" --body "Message"
+
+        desk mail send --to "a@example.com" --cc "b@example.com" --subject "Update" --body "..."
+
+        echo "Report content" | desk mail send --to "boss@example.com" --subject "Report" --stdin
+
+        desk mail send --to "user@example.com" --subject "Notes" --body-file notes.txt
+    """
+    # Determine body source
+    body_sources = sum([body_text is not None, body_file is not None, from_stdin])
+    if body_sources == 0:
+        console.print("[red]Error: Must provide body via --body, --body-file, or --stdin[/red]")
+        sys.exit(1)
+    if body_sources > 1:
+        console.print("[red]Error: Use only one of --body, --body-file, or --stdin[/red]")
+        sys.exit(1)
+
+    # Get body content
+    if body_text is not None:
+        body = body_text
+    elif body_file is not None:
+        try:
+            with open(body_file) as f:
+                body = f.read()
+        except FileNotFoundError:
+            console.print(f"[red]Error: File not found: {body_file}[/red]")
+            sys.exit(1)
+        except OSError as e:
+            console.print(f"[red]Error reading file: {e}[/red]")
+            sys.exit(1)
+    else:  # from_stdin
+        body = sys.stdin.read()
+
+    client = _get_client()
+    result = client.send(
+        to=list(to_addrs),
+        subject=subject,
+        body=body,
+        cc=list(cc_addrs) if cc_addrs else None,
+        bcc=list(bcc_addrs) if bcc_addrs else None,
+    )
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Sent message to {', '.join(to_addrs)}[/green]")
+        console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
+
+
+@mail.command()
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def labels(as_json: bool) -> None:
     """List available labels."""
