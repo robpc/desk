@@ -119,8 +119,7 @@ def login(verbose: bool = False) -> Credentials:
         print("Options:")
         print()
         print("  Option 1 - Use gcloud (simplest):")
-        print("    gcloud auth application-default login \\")
-        print(f"      --scopes={','.join(SCOPES)}")
+        print("    desk auth login --gcloud")
         print()
         print("  Option 2 - Use team credentials:")
         print("    1. Get credentials.json from your team's 1Password vault")
@@ -201,8 +200,12 @@ def _save_credentials(creds: Credentials) -> None:
     os.chmod(TOKEN_FILE, 0o600)
 
 
-def get_auth_status() -> dict:
-    """Get current authentication status."""
+def get_auth_status(verify: bool = False) -> dict:
+    """Get current authentication status.
+
+    Args:
+        verify: If True, test actual API access for each service (slower but accurate)
+    """
     gcloud_available = _gcloud_available()
 
     status = {
@@ -214,6 +217,7 @@ def get_auth_status() -> dict:
         "token_file": TOKEN_FILE.exists(),
         "token_path": str(TOKEN_FILE),
         "email": None,
+        "services": None,  # Populated if verify=True
     }
 
     # Check OAuth token first
@@ -221,6 +225,8 @@ def get_auth_status() -> dict:
     if creds:
         status["authenticated"] = True
         status["method"] = AuthMethod.OAUTH_CLIENT
+        if verify:
+            status["services"] = verify_service_access(creds)
         return status
 
     # Check gcloud ADC
@@ -228,6 +234,97 @@ def get_auth_status() -> dict:
     if creds:
         status["authenticated"] = True
         status["method"] = AuthMethod.GCLOUD_ADC
+        if verify:
+            status["services"] = verify_service_access(creds)
         return status
 
     return status
+
+
+def verify_service_access(credentials: Credentials) -> dict[str, bool]:
+    """Test actual API access for each service.
+
+    Makes lightweight API calls to verify the credentials have the necessary scopes.
+
+    Returns:
+        Dict mapping service name to access status (True = working, False = no access)
+    """
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    results = {}
+
+    # Gmail - try to get labels (lightweight)
+    try:
+        service = build("gmail", "v1", credentials=credentials)
+        service.users().labels().list(userId="me").execute()
+        results["mail"] = True
+    except HttpError as e:
+        _logger.debug(f"Gmail access check failed: {e}")
+        results["mail"] = False
+    except Exception as e:
+        _logger.debug(f"Gmail access check error: {type(e).__name__}: {e}")
+        results["mail"] = False
+
+    # Drive - try to list files (limit 1)
+    try:
+        service = build("drive", "v3", credentials=credentials)
+        service.files().list(pageSize=1).execute()
+        results["drive"] = True
+    except HttpError as e:
+        _logger.debug(f"Drive access check failed: {e}")
+        results["drive"] = False
+    except Exception as e:
+        _logger.debug(f"Drive access check error: {type(e).__name__}: {e}")
+        results["drive"] = False
+
+    # Sheets - try to create and immediately delete (no good read-only check)
+    # Actually, just try to access the API at all with a fake spreadsheet
+    try:
+        service = build("sheets", "v4", credentials=credentials)
+        # Try to get a non-existent spreadsheet - will fail with 404 if scopes OK, 403 if not
+        service.spreadsheets().get(spreadsheetId="nonexistent_test_id").execute()
+        results["sheets"] = True
+    except HttpError as e:
+        if e.resp.status == 404:
+            # 404 = scopes are fine, just spreadsheet doesn't exist
+            results["sheets"] = True
+        elif e.resp.status == 403:
+            results["sheets"] = False
+        else:
+            _logger.debug(f"Sheets access check unexpected: {e}")
+            results["sheets"] = False
+    except Exception as e:
+        _logger.debug(f"Sheets access check error: {type(e).__name__}: {e}")
+        results["sheets"] = False
+
+    # Docs - similar pattern
+    try:
+        service = build("docs", "v1", credentials=credentials)
+        service.documents().get(documentId="nonexistent_test_id").execute()
+        results["docs"] = True
+    except HttpError as e:
+        if e.resp.status == 404:
+            results["docs"] = True
+        elif e.resp.status == 403:
+            results["docs"] = False
+        else:
+            _logger.debug(f"Docs access check unexpected: {e}")
+            results["docs"] = False
+    except Exception as e:
+        _logger.debug(f"Docs access check error: {type(e).__name__}: {e}")
+        results["docs"] = False
+
+    # Calendar - try to list calendars
+    try:
+        service = build("calendar", "v3", credentials=credentials)
+        service.calendarList().list(maxResults=1).execute()
+        results["cal"] = True
+    except HttpError as e:
+        _logger.debug(f"Calendar access check failed: {e}")
+        results["cal"] = False
+    except Exception as e:
+        _logger.debug(f"Calendar access check error: {type(e).__name__}: {e}")
+        results["cal"] = False
+
+    return results

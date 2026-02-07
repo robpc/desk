@@ -156,9 +156,14 @@ def auth_login(ctx: click.Context, use_gcloud: bool) -> None:
 
 @auth.command("status")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def auth_status(as_json: bool) -> None:
-    """Check authentication status."""
-    info = get_auth_status()
+@click.option("--verify", is_flag=True, help="Verify access to each service (slower)")
+def auth_status(as_json: bool, verify: bool) -> None:
+    """Check authentication status.
+
+    Use --verify to test actual API access for each service.
+    This catches scope mismatches that would cause 403 errors.
+    """
+    info = get_auth_status(verify=verify)
 
     if as_json:
         print(json.dumps(info, indent=2))
@@ -171,6 +176,29 @@ def auth_status(as_json: bool) -> None:
         }.get(info["method"], info["method"])
 
         console.print(f"[green]Authenticated[/green] via {method_display}")
+
+        # Show service access if verified
+        if info.get("services"):
+            console.print()
+            console.print("Service access:")
+            for service, has_access in info["services"].items():
+                if has_access:
+                    console.print(f"  {service}: [green]OK[/green]")
+                else:
+                    console.print(f"  {service}: [red]NO ACCESS[/red] (missing scope)")
+
+            # Check for any failures
+            missing = [s for s, ok in info["services"].items() if not ok]
+            if missing:
+                console.print()
+                console.print("[yellow]Some services are inaccessible.[/yellow]")
+                console.print("Re-authenticate to fix:")
+                if info["method"] == AuthMethod.GCLOUD_ADC:
+                    console.print("  [cyan]desk auth login --gcloud[/cyan]")
+                else:
+                    console.print("  [cyan]desk auth login[/cyan]")
+        elif not verify:
+            console.print("[dim]Tip: Use --verify to test access to each service[/dim]")
     else:
         console.print("[red]Not authenticated[/red]")
         console.print()
