@@ -10,6 +10,8 @@ class DocsClient:
 
     def __init__(self, credentials: Credentials):
         self.service = build("docs", "v1", credentials=credentials)
+        # Drive API needed for webViewLink (create) and export (PDF/TXT/DOCX)
+        # since Docs API doesn't provide these operations
         self._drive = build("drive", "v3", credentials=credentials)
 
     def create(self, title: str, body: str = "") -> dict:

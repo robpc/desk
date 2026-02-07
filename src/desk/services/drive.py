@@ -68,7 +68,7 @@ class DriveClient:
                 if size > 50 * 1024 * 1024:
                     raise RuntimeError(
                         f"File is {size // (1024 * 1024)}MB — too large to read as text. "
-                        "Use the Drive web UI for large files."
+                        "Use 'desk drive download' for large files."
                     )
                 content = self.service.files().get_media(fileId=file_id).execute()
                 if isinstance(content, bytes):

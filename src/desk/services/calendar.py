@@ -269,4 +269,3 @@ class CalendarClient:
             local_tz = datetime.now().astimezone().tzinfo
             dt = dt.replace(tzinfo=local_tz)
         return {"dateTime": dt.isoformat()}
-        return {"dateTime": time_str}

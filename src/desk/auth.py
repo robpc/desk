@@ -5,16 +5,24 @@ Supports two authentication methods:
 2. User-provided OAuth credentials (credentials.json) - for teams
 """
 
+import logging
+import os
 import subprocess
 import sys
 
 from google.auth import default as google_auth_default
-from google.auth.exceptions import DefaultCredentialsError
+from google.auth.exceptions import DefaultCredentialsError, RefreshError, TransportError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 from desk.config import CREDENTIALS_FILE, GCLOUD_SCOPES, SCOPES, TOKEN_FILE, ensure_config_dir
+
+# Debug logging - enable with DESK_DEBUG=1
+_logger = logging.getLogger("desk.auth")
+if os.environ.get("DESK_DEBUG"):
+    logging.basicConfig(level=logging.DEBUG)
+    _logger.setLevel(logging.DEBUG)
 
 
 class AuthMethod:
@@ -55,7 +63,11 @@ def _get_oauth_credentials() -> Credentials | None:
 
     try:
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-    except Exception:
+    except (ValueError, KeyError) as e:
+        _logger.debug(f"Failed to parse token file: {e}")
+        return None
+    except Exception as e:
+        _logger.debug(f"Unexpected error loading token file: {type(e).__name__}: {e}")
         return None
 
     if creds.valid:
@@ -66,8 +78,11 @@ def _get_oauth_credentials() -> Credentials | None:
             creds.refresh(Request())
             _save_credentials(creds)
             return creds
-        except Exception:
-            # Refresh failed, need to re-authenticate
+        except (RefreshError, TransportError) as e:
+            _logger.debug(f"Token refresh failed: {e}")
+            return None
+        except Exception as e:
+            _logger.debug(f"Unexpected error refreshing token: {type(e).__name__}: {e}")
             return None
 
     return None
@@ -82,8 +97,13 @@ def _get_adc_credentials() -> Credentials | None:
             creds.refresh(Request())
         return creds
     except DefaultCredentialsError:
+        _logger.debug("No Application Default Credentials found")
         return None
-    except Exception:
+    except (RefreshError, TransportError) as e:
+        _logger.debug(f"ADC refresh failed: {e}")
+        return None
+    except Exception as e:
+        _logger.debug(f"Unexpected error with ADC: {type(e).__name__}: {e}")
         return None
 
 
@@ -176,8 +196,6 @@ def _gcloud_available() -> bool:
 
 def _save_credentials(creds: Credentials) -> None:
     """Save credentials to token file."""
-    import os
-
     ensure_config_dir()
     TOKEN_FILE.write_text(creds.to_json())
     os.chmod(TOKEN_FILE, 0o600)
