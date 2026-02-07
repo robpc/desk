@@ -1,7 +1,7 @@
 ---
 id: "020"
 title: Drive Copy
-status: idea
+status: implemented
 effort: S
 value: Enable template workflows and file duplication
 created: 2026-02-07

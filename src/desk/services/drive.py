@@ -322,6 +322,39 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    def copy(
+        self, file_id: str, name: str | None = None, folder_id: str | None = None
+    ) -> dict:
+        """Copy a file in Drive.
+
+        Args:
+            file_id: The file ID to copy
+            name: Optional new name for the copy
+            folder_id: Optional destination folder ID
+
+        Returns:
+            New file metadata dict
+        """
+        try:
+            body = {}
+            if name:
+                body["name"] = name
+            if folder_id:
+                body["parents"] = [folder_id]
+
+            result = (
+                self.service.files()
+                .copy(
+                    fileId=file_id,
+                    body=body if body else None,
+                    fields="id, name, webViewLink, parents",
+                )
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
     def _export(self, file_id: str, mime_type: str) -> str:
         """Export a Google Workspace file."""
         content = self.service.files().export(fileId=file_id, mimeType=mime_type).execute()

@@ -310,6 +310,37 @@ def unstar(file_id: str, as_json: bool) -> None:
         console.print(f"[green]Unstarred: {result['name']}[/green]")
 
 
+@drive.command()
+@click.argument("file_id")
+@click.option("--name", "-n", help="Name for the copy")
+@click.option("--folder", "-f", "folder_id", help="Destination folder ID")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def copy(file_id: str, name: str | None, folder_id: str | None, as_json: bool) -> None:
+    """Copy a file in Drive.
+
+    Creates a copy of the file. Works with all file types including Google Docs,
+    Sheets, and Slides. Useful for templates.
+
+    Examples:
+
+        desk drive copy <file-id>
+
+        desk drive copy <file-id> --name "Copy of Report"
+
+        desk drive copy <file-id> --folder <folder-id>
+    """
+    client = _get_client()
+    result = client.copy(file_id, name=name, folder_id=folder_id)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Copied to: {result['name']}[/green]")
+        console.print(f"[dim]File ID: {result['id']}[/dim]")
+        if result.get("webViewLink"):
+            console.print(f"[dim]{result['webViewLink']}[/dim]")
+
+
 def _print_file_table(files: list[dict]) -> None:
     """Print a list of Drive files as a table."""
     table = Table(show_header=True)
