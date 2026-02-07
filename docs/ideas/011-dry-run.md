@@ -1,11 +1,11 @@
 ---
 id: 011
 title: Dry Run Mode
-status: idea
+status: implemented
 effort: S
 value: Preview actions without executing - safer automation
 created: 2025-02-06
-updated: 2026-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -59,3 +59,36 @@ Applies to all desk services, not just mail:
 - `desk drive trash --dry-run`
 - `desk cal delete --dry-run`
 - `desk sheets clear --dry-run`
+
+## Implementation (2026-02-07)
+
+Added `--dry-run` flag to mail action commands:
+
+**Batch operations:**
+- `archive`, `trash`, `label`, `remove-label`, `modify`
+- `mark-read`, `mark-unread`, `star`, `unstar`
+
+**Send operations:**
+- `send`, `reply`, `forward`
+
+```bash
+# Preview batch operation
+desk mail archive ID1 ID2 ID3 --dry-run
+# Output: Would archive 3 message(s)
+
+desk mail archive ID1 ID2 --dry-run --json
+# Output: {"dry_run": true, "action": "archive", "count": 2, "ids": ["ID1", "ID2"]}
+
+# Preview send
+desk mail send --to "user@example.com" --subject "Test" --body "Hi" --dry-run
+# Output: Would send message:
+#   To: user@example.com
+#   Subject: Test
+#   Body: 2 characters
+```
+
+**Decisions made:**
+- Per-command flag (not global) - more explicit, follows Unix conventions
+- No validation of message IDs (skip API call for speed)
+- JSON output includes `dry_run: true` marker
+- Send preview shows recipients, subject, body length (not full body for privacy)

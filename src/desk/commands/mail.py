@@ -110,6 +110,7 @@ def read(message_id: str, as_json: bool) -> None:
 @click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def send(
     to_addrs: tuple[str, ...],
@@ -119,6 +120,7 @@ def send(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    dry_run: bool,
     as_json: bool,
 ) -> None:
     """Send an email.
@@ -159,6 +161,29 @@ def send(
             sys.exit(1)
     else:  # from_stdin
         body = sys.stdin.read()
+
+    if dry_run:
+        preview = {
+            "dry_run": True,
+            "action": "send",
+            "to": list(to_addrs),
+            "cc": list(cc_addrs) if cc_addrs else [],
+            "bcc": list(bcc_addrs) if bcc_addrs else [],
+            "subject": subject,
+            "body_preview": body[:200] + "..." if len(body) > 200 else body,
+        }
+        if as_json:
+            print(json.dumps(preview, indent=2))
+        else:
+            console.print(f"[yellow]Would send message:[/yellow]")
+            console.print(f"  To: {', '.join(to_addrs)}")
+            if cc_addrs:
+                console.print(f"  CC: {', '.join(cc_addrs)}")
+            if bcc_addrs:
+                console.print(f"  BCC: {', '.join(bcc_addrs)}")
+            console.print(f"  Subject: {subject}")
+            console.print(f"  Body: {len(body)} characters")
+        return
 
     client = _get_client()
     result = client.send(
@@ -217,6 +242,7 @@ def _get_body(
 @click.option("--body", "-b", "body_text", default=None, help="Reply body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def reply(
     message_id: str,
@@ -224,6 +250,7 @@ def reply(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    dry_run: bool,
     as_json: bool,
 ) -> None:
     """Reply to a message.
@@ -237,6 +264,21 @@ def reply(
         echo "Response" | desk mail reply MESSAGE_ID --stdin
     """
     body = _get_body(body_text, body_file, from_stdin)
+
+    if dry_run:
+        action = "reply-all" if reply_all else "reply"
+        preview = {
+            "dry_run": True,
+            "action": action,
+            "message_id": message_id,
+            "body_preview": body[:200] + "..." if len(body) > 200 else body,
+        }
+        if as_json:
+            print(json.dumps(preview, indent=2))
+        else:
+            console.print(f"[yellow]Would {action} to message {message_id}[/yellow]")
+            console.print(f"  Body: {len(body)} characters")
+        return
 
     client = _get_client()
     result = client.reply(message_id, body=body, reply_all=reply_all)
@@ -255,6 +297,7 @@ def reply(
 @click.option("--body", "-b", "body_text", default=None, help="Additional message (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read additional message from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read additional message from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def forward(
     message_id: str,
@@ -262,6 +305,7 @@ def forward(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    dry_run: bool,
     as_json: bool,
 ) -> None:
     """Forward a message.
@@ -273,6 +317,22 @@ def forward(
         desk mail forward MESSAGE_ID --to "user@example.com" --body "FYI - see below"
     """
     body = _get_body(body_text, body_file, from_stdin, required=False)
+
+    if dry_run:
+        preview = {
+            "dry_run": True,
+            "action": "forward",
+            "message_id": message_id,
+            "to": list(to_addrs),
+            "body_preview": body[:200] + "..." if body and len(body) > 200 else body,
+        }
+        if as_json:
+            print(json.dumps(preview, indent=2))
+        else:
+            console.print(f"[yellow]Would forward message {message_id} to {', '.join(to_addrs)}[/yellow]")
+            if body:
+                console.print(f"  Additional note: {len(body)} characters")
+        return
 
     client = _get_client()
     result = client.forward(message_id, to=list(to_addrs), body=body)
@@ -541,8 +601,9 @@ def create_label(name: str, as_json: bool) -> None:
 @click.argument("label_name")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Add a label to messages.
 
     Examples:
@@ -554,6 +615,13 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_json: b
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "label", "label": label_name, "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would add label '{label_name}' to {len(ids)} message(s)[/yellow]")
         return
 
     client = _get_client()
@@ -572,8 +640,9 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_json: b
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def archive(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Archive messages (remove from inbox).
 
     Examples:
@@ -585,6 +654,13 @@ def archive(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "archive", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would archive {len(ids)} message(s)[/yellow]")
         return
 
     client = _get_client()
@@ -599,8 +675,9 @@ def archive(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
 @mail.command("mark-read")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mark_read(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Mark messages as read.
 
     Examples:
@@ -610,6 +687,13 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "mark-read", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would mark {len(ids)} message(s) as read[/yellow]")
         return
 
     client = _get_client()
@@ -624,8 +708,9 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
 @mail.command("mark-unread")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mark_unread(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Mark messages as unread.
 
     Examples:
@@ -635,6 +720,13 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> Non
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "mark-unread", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would mark {len(ids)} message(s) as unread[/yellow]")
         return
 
     client = _get_client()
@@ -649,8 +741,9 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> Non
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def trash(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Move messages to trash.
 
     Examples:
@@ -660,6 +753,13 @@ def trash(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "trash", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would move {len(ids)} message(s) to trash[/yellow]")
         return
 
     client = _get_client()
@@ -710,8 +810,9 @@ def unread(max_results: int, as_json: bool) -> None:
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def star(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Star messages.
 
     Examples:
@@ -721,6 +822,13 @@ def star(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "star", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would star {len(ids)} message(s)[/yellow]")
         return
 
     client = _get_client()
@@ -735,8 +843,9 @@ def star(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def unstar(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Remove star from messages.
 
     Examples:
@@ -746,6 +855,13 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "unstar", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would unstar {len(ids)} message(s)[/yellow]")
         return
 
     client = _get_client()
@@ -761,8 +877,9 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
 @click.argument("label_name")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
+def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
     """Remove a label from messages.
 
     Examples:
@@ -772,6 +889,13 @@ def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_
     ids = _collect_ids(message_ids, stdin)
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "remove-label", "label": label_name, "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would remove label '{label_name}' from {len(ids)} message(s)[/yellow]")
         return
 
     client = _get_client()
@@ -795,12 +919,14 @@ def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, as_
     "--remove-label", "-r", "remove_labels", multiple=True, help="Label to remove (repeatable)"
 )
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def modify(
     message_ids: tuple[str, ...],
     add_labels: tuple[str],
     remove_labels: tuple[str],
     stdin: bool,
+    dry_run: bool,
     as_json: bool,
 ) -> None:
     """Modify message labels (generic operation).
@@ -823,18 +949,25 @@ def modify(
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    changes = []
+    if add_labels:
+        changes.append(f"+{', +'.join(add_labels)}")
+    if remove_labels:
+        changes.append(f"-{', -'.join(remove_labels)}")
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would modify {len(ids)} message(s): {' '.join(changes)}[/yellow]")
+        return
+
     client = _get_client()
     client.batch_modify(
         ids,
         add_labels=list(add_labels) if add_labels else None,
         remove_labels=list(remove_labels) if remove_labels else None,
     )
-
-    changes = []
-    if add_labels:
-        changes.append(f"+{', +'.join(add_labels)}")
-    if remove_labels:
-        changes.append(f"-{', -'.join(remove_labels)}")
 
     if as_json:
         print(json.dumps({"action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
