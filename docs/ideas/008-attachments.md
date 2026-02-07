@@ -1,11 +1,11 @@
 ---
 id: 008
 title: Attachment Handling
-status: idea
+status: implemented
 effort: M
 value: Download and process email attachments from CLI
 created: 2025-02-06
-updated: 2026-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -60,3 +60,28 @@ M - Gmail API attachment handling requires fetching message parts, base64 decodi
 - Gmail API: attachments are in `message.payload.parts[].body.attachmentId`
 - Need `users.messages.attachments.get` to fetch attachment data
 - Attachments are base64 encoded
+
+## Implementation (2026-02-07)
+
+Implemented three commands:
+
+```bash
+# List attachments (shows filename, type, size)
+desk mail attachments MESSAGE_ID
+desk mail attachments MESSAGE_ID --json
+
+# Download single attachment
+desk mail attachment MESSAGE_ID "report.pdf" --output report.pdf
+desk mail attachment MESSAGE_ID "data.csv" | head -5     # pipe to stdout
+
+# Download all attachments
+desk mail download-attachments MESSAGE_ID
+desk mail download-attachments MESSAGE_ID --output-dir ./downloads/
+```
+
+**Decisions made:**
+- `attachments` for list, `attachment` for single, `download-attachments` for bulk
+- Without `--output`, `attachment` writes binary to stdout for piping
+- `download-attachments` handles filename collisions by appending `_1`, `_2`, etc.
+- No size limits/warnings (user can check size with `attachments` first)
+- Batch download from multiple messages not implemented (can compose with shell)

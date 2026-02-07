@@ -52,6 +52,9 @@ desk (CLI entry point)
 │   ├── draft send     → Send a draft
 │   ├── draft delete   → Delete a draft
 │   ├── draft update   → Update a draft
+│   ├── attachments    → List attachments
+│   ├── attachment     → Download single attachment
+│   ├── download-attachments → Download all attachments
 │   ├── unread         → List unread messages
 │   ├── labels         → List available labels
 │   ├── create-label   → Create a new label

@@ -533,6 +533,91 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
+    # -------------------------------------------------------------------------
+    # Attachments
+    # -------------------------------------------------------------------------
+
+    def list_attachments(self, message_id: str) -> list[dict]:
+        """List attachments for a message.
+
+        Returns:
+            List of attachment info dicts with filename, mimeType, size, attachmentId
+        """
+        try:
+            message = (
+                self.service.users()
+                .messages()
+                .get(userId=self.user_id, id=message_id, format="full")
+                .execute()
+            )
+            return self._extract_attachments(message.get("payload", {}))
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def get_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """Get attachment data by attachment ID.
+
+        Returns:
+            Raw attachment bytes
+        """
+        try:
+            attachment = (
+                self.service.users()
+                .messages()
+                .attachments()
+                .get(userId=self.user_id, messageId=message_id, id=attachment_id)
+                .execute()
+            )
+            data = attachment.get("data", "")
+            return base64.urlsafe_b64decode(data)
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def get_attachment_by_filename(self, message_id: str, filename: str) -> bytes:
+        """Get attachment data by filename.
+
+        Args:
+            message_id: The message ID
+            filename: The attachment filename to find
+
+        Returns:
+            Raw attachment bytes
+
+        Raises:
+            ValueError: If attachment not found
+        """
+        attachments = self.list_attachments(message_id)
+        for att in attachments:
+            if att["filename"] == filename:
+                return self.get_attachment(message_id, att["attachmentId"])
+
+        available = [a["filename"] for a in attachments]
+        raise ValueError(f"Attachment '{filename}' not found. Available: {available}")
+
+    def _extract_attachments(self, payload: dict, attachments: list | None = None) -> list[dict]:
+        """Recursively extract attachment info from message payload."""
+        if attachments is None:
+            attachments = []
+
+        # Check if this part is an attachment
+        filename = payload.get("filename", "")
+        body = payload.get("body", {})
+        attachment_id = body.get("attachmentId")
+
+        if filename and attachment_id:
+            attachments.append({
+                "filename": filename,
+                "mimeType": payload.get("mimeType", ""),
+                "size": body.get("size", 0),
+                "attachmentId": attachment_id,
+            })
+
+        # Recurse into parts
+        for part in payload.get("parts", []):
+            self._extract_attachments(part, attachments)
+
+        return attachments
+
     def remove_label(self, message_id: str, label_name: str) -> None:
         """Remove a label from a message."""
         label_id = self._get_label_id(label_name)

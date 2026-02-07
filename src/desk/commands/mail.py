@@ -556,6 +556,155 @@ def update(
         console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
 
 
+# -----------------------------------------------------------------------------
+# Attachments
+# -----------------------------------------------------------------------------
+
+
+@mail.command()
+@click.argument("message_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def attachments(message_id: str, as_json: bool) -> None:
+    """List attachments for a message.
+
+    Examples:
+
+        desk mail attachments MESSAGE_ID
+
+        desk mail attachments MESSAGE_ID --json
+    """
+    client = _get_client()
+    att_list = client.list_attachments(message_id)
+
+    if as_json:
+        print(json.dumps(att_list, indent=2))
+        return
+
+    if not att_list:
+        console.print("No attachments.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Filename", width=40)
+    table.add_column("Type", width=25)
+    table.add_column("Size", width=10, justify="right")
+
+    for att in att_list:
+        size = att.get("size", 0)
+        if size > 1024 * 1024:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+        elif size > 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size} B"
+        table.add_row(
+            att.get("filename", ""),
+            att.get("mimeType", ""),
+            size_str,
+        )
+
+    console.print(table)
+
+
+@mail.command()
+@click.argument("message_id")
+@click.argument("filename")
+@click.option("--output", "-o", "output_path", default=None, help="Save to file instead of stdout")
+def attachment(message_id: str, filename: str, output_path: str | None) -> None:
+    """Download a single attachment.
+
+    Without --output, writes binary data to stdout (for piping).
+    With --output, saves to the specified file.
+
+    Examples:
+
+        desk mail attachment MESSAGE_ID "report.pdf" --output report.pdf
+
+        desk mail attachment MESSAGE_ID "data.csv" | head -5
+
+        desk mail attachment MESSAGE_ID "image.png" | base64
+    """
+    client = _get_client()
+
+    try:
+        data = client.get_attachment_by_filename(message_id, filename)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if output_path:
+        try:
+            with open(output_path, "wb") as f:
+                f.write(data)
+            console.print(f"[green]Saved {filename} to {output_path}[/green]")
+            console.print(f"[dim]{len(data)} bytes[/dim]")
+        except OSError as e:
+            console.print(f"[red]Error writing file: {e}[/red]")
+            sys.exit(1)
+    else:
+        # Write to stdout as binary
+        sys.stdout.buffer.write(data)
+
+
+@mail.command("download-attachments")
+@click.argument("message_id")
+@click.option("--output-dir", "-o", "output_dir", default=".", help="Directory to save files")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def download_attachments(message_id: str, output_dir: str, as_json: bool) -> None:
+    """Download all attachments from a message.
+
+    Examples:
+
+        desk mail download-attachments MESSAGE_ID
+
+        desk mail download-attachments MESSAGE_ID --output-dir ./downloads/
+    """
+    import os
+
+    client = _get_client()
+    att_list = client.list_attachments(message_id)
+
+    if not att_list:
+        if as_json:
+            print(json.dumps({"downloaded": [], "count": 0}))
+        else:
+            console.print("No attachments to download.")
+        return
+
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    downloaded = []
+    for att in att_list:
+        filename = att["filename"]
+        attachment_id = att["attachmentId"]
+
+        # Handle filename collisions
+        output_path = os.path.join(output_dir, filename)
+        counter = 1
+        base, ext = os.path.splitext(filename)
+        while os.path.exists(output_path):
+            output_path = os.path.join(output_dir, f"{base}_{counter}{ext}")
+            counter += 1
+
+        data = client.get_attachment(message_id, attachment_id)
+        with open(output_path, "wb") as f:
+            f.write(data)
+
+        downloaded.append({
+            "filename": filename,
+            "path": output_path,
+            "size": len(data),
+        })
+
+    if as_json:
+        print(json.dumps({"downloaded": downloaded, "count": len(downloaded)}))
+    else:
+        console.print(f"[green]Downloaded {len(downloaded)} attachment(s)[/green]")
+        for d in downloaded:
+            console.print(f"  {d['path']} ({d['size']} bytes)")
+
+
 @mail.command()
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def labels(as_json: bool) -> None:

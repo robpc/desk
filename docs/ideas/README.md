@@ -33,6 +33,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 005 | [Send Command](005-send-command.md) | implemented | M | Complete read/write cycle |
 | 006 | [Reply and Forward](006-reply-forward.md) | implemented | M | Respond to emails without leaving CLI |
 | 007 | [Drafts Management](007-drafts.md) | implemented | M | Compose now, review/send later |
+| 008 | [Attachment Handling](008-attachments.md) | implemented | M | Download and process attachments |
 | 009 | [Mark Unread Command](009-mark-unread.md) | implemented | S | Complete symmetry with mark-read |
 | 011 | [Dry Run Mode](011-dry-run.md) | implemented | S | Preview actions without executing |
 
