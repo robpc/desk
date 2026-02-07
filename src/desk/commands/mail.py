@@ -1258,6 +1258,144 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bo
         console.print(f"[green]Unstarred {len(ids)} message(s)[/green]")
 
 
+@mail.command()
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+    """Report messages as spam.
+
+    Moves messages to spam folder.
+
+    Examples:
+
+        desk mail spam ID1 ID2 ID3
+
+        desk mail search "from:suspicious" --json | jq -r '.[].id' | desk mail spam --stdin
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "spam", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would report {len(ids)} message(s) as spam[/yellow]")
+        return
+
+    client = _get_client()
+    client.batch_modify(ids, add_labels=["SPAM"], remove_labels=["INBOX"])
+
+    if as_json:
+        print(json.dumps({"action": "spam", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Reported {len(ids)} message(s) as spam[/green]")
+
+
+@mail.command("not-spam")
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+    """Mark messages as not spam.
+
+    Moves messages from spam folder to inbox.
+
+    Examples:
+
+        desk mail not-spam ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "not-spam", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would mark {len(ids)} message(s) as not spam[/yellow]")
+        return
+
+    client = _get_client()
+    client.batch_modify(ids, add_labels=["INBOX"], remove_labels=["SPAM"])
+
+    if as_json:
+        print(json.dumps({"action": "not-spam", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Marked {len(ids)} message(s) as not spam[/green]")
+
+
+@mail.command()
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+    """Mark messages as important.
+
+    Examples:
+
+        desk mail important ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "important", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would mark {len(ids)} message(s) as important[/yellow]")
+        return
+
+    client = _get_client()
+    client.batch_modify(ids, add_labels=["IMPORTANT"])
+
+    if as_json:
+        print(json.dumps({"action": "important", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Marked {len(ids)} message(s) as important[/green]")
+
+
+@mail.command("not-important")
+@click.argument("message_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+    """Remove important marker from messages.
+
+    Examples:
+
+        desk mail not-important ID1 ID2 ID3
+    """
+    ids = _collect_ids(message_ids, stdin)
+    if not ids:
+        console.print("[yellow]No message IDs provided.[/yellow]")
+        return
+
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "not-important", "count": len(ids), "ids": ids}))
+        else:
+            console.print(f"[yellow]Would remove important from {len(ids)} message(s)[/yellow]")
+        return
+
+    client = _get_client()
+    client.batch_modify(ids, remove_labels=["IMPORTANT"])
+
+    if as_json:
+        print(json.dumps({"action": "not-important", "count": len(ids), "ids": ids}))
+    else:
+        console.print(f"[green]Removed important from {len(ids)} message(s)[/green]")
+
+
 @mail.command("remove-label")
 @click.argument("label_name")
 @click.argument("message_ids", nargs=-1)

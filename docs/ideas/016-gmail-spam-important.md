@@ -1,7 +1,7 @@
 ---
 id: "016"
 title: Gmail Spam and Important Markers
-status: idea
+status: implemented
 effort: S
 value: Complete message classification primitives
 created: 2026-02-07
