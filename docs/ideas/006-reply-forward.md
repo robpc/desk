@@ -1,11 +1,11 @@
 ---
 id: 006
 title: Reply and Forward
-status: idea
+status: implemented
 effort: M
 value: Respond to emails without leaving CLI
 created: 2025-02-06
-updated: 2026-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -55,3 +55,35 @@ M - Building on send infrastructure, but threading and quoting add complexity.
 ## Notes
 
 Depends on send command (Idea 005) being implemented first.
+
+## Implementation (2026-02-07)
+
+Implemented both reply and forward commands:
+
+```bash
+# Reply to sender
+desk mail reply MESSAGE_ID --body "Thanks!"
+
+# Reply to all (sender + To + CC)
+desk mail reply MESSAGE_ID --all --body "Sounds good"
+
+# Forward with optional note
+desk mail forward MESSAGE_ID --to "colleague@example.com"
+desk mail forward MESSAGE_ID --to "user@example.com" --body "FYI - see below"
+
+# Body from stdin or file
+echo "Response" | desk mail reply MESSAGE_ID --stdin
+desk mail reply MESSAGE_ID --body-file response.txt
+```
+
+**Technical implementation:**
+- Reply sets `In-Reply-To` and `References` headers for proper threading
+- Reply uses `Reply-To` header if present, otherwise `From`
+- Reply sends with `threadId` to keep messages in same Gmail thread
+- Forward includes quoted original with standard Gmail-style header block
+- Forward creates new thread (no threadId)
+
+**Decisions made:**
+- No quoted original in reply body (keeps it simple, user can add context)
+- Attachments on forward not included (separate idea 008)
+- Reply defaults to sender only; use `--all` for reply-all

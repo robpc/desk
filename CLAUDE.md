@@ -44,6 +44,8 @@ desk (CLI entry point)
 │   ├── search         → List messages matching query
 │   ├── read           → Display message content
 │   ├── send           → Send an email
+│   ├── reply          → Reply to a message
+│   ├── forward        → Forward a message
 │   ├── unread         → List unread messages
 │   ├── labels         → List available labels
 │   ├── create-label   → Create a new label

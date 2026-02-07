@@ -176,6 +176,114 @@ def send(
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
 
 
+def _get_body(
+    body_text: str | None,
+    body_file: str | None,
+    from_stdin: bool,
+    required: bool = True,
+) -> str:
+    """Get body content from one of the available sources."""
+    body_sources = sum([body_text is not None, body_file is not None, from_stdin])
+
+    if body_sources == 0:
+        if required:
+            console.print("[red]Error: Must provide body via --body, --body-file, or --stdin[/red]")
+            sys.exit(1)
+        return ""
+
+    if body_sources > 1:
+        console.print("[red]Error: Use only one of --body, --body-file, or --stdin[/red]")
+        sys.exit(1)
+
+    if body_text is not None:
+        return body_text
+    elif body_file is not None:
+        try:
+            with open(body_file) as f:
+                return f.read()
+        except FileNotFoundError:
+            console.print(f"[red]Error: File not found: {body_file}[/red]")
+            sys.exit(1)
+        except OSError as e:
+            console.print(f"[red]Error reading file: {e}[/red]")
+            sys.exit(1)
+    else:  # from_stdin
+        return sys.stdin.read()
+
+
+@mail.command()
+@click.argument("message_id")
+@click.option("--all", "-a", "reply_all", is_flag=True, help="Reply to all recipients")
+@click.option("--body", "-b", "body_text", default=None, help="Reply body (plain text)")
+@click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
+@click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def reply(
+    message_id: str,
+    reply_all: bool,
+    body_text: str | None,
+    body_file: str | None,
+    from_stdin: bool,
+    as_json: bool,
+) -> None:
+    """Reply to a message.
+
+    Examples:
+
+        desk mail reply MESSAGE_ID --body "Thanks for the update!"
+
+        desk mail reply MESSAGE_ID --all --body "Sounds good to everyone"
+
+        echo "Response" | desk mail reply MESSAGE_ID --stdin
+    """
+    body = _get_body(body_text, body_file, from_stdin)
+
+    client = _get_client()
+    result = client.reply(message_id, body=body, reply_all=reply_all)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        action = "Replied to all" if reply_all else "Replied to"
+        console.print(f"[green]{action} message[/green]")
+        console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
+
+
+@mail.command()
+@click.argument("message_id")
+@click.option("--to", "-t", "to_addrs", multiple=True, required=True, help="Recipient (repeatable)")
+@click.option("--body", "-b", "body_text", default=None, help="Additional message (plain text)")
+@click.option("--body-file", "-f", "body_file", default=None, help="Read additional message from file")
+@click.option("--stdin", "from_stdin", is_flag=True, help="Read additional message from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def forward(
+    message_id: str,
+    to_addrs: tuple[str, ...],
+    body_text: str | None,
+    body_file: str | None,
+    from_stdin: bool,
+    as_json: bool,
+) -> None:
+    """Forward a message.
+
+    Examples:
+
+        desk mail forward MESSAGE_ID --to "colleague@example.com"
+
+        desk mail forward MESSAGE_ID --to "user@example.com" --body "FYI - see below"
+    """
+    body = _get_body(body_text, body_file, from_stdin, required=False)
+
+    client = _get_client()
+    result = client.forward(message_id, to=list(to_addrs), body=body)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Forwarded message to {', '.join(to_addrs)}[/green]")
+        console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
+
+
 @mail.command()
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def labels(as_json: bool) -> None:

@@ -198,6 +198,138 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
+    def reply(
+        self,
+        message_id: str,
+        body: str,
+        reply_all: bool = False,
+    ) -> dict:
+        """Reply to an email.
+
+        Args:
+            message_id: The message ID to reply to
+            body: Plain text reply body
+            reply_all: If True, reply to all recipients (To + CC)
+
+        Returns:
+            The sent message metadata
+        """
+        # Fetch original message
+        original = self.read(message_id)
+
+        # Determine reply recipient
+        reply_to = original.get("replyTo") or original.get("from", "")
+        to_addrs = [reply_to] if reply_to else []
+
+        cc_addrs = []
+        if reply_all:
+            # Add original To recipients (excluding ourselves)
+            if original.get("to"):
+                to_addrs.extend(self._parse_addresses(original["to"]))
+            # Add original CC recipients
+            if original.get("cc"):
+                cc_addrs = self._parse_addresses(original["cc"])
+
+        # Build subject with Re: prefix
+        subject = original.get("subject", "")
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        # Build MIME message with threading headers
+        message = MIMEText(body)
+        message["to"] = ", ".join(to_addrs)
+        message["subject"] = subject
+
+        if cc_addrs:
+            message["cc"] = ", ".join(cc_addrs)
+
+        # Set threading headers
+        if original.get("messageId"):
+            message["In-Reply-To"] = original["messageId"]
+            refs = original.get("references", "")
+            if refs:
+                message["References"] = f"{refs} {original['messageId']}"
+            else:
+                message["References"] = original["messageId"]
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        try:
+            result = (
+                self.service.users()
+                .messages()
+                .send(
+                    userId=self.user_id,
+                    body={"raw": raw, "threadId": original["threadId"]},
+                )
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def forward(
+        self,
+        message_id: str,
+        to: list[str],
+        body: str = "",
+    ) -> dict:
+        """Forward an email.
+
+        Args:
+            message_id: The message ID to forward
+            to: List of recipient email addresses
+            body: Optional additional message to include before forwarded content
+
+        Returns:
+            The sent message metadata
+        """
+        # Fetch original message
+        original = self.read(message_id)
+
+        # Build subject with Fwd: prefix
+        subject = original.get("subject", "")
+        if not subject.lower().startswith("fwd:"):
+            subject = f"Fwd: {subject}"
+
+        # Build forwarded body with quoted original
+        original_body = original.get("body", "")
+        forward_body = body
+        if forward_body:
+            forward_body += "\n\n"
+        forward_body += "---------- Forwarded message ----------\n"
+        forward_body += f"From: {original.get('from', '')}\n"
+        forward_body += f"Date: {original.get('date', '')}\n"
+        forward_body += f"Subject: {original.get('subject', '')}\n"
+        forward_body += f"To: {original.get('to', '')}\n"
+        if original.get("cc"):
+            forward_body += f"Cc: {original['cc']}\n"
+        forward_body += f"\n{original_body}"
+
+        # Build MIME message
+        message = MIMEText(forward_body)
+        message["to"] = ", ".join(to)
+        message["subject"] = subject
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        try:
+            result = (
+                self.service.users()
+                .messages()
+                .send(userId=self.user_id, body={"raw": raw})
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def _parse_addresses(self, addr_string: str) -> list[str]:
+        """Parse comma-separated email addresses."""
+        if not addr_string:
+            return []
+        return [addr.strip() for addr in addr_string.split(",") if addr.strip()]
+
     def remove_label(self, message_id: str, label_name: str) -> None:
         """Remove a label from a message."""
         label_id = self._get_label_id(label_name)
@@ -322,9 +454,15 @@ class GmailClient:
             "threadId": msg["threadId"],
             "snippet": msg.get("snippet", ""),
             "from": headers.get("From", ""),
+            "to": headers.get("To", ""),
+            "cc": headers.get("Cc", ""),
             "subject": headers.get("Subject", ""),
             "date": headers.get("Date", ""),
             "labelIds": msg.get("labelIds", []),
+            # Headers needed for reply/forward
+            "messageId": headers.get("Message-ID", headers.get("Message-Id", "")),
+            "references": headers.get("References", ""),
+            "replyTo": headers.get("Reply-To", ""),
         }
 
     def _parse_full_message(self, msg: dict) -> dict:
