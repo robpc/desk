@@ -46,6 +46,12 @@ desk (CLI entry point)
 │   ├── send           → Send an email
 │   ├── reply          → Reply to a message
 │   ├── forward        → Forward a message
+│   ├── drafts         → List drafts
+│   ├── draft create   → Create a draft
+│   ├── draft read     → Read a draft
+│   ├── draft send     → Send a draft
+│   ├── draft delete   → Delete a draft
+│   ├── draft update   → Update a draft
 │   ├── unread         → List unread messages
 │   ├── labels         → List available labels
 │   ├── create-label   → Create a new label

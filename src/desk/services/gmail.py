@@ -330,6 +330,209 @@ class GmailClient:
             return []
         return [addr.strip() for addr in addr_string.split(",") if addr.strip()]
 
+    # -------------------------------------------------------------------------
+    # Drafts
+    # -------------------------------------------------------------------------
+
+    def list_drafts(self, max_results: int = 20) -> list[dict]:
+        """List drafts.
+
+        Returns:
+            List of draft summaries with id, message snippet, and headers
+        """
+        try:
+            results = (
+                self.service.users()
+                .drafts()
+                .list(userId=self.user_id, maxResults=max_results)
+                .execute()
+            )
+
+            drafts = results.get("drafts", [])
+
+            # Fetch details for each draft
+            detailed = []
+            for draft in drafts:
+                detail = (
+                    self.service.users()
+                    .drafts()
+                    .get(userId=self.user_id, id=draft["id"], format="metadata")
+                    .execute()
+                )
+                msg = detail.get("message", {})
+                headers = {
+                    h["name"]: h["value"]
+                    for h in msg.get("payload", {}).get("headers", [])
+                }
+                detailed.append({
+                    "id": detail["id"],
+                    "messageId": msg.get("id", ""),
+                    "snippet": msg.get("snippet", ""),
+                    "to": headers.get("To", ""),
+                    "subject": headers.get("Subject", ""),
+                })
+
+            return detailed
+
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def create_draft(
+        self,
+        to: list[str],
+        subject: str,
+        body: str,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+    ) -> dict:
+        """Create a draft email.
+
+        Args:
+            to: List of recipient email addresses
+            subject: Email subject
+            body: Plain text body
+            cc: List of CC recipients
+            bcc: List of BCC recipients
+
+        Returns:
+            The created draft with id
+        """
+        message = MIMEText(body)
+        message["to"] = ", ".join(to)
+        message["subject"] = subject
+
+        if cc:
+            message["cc"] = ", ".join(cc)
+        if bcc:
+            message["bcc"] = ", ".join(bcc)
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        try:
+            result = (
+                self.service.users()
+                .drafts()
+                .create(userId=self.user_id, body={"message": {"raw": raw}})
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def read_draft(self, draft_id: str) -> dict:
+        """Read a draft by ID.
+
+        Returns:
+            Draft with full message content
+        """
+        try:
+            draft = (
+                self.service.users()
+                .drafts()
+                .get(userId=self.user_id, id=draft_id, format="full")
+                .execute()
+            )
+            msg = draft.get("message", {})
+            parsed = self._parse_full_message(msg)
+            parsed["draftId"] = draft["id"]
+            return parsed
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def send_draft(self, draft_id: str) -> dict:
+        """Send a draft.
+
+        Args:
+            draft_id: The draft ID to send
+
+        Returns:
+            The sent message metadata
+        """
+        try:
+            result = (
+                self.service.users()
+                .drafts()
+                .send(userId=self.user_id, body={"id": draft_id})
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def delete_draft(self, draft_id: str) -> None:
+        """Delete a draft.
+
+        Args:
+            draft_id: The draft ID to delete
+        """
+        try:
+            self.service.users().drafts().delete(
+                userId=self.user_id, id=draft_id
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def update_draft(
+        self,
+        draft_id: str,
+        to: list[str] | None = None,
+        subject: str | None = None,
+        body: str | None = None,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+    ) -> dict:
+        """Update a draft.
+
+        Args:
+            draft_id: The draft ID to update
+            to: New recipients (if provided)
+            subject: New subject (if provided)
+            body: New body (if provided)
+            cc: New CC recipients (if provided)
+            bcc: New BCC recipients (if provided)
+
+        Returns:
+            The updated draft
+        """
+        # Fetch existing draft to preserve unchanged fields
+        existing = self.read_draft(draft_id)
+
+        # Use new values or fall back to existing
+        final_to = to if to is not None else self._parse_addresses(existing.get("to", ""))
+        final_subject = subject if subject is not None else existing.get("subject", "")
+        final_body = body if body is not None else existing.get("body", "")
+        final_cc = cc if cc is not None else (
+            self._parse_addresses(existing.get("cc", "")) or None
+        )
+        final_bcc = bcc  # BCC not stored in existing, so only use if provided
+
+        # Build new message
+        message = MIMEText(final_body)
+        message["to"] = ", ".join(final_to) if final_to else ""
+        message["subject"] = final_subject
+
+        if final_cc:
+            message["cc"] = ", ".join(final_cc)
+        if final_bcc:
+            message["bcc"] = ", ".join(final_bcc)
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        try:
+            result = (
+                self.service.users()
+                .drafts()
+                .update(
+                    userId=self.user_id,
+                    id=draft_id,
+                    body={"message": {"raw": raw}},
+                )
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
     def remove_label(self, message_id: str, label_name: str) -> None:
         """Remove a label from a message."""
         label_id = self._get_label_id(label_name)

@@ -32,6 +32,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 003 | [Label Management](003-label-management.md) | partial | S | Complete label workflow without leaving CLI |
 | 005 | [Send Command](005-send-command.md) | implemented | M | Complete read/write cycle |
 | 006 | [Reply and Forward](006-reply-forward.md) | implemented | M | Respond to emails without leaving CLI |
+| 007 | [Drafts Management](007-drafts.md) | implemented | M | Compose now, review/send later |
 | 009 | [Mark Unread Command](009-mark-unread.md) | implemented | S | Complete symmetry with mark-read |
 
 ## Adding an Idea

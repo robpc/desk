@@ -1,11 +1,11 @@
 ---
 id: 007
 title: Drafts Management
-status: idea
+status: implemented
 effort: M
 value: Compose now, review/send later - useful for agent workflows
 created: 2025-02-06
-updated: 2026-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -62,3 +62,34 @@ M - Multiple CRUD operations, but Gmail Drafts API is straightforward.
 
 - Gmail API: `users.drafts.*` endpoints
 - Drafts are tied to messages - a draft contains a message object
+
+## Implementation (2026-02-07)
+
+Implemented full CRUD for drafts:
+
+```bash
+# List drafts
+desk mail drafts
+desk mail drafts --json
+
+# Create a draft
+desk mail draft create --to "user@example.com" --subject "Proposal" --body "..."
+
+# Read a draft
+desk mail draft read DRAFT_ID
+
+# Send a draft
+desk mail draft send DRAFT_ID
+
+# Delete a draft
+desk mail draft delete DRAFT_ID
+
+# Update a draft (preserves unchanged fields)
+desk mail draft update DRAFT_ID --subject "New subject"
+desk mail draft update DRAFT_ID --body "Updated content"
+```
+
+**Decisions made:**
+- Command structure: `desk mail drafts` for list, `desk mail draft <action>` for operations
+- Draft create returns draft ID in output (and in JSON for scripting)
+- Update preserves fields not specified (fetches existing, merges changes)

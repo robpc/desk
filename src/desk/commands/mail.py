@@ -284,6 +284,218 @@ def forward(
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
 
 
+# -----------------------------------------------------------------------------
+# Drafts
+# -----------------------------------------------------------------------------
+
+
+@mail.command()
+@click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def drafts(max_results: int, as_json: bool) -> None:
+    """List drafts.
+
+    Examples:
+
+        desk mail drafts
+
+        desk mail drafts --json
+    """
+    client = _get_client()
+    draft_list = client.list_drafts(max_results=max_results)
+
+    if as_json:
+        print(json.dumps(draft_list, indent=2))
+        return
+
+    if not draft_list:
+        console.print("No drafts.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="dim", width=20)
+    table.add_column("To", width=30)
+    table.add_column("Subject", width=40)
+
+    for d in draft_list:
+        table.add_row(
+            d["id"],
+            d.get("to", "")[:30],
+            d.get("subject", "")[:40],
+        )
+
+    console.print(table)
+
+
+@mail.group()
+def draft() -> None:
+    """Draft operations — create, read, send, delete, update."""
+    pass
+
+
+@draft.command()
+@click.option("--to", "-t", "to_addrs", multiple=True, required=True, help="Recipient (repeatable)")
+@click.option("--cc", "cc_addrs", multiple=True, help="CC recipient (repeatable)")
+@click.option("--bcc", "bcc_addrs", multiple=True, help="BCC recipient (repeatable)")
+@click.option("--subject", "-s", required=True, help="Email subject")
+@click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
+@click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
+@click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def create(
+    to_addrs: tuple[str, ...],
+    cc_addrs: tuple[str, ...],
+    bcc_addrs: tuple[str, ...],
+    subject: str,
+    body_text: str | None,
+    body_file: str | None,
+    from_stdin: bool,
+    as_json: bool,
+) -> None:
+    """Create a draft.
+
+    Examples:
+
+        desk mail draft create --to "user@example.com" --subject "Proposal" --body "..."
+
+        desk mail draft create --to "a@example.com" --subject "Report" --body-file report.txt
+    """
+    body = _get_body(body_text, body_file, from_stdin)
+
+    client = _get_client()
+    result = client.create_draft(
+        to=list(to_addrs),
+        subject=subject,
+        body=body,
+        cc=list(cc_addrs) if cc_addrs else None,
+        bcc=list(bcc_addrs) if bcc_addrs else None,
+    )
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Created draft[/green]")
+        console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
+
+
+@draft.command("read")
+@click.argument("draft_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def draft_read(draft_id: str, as_json: bool) -> None:
+    """Read a draft by ID.
+
+    Examples:
+
+        desk mail draft read DRAFT_ID
+    """
+    client = _get_client()
+    d = client.read_draft(draft_id)
+
+    if as_json:
+        print(json.dumps(d, indent=2))
+        return
+
+    console.print(f"[bold]Draft ID:[/bold] {d.get('draftId', '')}")
+    console.print(f"[bold]To:[/bold] {d.get('to', '')}")
+    if d.get("cc"):
+        console.print(f"[bold]CC:[/bold] {d['cc']}")
+    console.print(f"[bold]Subject:[/bold] {d.get('subject', '')}")
+    console.print()
+    console.print(d.get("body", "(no body)"))
+
+
+@draft.command("send")
+@click.argument("draft_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def draft_send(draft_id: str, as_json: bool) -> None:
+    """Send a draft.
+
+    Examples:
+
+        desk mail draft send DRAFT_ID
+    """
+    client = _get_client()
+    result = client.send_draft(draft_id)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Sent draft[/green]")
+        console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
+
+
+@draft.command("delete")
+@click.argument("draft_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def draft_delete(draft_id: str, as_json: bool) -> None:
+    """Delete a draft.
+
+    Examples:
+
+        desk mail draft delete DRAFT_ID
+    """
+    client = _get_client()
+    client.delete_draft(draft_id)
+
+    if as_json:
+        print(json.dumps({"action": "delete", "draftId": draft_id}))
+    else:
+        console.print(f"[green]Deleted draft {draft_id}[/green]")
+
+
+@draft.command("update")
+@click.argument("draft_id")
+@click.option("--to", "-t", "to_addrs", multiple=True, help="New recipient (repeatable)")
+@click.option("--cc", "cc_addrs", multiple=True, help="New CC recipient (repeatable)")
+@click.option("--bcc", "bcc_addrs", multiple=True, help="New BCC recipient (repeatable)")
+@click.option("--subject", "-s", default=None, help="New subject")
+@click.option("--body", "-b", "body_text", default=None, help="New body (plain text)")
+@click.option("--body-file", "-f", "body_file", default=None, help="Read new body from file")
+@click.option("--stdin", "from_stdin", is_flag=True, help="Read new body from stdin")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def update(
+    draft_id: str,
+    to_addrs: tuple[str, ...],
+    cc_addrs: tuple[str, ...],
+    bcc_addrs: tuple[str, ...],
+    subject: str | None,
+    body_text: str | None,
+    body_file: str | None,
+    from_stdin: bool,
+    as_json: bool,
+) -> None:
+    """Update a draft.
+
+    Only specified fields are updated; others are preserved.
+
+    Examples:
+
+        desk mail draft update DRAFT_ID --subject "New subject"
+
+        desk mail draft update DRAFT_ID --body "Updated content"
+    """
+    # Get body if any body option provided
+    body = None
+    if body_text is not None or body_file is not None or from_stdin:
+        body = _get_body(body_text, body_file, from_stdin)
+
+    client = _get_client()
+    result = client.update_draft(
+        draft_id,
+        to=list(to_addrs) if to_addrs else None,
+        subject=subject,
+        body=body,
+        cc=list(cc_addrs) if cc_addrs else None,
+        bcc=list(bcc_addrs) if bcc_addrs else None,
+    )
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Updated draft[/green]")
+        console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
+
+
 @mail.command()
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def labels(as_json: bool) -> None:
