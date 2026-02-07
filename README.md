@@ -83,29 +83,57 @@ This opens your browser. Log in with your Google account and approve access. Don
 
 ## Commands
 
-### Brief
-
-```bash
-desk brief                   # Morning brief: today's calendar + unread emails
-desk brief --json            # JSON output for piping to other tools
-desk brief --max 10          # Limit unread messages shown
-```
-
 ### Mail (Gmail)
 
 ```bash
+# Search and read
 desk mail search "query"                # Search messages (Gmail search syntax)
 desk mail search "from:boss" --max 10
 desk mail unread                        # Shortcut for search "is:unread"
 desk mail read <id>                     # Read a message
+
+# Send email
+desk mail send --to "user@example.com" --subject "Hello" --body "Message"
+desk mail send --to "a@b.com" --cc "c@d.com" --subject "Update" --body-file notes.txt
+echo "Report" | desk mail send --to "boss@example.com" --subject "Report" --stdin
+
+# Reply and forward
+desk mail reply <id> --body "Thanks!"
+desk mail reply <id> --all --body "Sounds good"  # Reply all
+desk mail forward <id> --to "colleague@example.com" --body "FYI"
+
+# Drafts
+desk mail drafts                        # List drafts
+desk mail draft create --to "..." --subject "..." --body "..."
+desk mail draft read <draft-id>
+desk mail draft send <draft-id>
+desk mail draft delete <draft-id>
+desk mail draft update <draft-id> --body "Updated"
+
+# Attachments
+desk mail attachments <id>              # List attachments
+desk mail attachment <id> "file.pdf" --output file.pdf
+desk mail attachment <id> "data.csv" | head -5   # Pipe to stdout
+desk mail download-attachments <id> --output-dir ./files/
+
+# Labels
 desk mail labels                        # List available labels
+desk mail create-label "Projects/Work"  # Create label (/ for nesting)
+desk mail label <label> <id>...         # Add a label
+desk mail remove-label <label> <id>...  # Remove a label
+
+# Actions
 desk mail archive <id>...               # Archive messages
 desk mail trash <id>...                 # Move to trash
 desk mail mark-read <id>...             # Mark as read
+desk mail mark-unread <id>...           # Mark as unread
 desk mail star <id>...                  # Star messages
-desk mail label <label> <id>...         # Add a label
-desk mail remove-label <label> <id>...  # Remove a label
+desk mail unstar <id>...                # Unstar messages
 desk mail modify <id>... -a Work -r INBOX  # Generic label changes
+
+# Dry run (preview without executing)
+desk mail archive <id> --dry-run
+desk mail send --to "..." --subject "..." --body "..." --dry-run
 ```
 
 ### Drive
