@@ -37,7 +37,6 @@ desk cal today
 
 ```
 desk (CLI entry point)
-├── brief              → Morning brief (calendar + unread emails)
 ├── setup              → Interactive auth setup
 ├── auth login         → OAuth flow, stores tokens
 ├── auth status        → Show current auth state
@@ -98,7 +97,6 @@ Config/Tokens: ~/.desk/
 - `src/desk/cli.py` - Root CLI group, setup, auth commands
 - `src/desk/auth.py` - OAuth flow and token management
 - `src/desk/config.py` - Configuration, paths, scopes
-- `src/desk/commands/brief.py` - Morning brief (cross-service: calendar + gmail)
 - `src/desk/commands/mail.py` - Gmail commands
 - `src/desk/commands/drive.py` - Drive commands
 - `src/desk/commands/sheets.py` - Sheets commands
@@ -163,6 +161,26 @@ Lightweight captures of future work. Use the template at `docs/ideas/_template.m
 4. **Use the tool yourself**: Run commands to verify behavior before declaring done
 
 ## Design Principles
+
+### Toolkit, Not Productivity App
+
+Desk is a toolkit for agents, not a pre-built productivity app. See ADR-003.
+
+**Do NOT add**:
+- Commands that compose multiple services (e.g., "morning brief" combining calendar + email)
+- Commands that encode opinions about user workflows
+- Commands with invented vocabulary not from the underlying services
+
+**Why**: Agents should compose their own workflows from primitives, tailored to each user's needs. If we pre-build workflows, agents will use them instead of thoughtfully composing better, personalized solutions.
+
+**The principle**: Desk provides the vocabulary (service operations). Agents write the sentences (workflows).
+
+### No Invented Vocabulary (ADR-002)
+
+Commands should map to concepts the services themselves expose:
+- `desk cal today` → Calendar's "Day" view (Google's vocabulary)
+- `desk mail unread` → Gmail's "is:unread" (Google's vocabulary)
+- ~~`desk brief`~~ → "Brief" is our invention, not Google's
 
 ### Unix Philosophy
 - Each command does one thing well

@@ -182,14 +182,12 @@ def auth_status(as_json: bool) -> None:
 
 # --- Register subcommand groups ---
 
-from desk.commands.brief import brief  # noqa: E402
 from desk.commands.cal import cal  # noqa: E402
 from desk.commands.docs import docs  # noqa: E402
 from desk.commands.drive import drive  # noqa: E402
 from desk.commands.mail import mail  # noqa: E402
 from desk.commands.sheets import sheets  # noqa: E402
 
-main.add_command(brief)
 main.add_command(mail)
 main.add_command(drive)
 main.add_command(sheets)
