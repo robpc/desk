@@ -83,6 +83,170 @@ def search(query: str, max_results: int, as_json: bool) -> None:
     console.print(table)
 
 
+# -----------------------------------------------------------------------------
+# Threads
+# -----------------------------------------------------------------------------
+
+
+@mail.command()
+@click.argument("query")
+@click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def threads(query: str, max_results: int, as_json: bool) -> None:
+    """Search for threads (conversations).
+
+    Like search, but groups messages by conversation.
+
+    Examples:
+
+        desk mail threads "from:boss"
+
+        desk mail threads "subject:project update" --json
+    """
+    client = _get_client()
+    thread_list = client.search_threads(query, max_results=max_results)
+
+    if as_json:
+        print(json.dumps(thread_list, indent=2))
+        return
+
+    if not thread_list:
+        console.print("No threads found.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Thread ID", style="dim", width=16)
+    table.add_column("From", width=25)
+    table.add_column("Subject", width=35)
+    table.add_column("Msgs", width=4, justify="right")
+    table.add_column("Date", width=18)
+
+    for t in thread_list:
+        table.add_row(
+            t["id"],
+            t.get("from", "")[:25],
+            t.get("subject", "")[:35],
+            str(t.get("messageCount", 0)),
+            t.get("date", "")[:18],
+        )
+
+    console.print(table)
+
+
+@mail.command()
+@click.argument("thread_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def thread(thread_id: str, as_json: bool) -> None:
+    """Read an entire thread (conversation).
+
+    Shows all messages in the thread in chronological order.
+
+    Examples:
+
+        desk mail thread THREAD_ID
+    """
+    client = _get_client()
+    t = client.get_thread(thread_id)
+
+    if as_json:
+        print(json.dumps(t, indent=2))
+        return
+
+    console.print(f"[bold]Thread: {t['id']}[/bold] ({t['messageCount']} messages)")
+    console.print()
+
+    for i, msg in enumerate(t["messages"], 1):
+        console.print(f"[bold cyan]--- Message {i}/{t['messageCount']} ---[/bold cyan]")
+        console.print(f"[bold]From:[/bold] {msg.get('from', '')}")
+        console.print(f"[bold]Date:[/bold] {msg.get('date', '')}")
+        console.print(f"[bold]Subject:[/bold] {msg.get('subject', '')}")
+        console.print()
+        console.print(msg.get("body", "(no body)"))
+        console.print()
+
+
+@mail.command("thread-archive")
+@click.argument("thread_id")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def thread_archive(thread_id: str, dry_run: bool, as_json: bool) -> None:
+    """Archive an entire thread (remove from inbox).
+
+    Examples:
+
+        desk mail thread-archive THREAD_ID
+    """
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "thread-archive", "threadId": thread_id}))
+        else:
+            console.print(f"[yellow]Would archive thread {thread_id}[/yellow]")
+        return
+
+    client = _get_client()
+    client.modify_thread(thread_id, remove_labels=["INBOX"])
+
+    if as_json:
+        print(json.dumps({"action": "thread-archive", "threadId": thread_id}))
+    else:
+        console.print(f"[green]Archived thread {thread_id}[/green]")
+
+
+@mail.command("thread-label")
+@click.argument("label_name")
+@click.argument("thread_id")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def thread_label(label_name: str, thread_id: str, dry_run: bool, as_json: bool) -> None:
+    """Add a label to an entire thread.
+
+    Examples:
+
+        desk mail thread-label Work THREAD_ID
+    """
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "thread-label", "label": label_name, "threadId": thread_id}))
+        else:
+            console.print(f"[yellow]Would add label '{label_name}' to thread {thread_id}[/yellow]")
+        return
+
+    client = _get_client()
+    client.modify_thread(thread_id, add_labels=[label_name])
+
+    if as_json:
+        print(json.dumps({"action": "thread-label", "label": label_name, "threadId": thread_id}))
+    else:
+        console.print(f"[green]Added label '{label_name}' to thread {thread_id}[/green]")
+
+
+@mail.command("thread-trash")
+@click.argument("thread_id")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def thread_trash(thread_id: str, dry_run: bool, as_json: bool) -> None:
+    """Move an entire thread to trash.
+
+    Examples:
+
+        desk mail thread-trash THREAD_ID
+    """
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "thread-trash", "threadId": thread_id}))
+        else:
+            console.print(f"[yellow]Would move thread {thread_id} to trash[/yellow]")
+        return
+
+    client = _get_client()
+    client.modify_thread(thread_id, add_labels=["TRASH"], remove_labels=["INBOX"])
+
+    if as_json:
+        print(json.dumps({"action": "thread-trash", "threadId": thread_id}))
+    else:
+        console.print(f"[green]Moved thread {thread_id} to trash[/green]")
+
+
 @mail.command()
 @click.argument("message_id")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")

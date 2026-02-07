@@ -92,6 +92,13 @@ desk mail search "from:boss" --max 10
 desk mail unread                        # Shortcut for search "is:unread"
 desk mail read <id>                     # Read a message
 
+# Threads (conversations)
+desk mail threads "from:boss"           # Search by thread
+desk mail thread <thread-id>            # Read entire conversation
+desk mail thread-archive <thread-id>    # Archive entire thread
+desk mail thread-label Work <thread-id> # Label entire thread
+desk mail thread-trash <thread-id>      # Trash entire thread
+
 # Send email
 desk mail send --to "user@example.com" --subject "Hello" --body "Message"
 desk mail send --to "a@b.com" --cc "c@d.com" --subject "Update" --body-file notes.txt

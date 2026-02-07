@@ -42,6 +42,11 @@ desk (CLI entry point)
 ├── auth status        → Show current auth state
 ├── mail               → Gmail operations
 │   ├── search         → List messages matching query
+│   ├── threads        → Search for threads (conversations)
+│   ├── thread         → Read entire thread
+│   ├── thread-archive → Archive entire thread
+│   ├── thread-label   → Add label to entire thread
+│   ├── thread-trash   → Move entire thread to trash
 │   ├── read           → Display message content
 │   ├── send           → Send an email
 │   ├── reply          → Reply to a message

@@ -56,6 +56,123 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
+    # -------------------------------------------------------------------------
+    # Threads
+    # -------------------------------------------------------------------------
+
+    def search_threads(self, query: str, max_results: int = 20) -> list[dict]:
+        """Search for threads matching query.
+
+        Args:
+            query: Gmail search query (same syntax as Gmail search box)
+            max_results: Maximum number of threads to return
+
+        Returns:
+            List of thread summaries with id, snippet, message count
+        """
+        try:
+            results = (
+                self.service.users()
+                .threads()
+                .list(userId=self.user_id, q=query, maxResults=max_results)
+                .execute()
+            )
+
+            threads = results.get("threads", [])
+
+            # Fetch details for each thread
+            detailed = []
+            for thread in threads:
+                detail = (
+                    self.service.users()
+                    .threads()
+                    .get(userId=self.user_id, id=thread["id"], format="metadata")
+                    .execute()
+                )
+                messages = detail.get("messages", [])
+                # Get first message for subject/from
+                first_msg = messages[0] if messages else {}
+                headers = {
+                    h["name"]: h["value"]
+                    for h in first_msg.get("payload", {}).get("headers", [])
+                }
+                detailed.append({
+                    "id": detail["id"],
+                    "snippet": detail.get("snippet", ""),
+                    "messageCount": len(messages),
+                    "from": headers.get("From", ""),
+                    "subject": headers.get("Subject", ""),
+                    "date": headers.get("Date", ""),
+                })
+
+            return detailed
+
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def get_thread(self, thread_id: str) -> dict:
+        """Get a thread with all its messages.
+
+        Args:
+            thread_id: The thread ID
+
+        Returns:
+            Thread dict with id and list of full messages
+        """
+        try:
+            thread = (
+                self.service.users()
+                .threads()
+                .get(userId=self.user_id, id=thread_id, format="full")
+                .execute()
+            )
+
+            messages = []
+            for msg in thread.get("messages", []):
+                messages.append(self._parse_full_message(msg))
+
+            return {
+                "id": thread["id"],
+                "messages": messages,
+                "messageCount": len(messages),
+            }
+
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def modify_thread(
+        self,
+        thread_id: str,
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+    ) -> None:
+        """Modify labels on all messages in a thread.
+
+        Args:
+            thread_id: The thread ID
+            add_labels: Label IDs or names to add
+            remove_labels: Label IDs or names to remove
+        """
+        body = {}
+
+        if add_labels:
+            body["addLabelIds"] = [self._resolve_label(lbl) for lbl in add_labels]
+
+        if remove_labels:
+            body["removeLabelIds"] = [self._resolve_label(lbl) for lbl in remove_labels]
+
+        if not body:
+            return
+
+        try:
+            self.service.users().threads().modify(
+                userId=self.user_id,
+                id=thread_id,
+                body=body,
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
     def read(self, message_id: str) -> dict:
         """Read a full message by ID.
 
