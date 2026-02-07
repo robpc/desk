@@ -1,8 +1,8 @@
 ---
 id: "025"
 title: Pagination Consistency
-status: idea
-effort: M
+status: planned
+effort: S
 value: Uniform pagination across all list commands
 created: 2026-02-07
 updated: 2026-02-07
@@ -16,56 +16,54 @@ adr: null
 List commands have inconsistent pagination support:
 - Some have `--max` (cal commands)
 - Some have no limit option
-- None have `--offset` or cursor-based pagination
-- No way to auto-paginate through all results
-
-This makes it hard to process large result sets or script consistent behavior across services.
+- No way to continue from a previous page for large result sets
 
 ## Sketch
 
-Standardize all list commands with:
+Standardize list commands with:
 
 ```bash
---limit <n>       # Maximum results to return (renamed from --max for consistency)
---offset <n>      # Skip first N results (where API supports)
---page-token <t>  # Continue from previous page (for cursor-based APIs)
---all             # Auto-paginate and return all results (with reasonable safeguards)
+--max <n>         # Maximum results to return (existing)
+--limit <n>       # Alias for --max (consistency)
+--page-token <t>  # Continue from previous page (cursor-based APIs only)
 ```
 
-Commands affected:
-- `desk mail search` - add --limit, --offset, --all
-- `desk mail threads` - add --limit, --offset, --all
-- `desk mail labels` - add --limit
-- `desk mail drafts` - add --limit, --offset, --all
-- `desk drive search` - add --limit, --offset, --all
-- `desk drive recent` - already has --max, rename to --limit
-- `desk sheets list-sheets` - add --limit
-- `desk cal today/week/next` - already have --max, rename to --limit
-- `desk cal find` - add --limit
+**Page token APIs** (Gmail, Drive, Calendar):
+- Add `--page-token` to continue from previous results
+- JSON output includes `nextPageToken` when more results exist
 
-## Open Questions
+**Non-paginated APIs** (Sheets list-sheets, Gmail labels):
+- These return all results in one call
+- Only `--max`/`--limit` applies (client-side filtering)
 
-- [ ] Should we rename existing --max to --limit for consistency?
-- [ ] How to handle APIs with different pagination models (offset vs cursor)?
-- [ ] What's a safe default for --all? (prevent accidental huge fetches)
-- [ ] Should --all show progress for large result sets?
+Commands to update:
+- `desk mail search` - add --page-token, include nextPageToken in JSON
+- `desk mail threads` - add --page-token, include nextPageToken in JSON
+- `desk mail drafts` - add --page-token, include nextPageToken in JSON
+- `desk drive search` - add --page-token, include nextPageToken in JSON
+- `desk drive recent` - add --page-token, include nextPageToken in JSON
+- `desk cal today/week/next/find` - add --page-token, include nextPageToken in JSON
+
+## Decisions Made
+
+- [x] Keep `--max` and add `--limit` as synonym (no breaking change)
+- [x] Drop `--offset` - no Google Workspace APIs use offset pagination
+- [x] Drop `--all` - solve when it's actually needed
+- [x] Add `--page-token` only for cursor-based APIs
 
 ## Value Signal
 
 Consistent pagination enables:
+- Processing large result sets page by page
 - Predictable scripting across services
-- Processing large mailboxes/drives
-- Page-by-page processing for memory efficiency
-
-Currently each command works slightly differently.
+- Memory-efficient processing of large mailboxes/drives
 
 ## Effort Guess
 
-**M** - Need to audit all list commands, understand each API's pagination model, and implement consistently. Some APIs use cursors, others use offsets. The `--all` feature needs careful implementation.
+**S** - Add --page-token flag and wire through to existing API calls. Include nextPageToken in JSON output. Straightforward once pattern is established.
 
 ## Notes
 
-- Google APIs use different pagination: Gmail uses page tokens, Drive uses page tokens, Sheets doesn't paginate sheet lists
-- Consider: output format for --all (streaming vs buffered)
-- Breaking change if renaming --max to --limit (deprecation period?)
-- This is infrastructure work that improves all services
+- Google Workspace APIs use cursor-based pagination (page tokens), not offset/limit
+- Sheets metadata and Gmail labels return everything in one call (no pagination needed)
+- Pattern: `--json` output includes `nextPageToken` field when more pages exist
