@@ -341,6 +341,114 @@ def copy(file_id: str, name: str | None, folder_id: str | None, as_json: bool) -
             console.print(f"[dim]{result['webViewLink']}[/dim]")
 
 
+@drive.command()
+@click.argument("file_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def permissions(file_id: str, as_json: bool) -> None:
+    """List permissions on a file.
+
+    Shows who has access to a file and their permission level.
+
+    Examples:
+
+        desk drive permissions <file-id>
+    """
+    client = _get_client()
+    perms = client.list_permissions(file_id)
+
+    if as_json:
+        print(json.dumps(perms, indent=2))
+        return
+
+    if not perms:
+        console.print("No permissions found.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Role", width=12)
+    table.add_column("Type", width=10)
+    table.add_column("Email/Domain", width=35)
+    table.add_column("Name", width=25)
+
+    for perm in perms:
+        email_or_domain = perm.get("emailAddress", perm.get("domain", ""))
+        if perm.get("type") == "anyone":
+            email_or_domain = "(anyone with link)"
+        table.add_row(
+            perm.get("role", ""),
+            perm.get("type", ""),
+            email_or_domain,
+            perm.get("displayName", ""),
+        )
+
+    console.print(table)
+
+
+@drive.command()
+@click.argument("file_id")
+@click.argument("email")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def unshare(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
+    """Remove a user's access to a file.
+
+    Examples:
+
+        desk drive unshare <file-id> bob@example.com
+
+        desk drive unshare <file-id> bob@example.com --dry-run
+    """
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "unshare", "fileId": file_id, "email": email}))
+        else:
+            console.print(f"[yellow]Would remove {email}'s access to file {file_id}[/yellow]")
+        return
+
+    client = _get_client()
+    try:
+        client.unshare(file_id, email)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps({"action": "unshare", "fileId": file_id, "email": email}))
+    else:
+        console.print(f"[green]Removed {email}'s access[/green]")
+
+
+@drive.command("transfer-owner")
+@click.argument("file_id")
+@click.argument("email")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def transfer_owner(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
+    """Transfer ownership of a file.
+
+    The new owner must be in the same Google Workspace domain.
+    You will become an editor after transfer.
+
+    Examples:
+
+        desk drive transfer-owner <file-id> newowner@example.com
+    """
+    if dry_run:
+        if as_json:
+            print(json.dumps({"dry_run": True, "action": "transfer-owner", "fileId": file_id, "newOwner": email}))
+        else:
+            console.print(f"[yellow]Would transfer ownership of file {file_id} to {email}[/yellow]")
+        return
+
+    client = _get_client()
+    result = client.transfer_ownership(file_id, email)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Transferred ownership to {email}[/green]")
+
+
 def _print_file_table(files: list[dict]) -> None:
     """Print a list of Drive files as a table."""
     table = Table(show_header=True)

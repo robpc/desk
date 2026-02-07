@@ -355,6 +355,86 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    def list_permissions(self, file_id: str) -> list[dict]:
+        """List all permissions on a file.
+
+        Args:
+            file_id: The file ID
+
+        Returns:
+            List of permission dicts
+        """
+        try:
+            results = (
+                self.service.permissions()
+                .list(
+                    fileId=file_id,
+                    fields="permissions(id, type, role, emailAddress, displayName, domain)",
+                )
+                .execute()
+            )
+            return results.get("permissions", [])
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
+    def unshare(self, file_id: str, email: str) -> bool:
+        """Remove a user's access to a file.
+
+        Args:
+            file_id: The file ID
+            email: Email address to remove
+
+        Returns:
+            True if permission was removed
+
+        Raises:
+            ValueError: If user not found in permissions
+        """
+        # Find permission by email
+        permissions = self.list_permissions(file_id)
+        permission_id = None
+        for perm in permissions:
+            if perm.get("emailAddress", "").lower() == email.lower():
+                permission_id = perm["id"]
+                break
+
+        if not permission_id:
+            raise ValueError(f"User '{email}' not found in file permissions")
+
+        try:
+            self.service.permissions().delete(
+                fileId=file_id, permissionId=permission_id
+            ).execute()
+            return True
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
+    def transfer_ownership(self, file_id: str, email: str) -> dict:
+        """Transfer ownership of a file to another user.
+
+        Args:
+            file_id: The file ID
+            email: Email address of new owner
+
+        Returns:
+            Updated permission dict
+        """
+        try:
+            # Create new owner permission
+            result = (
+                self.service.permissions()
+                .create(
+                    fileId=file_id,
+                    transferOwnership=True,
+                    body={"type": "user", "role": "owner", "emailAddress": email},
+                    fields="id, role, emailAddress",
+                )
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
     def _export(self, file_id: str, mime_type: str) -> str:
         """Export a Google Workspace file."""
         content = self.service.files().export(fileId=file_id, mimeType=mime_type).execute()

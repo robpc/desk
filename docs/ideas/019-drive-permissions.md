@@ -1,7 +1,7 @@
 ---
 id: "019"
 title: Drive Permissions Management
-status: idea
+status: implemented
 effort: M
 value: Complete the sharing story with view/revoke capabilities
 created: 2026-02-07
