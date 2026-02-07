@@ -239,3 +239,108 @@ class SheetsClient:
             }
         except HttpError as error:
             raise RuntimeError(f"Sheets API error: {error}")
+
+    def list_sheets(self, spreadsheet_id: str) -> list[dict]:
+        """List all sheets (tabs) in a spreadsheet.
+
+        Args:
+            spreadsheet_id: The spreadsheet ID
+
+        Returns:
+            List of sheet info dicts with id, title, index, rowCount, columnCount
+        """
+        try:
+            meta = (
+                self.service.spreadsheets()
+                .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+                .execute()
+            )
+            sheets = []
+            for s in meta.get("sheets", []):
+                props = s.get("properties", {})
+                grid = props.get("gridProperties", {})
+                sheets.append({
+                    "sheetId": props.get("sheetId"),
+                    "title": props.get("title", ""),
+                    "index": props.get("index", 0),
+                    "rowCount": grid.get("rowCount", 0),
+                    "columnCount": grid.get("columnCount", 0),
+                })
+            return sheets
+        except HttpError as error:
+            raise RuntimeError(f"Sheets API error: {error}")
+
+    def add_sheet(
+        self, spreadsheet_id: str, title: str, index: int | None = None
+    ) -> dict:
+        """Add a new sheet (tab) to a spreadsheet.
+
+        Args:
+            spreadsheet_id: The spreadsheet ID
+            title: Name for the new sheet
+            index: Optional position (0-based)
+
+        Returns:
+            New sheet info dict
+        """
+        request = {"addSheet": {"properties": {"title": title}}}
+        if index is not None:
+            request["addSheet"]["properties"]["index"] = index
+
+        try:
+            result = (
+                self.service.spreadsheets()
+                .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [request]})
+                .execute()
+            )
+            reply = result.get("replies", [{}])[0].get("addSheet", {})
+            props = reply.get("properties", {})
+            return {
+                "sheetId": props.get("sheetId"),
+                "title": props.get("title", ""),
+                "index": props.get("index", 0),
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Sheets API error: {error}")
+
+    def delete_sheet(self, spreadsheet_id: str, sheet_id: int) -> None:
+        """Delete a sheet (tab) from a spreadsheet.
+
+        Args:
+            spreadsheet_id: The spreadsheet ID
+            sheet_id: The sheet ID to delete
+        """
+        request = {"deleteSheet": {"sheetId": sheet_id}}
+
+        try:
+            self.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": [request]}
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Sheets API error: {error}")
+
+    def rename_sheet(self, spreadsheet_id: str, sheet_id: int, title: str) -> dict:
+        """Rename a sheet (tab).
+
+        Args:
+            spreadsheet_id: The spreadsheet ID
+            sheet_id: The sheet ID to rename
+            title: New name for the sheet
+
+        Returns:
+            Updated sheet info dict
+        """
+        request = {
+            "updateSheetProperties": {
+                "properties": {"sheetId": sheet_id, "title": title},
+                "fields": "title",
+            }
+        }
+
+        try:
+            self.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": [request]}
+            ).execute()
+            return {"sheetId": sheet_id, "title": title}
+        except HttpError as error:
+            raise RuntimeError(f"Sheets API error: {error}")

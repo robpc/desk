@@ -200,6 +200,123 @@ def clear(spreadsheet_id: str, range_: str, as_json: bool) -> None:
         console.print(f"[green]Cleared {result['clearedRange']}[/green]")
 
 
+@sheets.command("list-sheets")
+@click.argument("spreadsheet_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def list_sheets(spreadsheet_id: str, as_json: bool) -> None:
+    """List all sheets (tabs) in a spreadsheet.
+
+    Examples:
+
+        desk sheets list-sheets <spreadsheet-id>
+    """
+    client = _get_client()
+    sheet_list = client.list_sheets(spreadsheet_id)
+
+    if as_json:
+        print(json.dumps(sheet_list, indent=2))
+        return
+
+    if not sheet_list:
+        console.print("No sheets found.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Sheet ID", width=12)
+    table.add_column("Name", width=30)
+    table.add_column("Index", width=6, justify="right")
+    table.add_column("Rows", width=8, justify="right")
+    table.add_column("Cols", width=8, justify="right")
+
+    for s in sheet_list:
+        table.add_row(
+            str(s["sheetId"]),
+            s["title"],
+            str(s["index"]),
+            str(s["rowCount"]),
+            str(s["columnCount"]),
+        )
+
+    console.print(table)
+
+
+@sheets.command("add-sheet")
+@click.argument("spreadsheet_id")
+@click.option("--name", "-n", required=True, help="Name for the new sheet")
+@click.option("--index", "-i", type=int, help="Position (0-based)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def add_sheet(spreadsheet_id: str, name: str, index: int | None, as_json: bool) -> None:
+    """Add a new sheet (tab) to a spreadsheet.
+
+    Examples:
+
+        desk sheets add-sheet <id> --name "Q2 Data"
+
+        desk sheets add-sheet <id> --name "Summary" --index 0
+    """
+    client = _get_client()
+    result = client.add_sheet(spreadsheet_id, name, index=index)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Added sheet: {result['title']}[/green]")
+        console.print(f"[dim]Sheet ID: {result['sheetId']}[/dim]")
+
+
+@sheets.command("delete-sheet")
+@click.argument("spreadsheet_id")
+@click.option("--sheet-id", type=int, required=True, help="Sheet ID to delete")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, as_json: bool) -> None:
+    """Delete a sheet (tab) from a spreadsheet.
+
+    Examples:
+
+        desk sheets delete-sheet <id> --sheet-id 123456
+
+        desk sheets delete-sheet <id> --sheet-id 123456 --yes
+    """
+    if not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            sys.exit(1)
+        import click as click_module
+        if not click_module.confirm(f"Delete sheet {sheet_id}? This cannot be undone."):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    client = _get_client()
+    client.delete_sheet(spreadsheet_id, sheet_id)
+
+    if as_json:
+        print(json.dumps({"action": "delete-sheet", "sheetId": sheet_id}))
+    else:
+        console.print(f"[green]Deleted sheet {sheet_id}[/green]")
+
+
+@sheets.command("rename-sheet")
+@click.argument("spreadsheet_id")
+@click.option("--sheet-id", type=int, required=True, help="Sheet ID to rename")
+@click.option("--name", "-n", required=True, help="New name for the sheet")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def rename_sheet(spreadsheet_id: str, sheet_id: int, name: str, as_json: bool) -> None:
+    """Rename a sheet (tab).
+
+    Examples:
+
+        desk sheets rename-sheet <id> --sheet-id 123456 --name "New Name"
+    """
+    client = _get_client()
+    result = client.rename_sheet(spreadsheet_id, sheet_id, name)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"[green]Renamed sheet to: {result['title']}[/green]")
+
+
 def _print_values_table(values: list[list]) -> None:
     """Print a 2D values array as a Rich table."""
     if not values:

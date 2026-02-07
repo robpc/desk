@@ -1,7 +1,7 @@
 ---
 id: "021"
 title: Sheets Tab/Sheet Management
-status: idea
+status: implemented
 effort: M
 value: Complete spreadsheet operations with sheet-level control
 created: 2026-02-07
