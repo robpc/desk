@@ -1,6 +1,6 @@
-# Gmail CLI
+# Desk
 
-A command-line tool for managing Gmail. Unix philosophy: simple commands that compose with pipes.
+Google Workspace from the command line — Gmail, Drive, Sheets, Docs, Calendar. Unix philosophy: simple commands that compose with pipes.
 
 ## Quick Start
 
@@ -9,14 +9,14 @@ A command-line tool for managing Gmail. Unix philosophy: simple commands that co
 pip install -e .
 
 # Setup (choose one)
-gmail setup --gcloud                    # Easiest: use gcloud credentials
-gmail setup --credentials creds.json    # Team: use shared OAuth credentials
+desk setup --gcloud                    # Easiest: use gcloud credentials
+desk setup --credentials creds.json    # Team: use shared OAuth credentials
 
 # Use it
-gmail search "from:boss is:unread"
-gmail read <message-id>
-gmail archive <message-id>
-gmail unread                            # List unread messages
+desk mail search "from:boss is:unread"
+desk mail read <message-id>
+desk drive recent
+desk cal today
 ```
 
 ## Setup
@@ -26,7 +26,7 @@ gmail unread                            # List unread messages
 If you have `gcloud` installed and authenticated:
 
 ```bash
-gmail setup --gcloud
+desk setup --gcloud
 ```
 
 That's it. Uses your existing gcloud Application Default Credentials.
@@ -36,7 +36,7 @@ That's it. Uses your existing gcloud Application Default Credentials.
 For teams sharing a Google Cloud project, get the `credentials.json` from your team (e.g., 1Password vault):
 
 ```bash
-gmail setup --credentials ~/Downloads/credentials.json
+desk setup --credentials ~/Downloads/credentials.json
 ```
 
 ### Option C: Create Your Own Credentials
@@ -47,13 +47,11 @@ This takes about 10 minutes the first time.
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or use an existing one)
-3. Note: You can share a project with teammates - add them as Editors
 
-#### 2. Enable Gmail API
+#### 2. Enable APIs
 
 1. Go to **APIs & Services** → **Library**
-2. Search for "Gmail API"
-3. Click **Enable**
+2. Enable: **Gmail API**, **Google Drive API**, **Google Sheets API**, **Google Docs API**, **Google Calendar API**
 
 #### 3. Create OAuth Credentials
 
@@ -61,85 +59,152 @@ This takes about 10 minutes the first time.
 2. Click **Create Credentials** → **OAuth client ID**
 3. If prompted, configure the OAuth consent screen:
    - User type: External (or Internal for Workspace)
-   - App name: "Gmail CLI" (or whatever you like)
-   - Scopes: Add `https://www.googleapis.com/auth/gmail.modify`
+   - App name: "Desk" (or whatever you like)
+   - Scopes: Add Gmail, Drive, Sheets, Docs, Calendar scopes
 4. Application type: **Desktop app**
-5. Name: "Gmail CLI"
+5. Name: "Desk"
 6. Click **Create**
 7. Download the JSON file
 
 #### 4. Install Credentials
 
 ```bash
-mkdir -p ~/.gmail-cli
-mv ~/Downloads/client_secret_*.json ~/.gmail-cli/credentials.json
+mkdir -p ~/.desk
+mv ~/Downloads/client_secret_*.json ~/.desk/credentials.json
 ```
 
 #### 5. Authenticate
 
 ```bash
-gmail auth login
+desk auth login
 ```
 
 This opens your browser. Log in with your Google account and approve access. Done!
 
 ## Commands
 
-### Reading
+### Brief
 
 ```bash
-gmail search "query"      # Search messages (Gmail search syntax)
-gmail search "from:boss is:unread" --max 10
-gmail unread              # Shortcut for search "is:unread"
-gmail read <id>           # Read a message
-gmail labels              # List available labels
+desk brief                   # Morning brief: today's calendar + unread emails
+desk brief --json            # JSON output for piping to other tools
+desk brief --max 10          # Limit unread messages shown
 ```
 
-### Actions
-
-All action commands support **batch operations** - multiple IDs and stdin piping.
+### Mail (Gmail)
 
 ```bash
-gmail archive <id>...             # Archive messages (remove from inbox)
-gmail trash <id>...               # Move to trash
-gmail mark-read <id>...           # Mark as read
-gmail star <id>...                # Star messages
-gmail unstar <id>...              # Remove star
-gmail label <label> <id>...       # Add a label
-gmail remove-label <label> <id>...  # Remove a label
-gmail modify <id>... --add-label X --remove-label Y  # Generic label changes
+desk mail search "query"                # Search messages (Gmail search syntax)
+desk mail search "from:boss" --max 10
+desk mail unread                        # Shortcut for search "is:unread"
+desk mail read <id>                     # Read a message
+desk mail labels                        # List available labels
+desk mail archive <id>...               # Archive messages
+desk mail trash <id>...                 # Move to trash
+desk mail mark-read <id>...             # Mark as read
+desk mail star <id>...                  # Star messages
+desk mail label <label> <id>...         # Add a label
+desk mail remove-label <label> <id>...  # Remove a label
+desk mail modify <id>... -a Work -r INBOX  # Generic label changes
 ```
 
-### Batch Operations
+### Drive
+
+```bash
+desk drive search "name contains 'report'"   # Search files
+desk drive recent --max 10                    # Recently modified files
+desk drive read <file-id>                     # Read file content
+desk drive info <file-id>                     # File metadata
+desk drive upload report.pdf                  # Upload a file
+desk drive upload data.csv --folder <id>      # Upload to specific folder
+desk drive download <file-id>                 # Download to current dir
+desk drive download <file-id> ~/Downloads/    # Download to path
+desk drive mkdir "Project Files"              # Create a folder
+desk drive move <file-id> <folder-id>         # Move file to folder
+desk drive trash <file-id>                    # Move to trash
+desk drive share <file-id> bob@co.com         # Share as writer
+desk drive share <id> bob@co.com --role reader # Share as reader
+desk drive star <file-id>                     # Star a file
+desk drive unstar <file-id>                   # Unstar a file
+```
+
+### Sheets
+
+```bash
+desk sheets read <spreadsheet-id>                    # Read entire first sheet
+desk sheets read <id> --range "Sheet1!A1:C10"        # Read specific range
+desk sheets update-cell <id> "Sheet1!A1" "New value" # Update a cell
+desk sheets create "Q1 Budget"                       # Create spreadsheet
+desk sheets write <id> "Sheet1!A1:B2" '[["A","B"],["1","2"]]'  # Write range
+desk sheets append <id> "Sheet1!A:Z" '[["Alice","30"]]'        # Append rows
+desk sheets clear <id> "Sheet1!A1:C10"               # Clear a range
+```
+
+### Docs
+
+```bash
+desk docs create "Meeting Notes"                       # Create a doc
+desk docs create "Draft" --body "Hello world"          # Create with content
+desk docs read <document-id>                           # Read document
+desk docs update <id> "Appended text"                  # Append text
+desk docs update <id> "New text" --mode prepend        # Prepend text
+desk docs update <id> "Replacement" --mode replace     # Replace all content
+desk docs export <id> report.pdf                       # Export as PDF
+desk docs export <id> notes.txt --format txt           # Export as text
+```
+
+### Calendar
+
+```bash
+desk cal today                    # Today's events
+desk cal week                     # This week's events
+desk cal next --max 5             # Next upcoming events
+desk cal list                     # List all calendars
+desk cal find "standup"           # Search events by text
+desk cal create "Meeting" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00
+desk cal create "Sync" --start ... --end ... -a bob@co.com -a alice@co.com
+desk cal update <event-id> --summary "New Title"
+desk cal update <id> -a newperson@co.com
+desk cal delete <event-id>
+```
+
+### Batch Operations (Mail)
 
 ```bash
 # Multiple IDs
-gmail archive ID1 ID2 ID3
+desk mail archive ID1 ID2 ID3
 
 # Pipe from search
-gmail search "from:notifications" --json | jq -r '.[].id' | gmail archive --stdin
+desk mail search "from:notifications" --json | jq -r '.[].id' | desk mail archive --stdin
 
 # Combine operations with modify
-gmail modify ID1 ID2 --remove-label INBOX --remove-label UNREAD
+desk mail modify ID1 ID2 --remove-label INBOX --remove-label UNREAD
 ```
 
 ### Auth
 
 ```bash
-gmail setup               # Interactive setup guide
-gmail setup --gcloud      # Use gcloud ADC (simplest)
-gmail setup --credentials ~/path/to/credentials.json
+desk setup               # Interactive setup guide
+desk setup --gcloud      # Use gcloud ADC (simplest)
+desk setup --credentials ~/path/to/credentials.json
 
-gmail auth login          # Re-authenticate
-gmail auth status         # Check authentication status
+desk auth login          # Re-authenticate
+desk auth status         # Check authentication status
 ```
 
 ### Output Formats
 
+All commands support `--json` for machine-readable output:
+
 ```bash
-gmail search "is:unread" --json    # JSON output for piping
-gmail archive ID1 ID2 --json       # {"action": "archive", "count": 2, "ids": [...]}
+desk mail search "is:unread" --json
+desk drive recent --json
+desk cal today --json
 ```
+
+## Migrating from gmail-cli
+
+If you previously used `gmail`, Desk will auto-migrate your config from `~/.gmail-cli/` to `~/.desk/` on first run. You'll need to re-authenticate to grant the expanded scopes (Drive, Sheets, Docs, Calendar).
 
 ## Development
 

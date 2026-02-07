@@ -5,7 +5,7 @@ status: idea
 effort: M
 value: Work with email conversations, not just individual messages
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -19,19 +19,19 @@ Gmail groups related messages into threads (conversations). Current CLI operates
 
 ```bash
 # Search returns threads instead of messages
-gmail threads "from:boss"
-gmail threads "subject:project update" --json
+desk mail threads "from:boss"
+desk mail threads "subject:project update" --json
 
 # Read entire thread
-gmail thread <thread-id>
+desk mail thread <thread-id>
 
 # Actions on threads
-gmail archive --thread <thread-id>      # archive all messages in thread
-gmail label "Work" --thread <thread-id> # label all messages
+desk mail archive --thread <thread-id>      # archive all messages in thread
+desk mail label "Work" --thread <thread-id> # label all messages
 
 # Or dedicated commands
-gmail thread-archive <thread-id>
-gmail thread-label "Work" <thread-id>
+desk mail thread-archive <thread-id>
+desk mail thread-label "Work" <thread-id>
 ```
 
 ## Technical Notes

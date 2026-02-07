@@ -5,7 +5,7 @@ status: idea
 effort: S
 value: Preview actions without executing - safer automation
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -19,15 +19,15 @@ Action commands (archive, trash, label, etc.) execute immediately. For automatio
 
 ```bash
 # Preview archive
-gmail archive ID1 ID2 ID3 --dry-run
+desk mail archive ID1 ID2 ID3 --dry-run
 # Output: Would archive 3 messages: ID1, ID2, ID3
 
 # Preview batch operation
-gmail search "from:notifications" --json | jq -r '.[].id' | gmail archive --stdin --dry-run
+desk mail search "from:notifications" --json | jq -r '.[].id' | desk mail archive --stdin --dry-run
 # Output: Would archive 47 messages
 
 # Preview label
-gmail label "Archive" ID1 ID2 --dry-run
+desk mail label "Archive" ID1 ID2 --dry-run
 # Output: Would add label "Archive" to 2 messages
 ```
 
@@ -55,4 +55,7 @@ S - Add flag and conditional to each action command. Mostly copy-paste.
 
 ## Notes
 
-CLAUDE.md already mentions `--dry-run` as part of "Agent Verification Infrastructure". This is fulfilling that vision.
+Applies to all desk services, not just mail:
+- `desk drive trash --dry-run`
+- `desk cal delete --dry-run`
+- `desk sheets clear --dry-run`

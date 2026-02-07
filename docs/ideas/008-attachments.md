@@ -5,7 +5,7 @@ status: idea
 effort: M
 value: Download and process email attachments from CLI
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -19,18 +19,18 @@ Emails often have attachments (PDFs, images, documents). Currently no way to acc
 
 ```bash
 # List attachments for a message
-gmail attachments <message-id>
-gmail attachments <message-id> --json
+desk mail attachments <message-id>
+desk mail attachments <message-id> --json
 
 # Download all attachments
-gmail download <message-id>                    # to current dir
-gmail download <message-id> --output ./files/  # to specific dir
+desk mail download <message-id>                    # to current dir
+desk mail download <message-id> --output ./files/  # to specific dir
 
 # Download specific attachment
-gmail download <message-id> --filename "report.pdf"
+desk mail download <message-id> --filename "report.pdf"
 
 # Pipe attachment to stdout (for processing)
-gmail attachment <message-id> "report.pdf" | pdftotext - -
+desk mail attachment <message-id> "report.pdf" | pdftotext - -
 ```
 
 ## Use Cases

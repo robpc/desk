@@ -5,7 +5,7 @@ status: idea
 effort: M
 value: Complete the read/write cycle - full email management from CLI
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -13,26 +13,26 @@ adr: null
 
 ## Problem
 
-The CLI can read and organize email but cannot send. This is mentioned in CLAUDE.md as a core feature but isn't implemented. Without send, users must switch to web UI or another tool for composing.
+The CLI can read and organize email but cannot send. Without send, users must switch to web UI or another tool for composing.
 
 ## Sketch
 
 ```bash
 # Basic send
-gmail send --to "user@example.com" --subject "Hello" --body "Message body"
+desk mail send --to "user@example.com" --subject "Hello" --body "Message body"
 
 # Multiple recipients
-gmail send --to "a@example.com" --cc "b@example.com" --bcc "c@example.com" \
+desk mail send --to "a@example.com" --cc "b@example.com" --bcc "c@example.com" \
   --subject "Team update" --body "..."
 
 # Body from stdin (for piping)
-echo "Generated report" | gmail send --to "boss@example.com" --subject "Report" --stdin
+echo "Generated report" | desk mail send --to "boss@example.com" --subject "Report" --stdin
 
 # Body from file
-gmail send --to "user@example.com" --subject "Notes" --body-file notes.txt
+desk mail send --to "user@example.com" --subject "Notes" --body-file notes.txt
 
 # Attachments (if implemented)
-gmail send --to "user@example.com" --subject "Files" --attach report.pdf
+desk mail send --to "user@example.com" --subject "Files" --attach report.pdf
 ```
 
 ## Open Questions
@@ -41,11 +41,11 @@ gmail send --to "user@example.com" --subject "Files" --attach report.pdf
 - [ ] Support HTML body or plain text only?
 - [ ] Attachments in scope or separate idea?
 - [ ] `--dry-run` to preview without sending?
-- [ ] Confirmation prompt before sending? (destructive in a different way)
+- [ ] Confirmation prompt before sending? (see Idea 013)
 
 ## Value Signal
 
-Mentioned in CLAUDE.md as core feature. Natural expectation for a "Gmail CLI".
+Natural expectation for an email CLI. Completes the read/write cycle.
 
 ## Effort Guess
 

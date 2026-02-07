@@ -5,7 +5,7 @@ status: idea
 effort: L
 value: Continuous email processing for automation
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -19,16 +19,16 @@ For automation, you often want to continuously process new emails matching a que
 
 ```bash
 # Watch for new emails and print them
-gmail watch "is:unread from:alerts"
+desk mail watch "is:unread from:alerts"
 
 # Watch and execute command for each
-gmail watch "is:unread label:tickets" --exec "process-ticket.sh {id}"
+desk mail watch "is:unread label:tickets" --exec "process-ticket.sh {id}"
 
 # Watch with polling interval
-gmail watch "is:unread" --interval 60  # check every 60 seconds
+desk mail watch "is:unread" --interval 60  # check every 60 seconds
 
 # Watch and pipe to processor
-gmail watch "from:reports" --json | while read -r msg; do process "$msg"; done
+desk mail watch "from:reports" --json | while read -r msg; do process "$msg"; done
 ```
 
 ## Technical Approaches

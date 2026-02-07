@@ -5,7 +5,7 @@ status: idea
 effort: M
 value: Respond to emails without leaving CLI
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -19,16 +19,16 @@ After reading an email, users may want to reply or forward. Currently requires s
 
 ```bash
 # Reply to a message
-gmail reply <message-id> --body "Thanks for the update!"
+desk mail reply <message-id> --body "Thanks for the update!"
 
 # Reply-all
-gmail reply <message-id> --all --body "Sounds good to everyone"
+desk mail reply <message-id> --all --body "Sounds good to everyone"
 
 # Forward
-gmail forward <message-id> --to "colleague@example.com" --body "FYI"
+desk mail forward <message-id> --to "colleague@example.com" --body "FYI"
 
 # Body from stdin
-echo "Automated response" | gmail reply <message-id> --stdin
+echo "Automated response" | desk mail reply <message-id> --stdin
 ```
 
 ## Technical Notes
@@ -46,7 +46,7 @@ echo "Automated response" | gmail reply <message-id> --stdin
 
 ## Value Signal
 
-Natural extension of send. Common workflow: search → read → reply.
+Natural extension of send. Common workflow: search -> read -> reply.
 
 ## Effort Guess
 

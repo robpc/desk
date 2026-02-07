@@ -5,7 +5,7 @@ status: idea
 effort: M
 value: Compose now, review/send later - useful for agent workflows
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -19,23 +19,23 @@ Sometimes you want to compose an email but review it before sending. Agents migh
 
 ```bash
 # Create a draft
-gmail draft create --to "user@example.com" --subject "Proposal" --body "..."
+desk mail draft create --to "user@example.com" --subject "Proposal" --body "..."
 
 # List drafts
-gmail drafts
-gmail drafts --json
+desk mail drafts
+desk mail drafts --json
 
 # Read a draft
-gmail draft read <draft-id>
+desk mail draft read <draft-id>
 
 # Send a draft
-gmail draft send <draft-id>
+desk mail draft send <draft-id>
 
 # Delete a draft
-gmail draft delete <draft-id>
+desk mail draft delete <draft-id>
 
 # Update a draft
-gmail draft update <draft-id> --body "Updated content"
+desk mail draft update <draft-id> --body "Updated content"
 ```
 
 ## Use Cases
@@ -46,7 +46,7 @@ gmail draft update <draft-id> --body "Updated content"
 
 ## Open Questions
 
-- [ ] Command structure: `gmail draft <action>` vs `gmail drafts` (list) + `gmail draft-create`, etc.?
+- [ ] Command structure: `desk mail draft <action>` vs `desk mail drafts` (list)?
 - [ ] How does draft-send interact with send command?
 - [ ] Should draft create return the draft ID for scripting?
 

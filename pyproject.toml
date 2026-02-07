@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "gmail-cli"
-version = "0.1.0"
-description = "Command-line tool for managing Gmail"
+name = "desk"
+version = "0.2.0"
+description = "Google Workspace CLI — Gmail, Drive, Sheets, Docs, Calendar"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -17,7 +17,7 @@ dependencies = [
     "google-api-python-client>=2.0",
     "google-auth-httplib2>=0.1",
     "google-auth-oauthlib>=1.0",
-    "rich>=13.0",  # For nice terminal output
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
@@ -27,10 +27,10 @@ dev = [
 ]
 
 [project.scripts]
-gmail = "gm.cli:main"
+desk = "desk.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gm"]
+packages = ["src/desk"]
 
 [tool.ruff]
 src = ["src"]

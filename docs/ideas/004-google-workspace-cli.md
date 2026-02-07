@@ -1,12 +1,12 @@
 ---
 id: 004
 title: Google Workspace CLI Expansion
-status: idea
+status: adr-created
 effort: L
 value: Leverage shared auth/patterns for Docs, Drive, and other Google APIs
 created: 2025-02-06
-updated: 2025-02-06
-adr: null
+updated: 2026-02-06
+adr: docs/decisions/003-unified-workspace-cli.md
 ---
 
 # Idea 004: Google Workspace CLI Expansion
@@ -48,11 +48,15 @@ gdocs export <doc-id> pdf     # Export to format
 
 ## Open Questions
 
-- [ ] Same repo or separate repos?
-- [ ] Unified CLI (`gw`) vs separate tools with shared auth?
-- [ ] How to render rich doc content to terminal? (Markdown? Plain text?)
-- [ ] Docs API uses batch requests for edits - how to expose this simply?
-- [ ] Which Workspace APIs have enough CLI utility? (Docs, Drive, Calendar, Sheets?)
+- [x] Same repo or separate repos? **Same repo — unified CLI.**
+- [x] Unified CLI (`gw`) vs separate tools with shared auth? **Unified, named `desk` (see ADR-003).**
+- [x] How to render rich doc content to terminal? **Plain text via Docs API export.**
+- [x] Docs API uses batch requests for edits - how to expose this simply? **append/prepend/replace modes.**
+- [x] Which Workspace APIs have enough CLI utility? **All of them: Mail, Drive, Sheets, Docs, Calendar.**
+
+## Resolution
+
+**Implemented in PR #2** (`feature/desk-workspace-cli`). Went with Option A (unified CLI) but named it `desk` instead of `gw` — see ADR-003 for the naming rationale. All five services are live with full CRUD commands plus a cross-service `desk brief` command.
 
 ## Value Signal
 

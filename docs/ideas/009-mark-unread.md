@@ -5,7 +5,7 @@ status: idea
 effort: S
 value: Complete symmetry with mark-read
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-06
 adr: null
 ---
 
@@ -13,14 +13,14 @@ adr: null
 
 ## Problem
 
-We have `mark-read` but no `mark-unread`. Sometimes you read a message but want to mark it unread as a reminder to deal with it later.
+We have `desk mail mark-read` but no `desk mail mark-unread`. Sometimes you read a message but want to mark it unread as a reminder to deal with it later.
 
 ## Sketch
 
 ```bash
-gmail mark-unread <id>
-gmail mark-unread ID1 ID2 ID3           # batch
-gmail search "..." --json | jq -r '.[].id' | gmail mark-unread --stdin
+desk mail mark-unread <id>
+desk mail mark-unread ID1 ID2 ID3           # batch
+desk mail search "..." --json | jq -r '.[].id' | desk mail mark-unread --stdin
 ```
 
 ## Implementation
@@ -47,4 +47,4 @@ S - 15 minutes. Copy mark-read, change label.
 
 ## Notes
 
-Could arguably be part of convenience commands (Idea 001) but that's already implemented. This is a gap that was missed.
+Gap in convenience commands that should be filled.
