@@ -1,0 +1,64 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      skip-dependency-review:
+        required: false
+        type: boolean
+        default: false
+        description: "Whether to skip dependency review"
+
+      skip-codeql:
+        required: false
+        type: boolean
+        default: false
+        description: "Whether to skip CodeQL analysis"
+
+permissions:
+  pull-requests: write
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  dependency-review:
+    if: ${{ (inputs.skip-dependency-review == false) && (github.event_name == 'pull_request') }}
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4.8.3
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          deny-licenses: AGPL-1.0-or-later, EUPL-1.0, EUPL-1.1, EUPL-1.2, OSL-1.0, OSL-1.1, OSL-2.0, OSL-2.1, OSL-3.0
+
+  codeql:
+    if: ${{ inputs.skip-codeql == false }}
+    name: CodeQL
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
+        with:
+          category: "/language:${{ matrix.language }}"
