@@ -1,7 +1,7 @@
 ---
 id: "018"
 title: Calendar Free/Busy Query
-status: idea
+status: implemented
 effort: S
 value: Enable scheduling automation by checking availability
 created: 2026-02-07

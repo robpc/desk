@@ -279,6 +279,50 @@ def find(query: str, max_results: int, as_json: bool) -> None:
     _print_events(events, f"Results for '{query}'")
 
 
+@cal.command()
+@click.argument("emails", nargs=-1, required=True)
+@click.option("--start", required=True, help="Start of time range (ISO 8601)")
+@click.option("--end", required=True, help="End of time range (ISO 8601)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def freebusy(emails: tuple[str, ...], start: str, end: str, as_json: bool) -> None:
+    """Query free/busy information.
+
+    Check availability for one or more people without seeing event details.
+    Returns busy time blocks within the specified range.
+
+    Examples:
+
+        desk cal freebusy alice@example.com --start 2024-01-15T09:00:00 --end 2024-01-15T17:00:00
+
+        desk cal freebusy alice@example.com bob@example.com --start 2024-01-15 --end 2024-01-16
+    """
+    client = _get_client()
+    result = client.freebusy(list(emails), start, end)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Email", width=35)
+    table.add_column("Busy Periods", width=50)
+
+    for email in emails:
+        busy = result.get(email, [])
+        if not busy:
+            periods_str = "(free)"
+        else:
+            periods = []
+            for period in busy:
+                start_time = period.get("start", "")[:16].replace("T", " ")
+                end_time = period.get("end", "")[:16].replace("T", " ")
+                periods.append(f"{start_time} - {end_time}")
+            periods_str = "\n".join(periods)
+        table.add_row(email, periods_str)
+
+    console.print(table)
+
+
 def _print_events(events: list[dict], title: str) -> None:
     """Print events as a table."""
     if not events:

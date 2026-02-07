@@ -288,3 +288,48 @@ class CalendarClient:
             local_tz = datetime.now().astimezone().tzinfo
             dt = dt.replace(tzinfo=local_tz)
         return {"dateTime": dt.isoformat()}
+
+    def freebusy(
+        self, emails: list[str], start: str, end: str
+    ) -> dict[str, list[dict]]:
+        """Query free/busy information for given email addresses.
+
+        Args:
+            emails: List of email addresses to check
+            start: Start of time range (ISO 8601)
+            end: End of time range (ISO 8601)
+
+        Returns:
+            Dict mapping email to list of busy periods.
+            Each busy period is a dict with "start" and "end" keys.
+        """
+        # Parse times to ensure they have timezone info
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end)
+        if start_dt.tzinfo is None:
+            local_tz = datetime.now().astimezone().tzinfo
+            start_dt = start_dt.replace(tzinfo=local_tz)
+        if end_dt.tzinfo is None:
+            local_tz = datetime.now().astimezone().tzinfo
+            end_dt = end_dt.replace(tzinfo=local_tz)
+
+        body = {
+            "timeMin": start_dt.isoformat(),
+            "timeMax": end_dt.isoformat(),
+            "items": [{"id": email} for email in emails],
+        }
+
+        try:
+            result = self.service.freebusy().query(body=body).execute()
+            calendars = result.get("calendars", {})
+
+            # Parse results
+            freebusy_data = {}
+            for email in emails:
+                cal_data = calendars.get(email, {})
+                busy_periods = cal_data.get("busy", [])
+                freebusy_data[email] = busy_periods
+
+            return freebusy_data
+        except HttpError as error:
+            raise RuntimeError(f"Calendar API error: {error}")
