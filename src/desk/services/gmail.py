@@ -198,34 +198,129 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
-    def create_label(self, name: str) -> dict:
+    # Gmail label color presets (background, text)
+    LABEL_COLORS = {
+        "berry": ("#dc3912", "#ffffff"),
+        "red": ("#fa573c", "#ffffff"),
+        "orange": ("#ff9800", "#ffffff"),
+        "yellow": ("#ffad46", "#000000"),
+        "green": ("#16a765", "#ffffff"),
+        "teal": ("#2da2bb", "#ffffff"),
+        "blue": ("#4986e7", "#ffffff"),
+        "purple": ("#a479e2", "#ffffff"),
+        "gray": ("#999999", "#ffffff"),
+        "brown": ("#b99aff", "#000000"),
+    }
+
+    def create_label(
+        self,
+        name: str,
+        color: str | None = None,
+    ) -> dict:
         """Create a new label.
 
         Args:
             name: Label name. Use "/" for nested labels (e.g., "Projects/Orion").
+            color: Optional color name (berry, red, orange, yellow, green, teal, blue, purple, gray, brown).
 
         Returns:
             The created label dict with id, name, etc.
 
         Raises:
-            ValueError: If label already exists.
+            ValueError: If label already exists or color is invalid.
         """
         # Check if label already exists
         existing = self._get_label_id(name)
         if existing:
             raise ValueError(f"Label already exists: {name}")
 
+        # Validate color if provided
+        if color and color.lower() not in self.LABEL_COLORS:
+            valid = ", ".join(sorted(self.LABEL_COLORS.keys()))
+            raise ValueError(f"Invalid color '{color}'. Valid colors: {valid}")
+
+        body = {
+            "name": name,
+            "labelListVisibility": "labelShow",
+            "messageListVisibility": "show",
+        }
+
+        if color:
+            bg, text = self.LABEL_COLORS[color.lower()]
+            body["color"] = {
+                "backgroundColor": bg,
+                "textColor": text,
+            }
+
         try:
             label = (
                 self.service.users()
                 .labels()
-                .create(
+                .create(userId=self.user_id, body=body)
+                .execute()
+            )
+            return label
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def delete_label(self, name: str) -> None:
+        """Delete a label.
+
+        Args:
+            name: Label name to delete.
+
+        Raises:
+            ValueError: If label not found or is a system label.
+        """
+        label_id = self._get_label_id(name)
+        if not label_id:
+            raise ValueError(f"Label not found: {name}")
+
+        # Prevent deleting system labels
+        system_labels = [
+            "INBOX", "SPAM", "TRASH", "UNREAD", "STARRED", "IMPORTANT",
+            "SENT", "DRAFT", "CATEGORY_PERSONAL", "CATEGORY_SOCIAL",
+            "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS",
+        ]
+        if name.upper() in system_labels:
+            raise ValueError(f"Cannot delete system label: {name}")
+
+        try:
+            self.service.users().labels().delete(
+                userId=self.user_id, id=label_id
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def rename_label(self, old_name: str, new_name: str) -> dict:
+        """Rename a label.
+
+        Args:
+            old_name: Current label name.
+            new_name: New label name.
+
+        Returns:
+            The updated label dict.
+
+        Raises:
+            ValueError: If label not found or new name already exists.
+        """
+        label_id = self._get_label_id(old_name)
+        if not label_id:
+            raise ValueError(f"Label not found: {old_name}")
+
+        # Check if new name already exists
+        if self._get_label_id(new_name):
+            raise ValueError(f"Label already exists: {new_name}")
+
+        try:
+            label = (
+                self.service.users()
+                .labels()
+                .patch(
                     userId=self.user_id,
-                    body={
-                        "name": name,
-                        "labelListVisibility": "labelShow",
-                        "messageListVisibility": "show",
-                    },
+                    id=label_id,
+                    body={"name": new_name},
                 )
                 .execute()
             )

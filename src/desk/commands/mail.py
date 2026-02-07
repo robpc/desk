@@ -886,8 +886,9 @@ def labels(as_json: bool) -> None:
 
 @mail.command("create-label")
 @click.argument("name")
+@click.option("--color", "-c", default=None, help="Label color (berry, red, orange, yellow, green, teal, blue, purple, gray, brown)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def create_label(name: str, as_json: bool) -> None:
+def create_label(name: str, color: str | None, as_json: bool) -> None:
     """Create a new label.
 
     Use "/" for nested labels (appears hierarchically in Gmail UI).
@@ -895,19 +896,90 @@ def create_label(name: str, as_json: bool) -> None:
     Examples:
 
         desk mail create-label "Projects/Orion"
+
+        desk mail create-label "Urgent" --color red
     """
     client = _get_client()
 
     try:
-        label = client.create_label(name)
+        label = client.create_label(name, color=color)
     except ValueError as e:
-        console.print(f"[yellow]{e}[/yellow]")
-        return
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
     if as_json:
         print(json.dumps(label, indent=2))
     else:
-        console.print(f"[green]Created label '{name}'[/green]")
+        msg = f"[green]Created label '{name}'"
+        if color:
+            msg += f" (color: {color})"
+        msg += "[/green]"
+        console.print(msg)
+
+
+@mail.command("delete-label")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def delete_label(name: str, yes: bool, as_json: bool) -> None:
+    """Delete a label.
+
+    This removes the label from all messages that have it. Messages are not deleted.
+
+    Examples:
+
+        desk mail delete-label "Old Project"
+
+        desk mail delete-label "Temp" --yes
+    """
+    client = _get_client()
+
+    # Confirm unless --yes flag provided
+    if not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            sys.exit(1)
+        if not click.confirm(f"Delete label '{name}'? This removes it from all messages."):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    try:
+        client.delete_label(name)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps({"action": "delete-label", "name": name}))
+    else:
+        console.print(f"[green]Deleted label '{name}'[/green]")
+
+
+@mail.command("rename-label")
+@click.argument("old_name")
+@click.argument("new_name")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def rename_label(old_name: str, new_name: str, as_json: bool) -> None:
+    """Rename a label.
+
+    Examples:
+
+        desk mail rename-label "Old Name" "New Name"
+
+        desk mail rename-label "Projects/Alpha" "Projects/Beta"
+    """
+    client = _get_client()
+
+    try:
+        label = client.rename_label(old_name, new_name)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps(label, indent=2))
+    else:
+        console.print(f"[green]Renamed '{old_name}' to '{new_name}'[/green]")
 
 
 @mail.command()

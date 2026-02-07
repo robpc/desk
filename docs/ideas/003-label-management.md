@@ -1,11 +1,11 @@
 ---
 id: 003
 title: Label Management
-status: partial
+status: implemented
 effort: S
 value: Complete label workflow without leaving CLI
 created: 2025-02-06
-updated: 2025-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -100,8 +100,30 @@ gmail create-label "Work" --json      # outputs label details
 - Supports nested labels via "/" in name
 - No auto-create on `label` command (per ADR-002: no invented vocabulary)
 
-**Not implemented** (can revisit if needed):
-- `--create` flag on `gmail label`
-- `delete-label` command
-- `rename-label` command
-- Label colors
+## Implementation Update (2026-02-07)
+
+Completed label management with delete, rename, and colors:
+
+```bash
+# Create with color
+desk mail create-label "Urgent" --color red
+desk mail create-label "Projects/Work" --color blue
+
+# Delete a label (removes from all messages, messages not deleted)
+desk mail delete-label "Old Label"
+desk mail delete-label "Temp" --yes  # skip confirmation
+
+# Rename a label
+desk mail rename-label "Old Name" "New Name"
+desk mail rename-label "Projects/Alpha" "Projects/Beta"
+```
+
+**Colors available**: berry, red, orange, yellow, green, teal, blue, purple, gray, brown
+
+**Behavior**:
+- `delete-label` prompts for confirmation (use `--yes` to skip)
+- `delete-label` prevents deleting system labels (INBOX, SPAM, etc.)
+- `rename-label` checks that new name doesn't already exist
+
+**Not implementing**:
+- `--create` flag on `label` command (decided against per earlier discussion)

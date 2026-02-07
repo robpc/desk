@@ -29,7 +29,7 @@ idea → exploring → planned → adr-created → (implemented)
 |----|-------|--------|--------|-------|
 | 001 | [Convenience Commands](001-convenience-commands.md) | implemented | S | QoL shortcuts |
 | 002 | [Batch Operations](002-batch-operations.md) | implemented | M | Bulk efficiency |
-| 003 | [Label Management](003-label-management.md) | partial | S | Complete label workflow without leaving CLI |
+| 003 | [Label Management](003-label-management.md) | implemented | S | Complete label workflow without leaving CLI |
 | 005 | [Send Command](005-send-command.md) | implemented | M | Complete read/write cycle |
 | 006 | [Reply and Forward](006-reply-forward.md) | implemented | M | Respond to emails without leaving CLI |
 | 007 | [Drafts Management](007-drafts.md) | implemented | M | Compose now, review/send later |

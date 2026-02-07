@@ -62,7 +62,9 @@ desk (CLI entry point)
 │   ├── download-attachments → Download all attachments
 │   ├── unread         → List unread messages
 │   ├── labels         → List available labels
-│   ├── create-label   → Create a new label
+│   ├── create-label   → Create a new label (with optional color)
+│   ├── delete-label   → Delete a label
+│   ├── rename-label   → Rename a label
 │   ├── label          → Add label to messages
 │   ├── remove-label   → Remove label from messages
 │   ├── archive        → Archive messages

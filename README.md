@@ -126,6 +126,9 @@ desk mail download-attachments <id> --output-dir ./files/
 # Labels
 desk mail labels                        # List available labels
 desk mail create-label "Projects/Work"  # Create label (/ for nesting)
+desk mail create-label "Urgent" --color red  # Create with color
+desk mail delete-label "Old Label"      # Delete a label (removes from messages)
+desk mail rename-label "Old" "New"      # Rename a label
 desk mail label <label> <id>...         # Add a label
 desk mail remove-label <label> <id>...  # Remove a label
 
