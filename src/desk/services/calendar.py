@@ -126,6 +126,22 @@ class CalendarClient:
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
+    def get_event(self, event_id: str, calendar_id: str = "primary") -> dict:
+        """Get a single event by ID.
+
+        Args:
+            event_id: The event ID
+            calendar_id: Calendar ID
+
+        Returns:
+            Event dict
+        """
+        try:
+            event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            return self._parse_event(event)
+        except HttpError as error:
+            raise RuntimeError(f"Calendar API error: {error}")
+
     def delete(self, event_id: str, calendar_id: str = "primary") -> None:
         """Delete an event.
 
@@ -247,6 +263,7 @@ class CalendarClient:
         """Parse a Calendar API event into a clean dict."""
         start = event.get("start", {})
         end = event.get("end", {})
+        attendees = event.get("attendees", [])
         return {
             "id": event.get("id", ""),
             "summary": event.get("summary", "(no title)"),
@@ -256,6 +273,8 @@ class CalendarClient:
             "description": event.get("description", ""),
             "htmlLink": event.get("htmlLink", ""),
             "status": event.get("status", ""),
+            "attendees": [a.get("email", "") for a in attendees],
+            "attendeeCount": len(attendees),
         }
 
     def _parse_time_input(self, time_str: str) -> dict:

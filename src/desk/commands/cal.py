@@ -155,15 +155,50 @@ def create(
 
 @cal.command()
 @click.argument("event_id")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete(event_id: str, as_json: bool) -> None:
+def delete(event_id: str, yes: bool, as_json: bool) -> None:
     """Delete an event.
+
+    Deleting an event with attendees sends cancellation emails to all attendees.
+    Use --yes to skip confirmation (for scripting).
 
     Examples:
 
         desk cal delete <event-id>
+
+        desk cal delete <event-id> --yes
     """
     client = _get_client()
+
+    # Fetch event details for confirmation
+    try:
+        event = client.get_event(event_id)
+    except RuntimeError:
+        console.print(f"[red]Event not found: {event_id}[/red]")
+        sys.exit(1)
+
+    attendee_count = event.get("attendeeCount", 0)
+
+    # Require confirmation if there are attendees
+    if attendee_count > 0 and not yes:
+        # Check if we're in an interactive terminal
+        if not sys.stdin.isatty():
+            console.print("[red]Error: This event has attendees. Use --yes to confirm deletion in non-interactive mode.[/red]")
+            console.print(f"[yellow]Event: {event.get('summary', '(no title)')}[/yellow]")
+            console.print(f"[yellow]Attendees: {attendee_count}[/yellow]")
+            sys.exit(1)
+
+        console.print(f"[yellow]Event: {event.get('summary', '(no title)')}[/yellow]")
+        console.print(f"[yellow]Start: {event.get('start', '')}[/yellow]")
+        console.print(f"[yellow]Attendees: {attendee_count}[/yellow]")
+        console.print()
+        console.print("[bold red]Deleting this event will send cancellation emails to all attendees.[/bold red]")
+
+        if not click.confirm("Are you sure you want to delete this event?"):
+            console.print("Cancelled.")
+            return
+
     client.delete(event_id)
 
     if as_json:

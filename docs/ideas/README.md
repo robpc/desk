@@ -36,6 +36,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 008 | [Attachment Handling](008-attachments.md) | implemented | M | Download and process attachments |
 | 009 | [Mark Unread Command](009-mark-unread.md) | implemented | S | Complete symmetry with mark-read |
 | 011 | [Dry Run Mode](011-dry-run.md) | implemented | S | Preview actions without executing |
+| 013 | [Safety Confirmations](013-safety-confirmations.md) | implemented | M | Prevent accidental destructive actions |
 
 ## Adding an Idea
 

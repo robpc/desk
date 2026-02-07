@@ -1,11 +1,11 @@
 ---
 id: 013
 title: Safety Confirmations for Destructive Operations
-status: idea
+status: implemented
 effort: M
 value: Prevent accidental destructive actions, especially those affecting others
 created: 2026-02-06
-updated: 2026-02-06
+updated: 2026-02-07
 adr: null
 ---
 
@@ -55,3 +55,30 @@ M - Need to add flag to multiple commands, implement tty detection, handle consi
 ## Notes
 
 Priority is low for most commands (user's own data), but higher for `cal delete` specifically.
+
+## Implementation (2026-02-07)
+
+Implemented confirmation for `desk cal delete`:
+
+```bash
+# Interactive - prompts if event has attendees
+desk cal delete EVENT_ID
+# Shows: Event name, start time, attendee count
+# Warns: "Deleting this event will send cancellation emails to all attendees."
+# Prompts: "Are you sure you want to delete this event? [y/N]"
+
+# Scripted - skips prompt
+desk cal delete EVENT_ID --yes
+```
+
+**Behavior:**
+- Only prompts if event has attendees (no prompt for solo events)
+- Detects non-interactive mode (pipes) and requires `--yes` or fails with clear error
+- Shows event details before prompting so user knows what they're deleting
+- Added `get_event` method to CalendarClient to fetch event details
+- Added `attendees` and `attendeeCount` to event parsing
+
+**Not implemented (can add later if needed):**
+- `desk drive trash` - user's own files, recoverable
+- `desk sheets clear` - user's own data
+- File overwrite protection - separate concern, less urgent
