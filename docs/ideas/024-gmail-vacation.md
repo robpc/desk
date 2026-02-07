@@ -1,7 +1,7 @@
 ---
 id: "024"
 title: Gmail Vacation Responder
-status: idea
+status: implemented
 effort: S
 value: Enable automated out-of-office management
 created: 2026-02-07

@@ -1625,6 +1625,124 @@ def delete_filter(filter_id: str, yes: bool, as_json: bool) -> None:
         console.print(f"[green]Deleted filter {filter_id}[/green]")
 
 
+# -----------------------------------------------------------------------------
+# Vacation Responder
+# -----------------------------------------------------------------------------
+
+
+@mail.command("vacation-status")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def vacation_status(as_json: bool) -> None:
+    """Show vacation auto-reply settings.
+
+    Examples:
+
+        desk mail vacation-status
+
+        desk mail vacation-status --json
+    """
+    client = _get_client()
+    settings = client.get_vacation()
+
+    if as_json:
+        print(json.dumps(settings, indent=2))
+        return
+
+    status = "[green]ENABLED[/green]" if settings["enabled"] else "[dim]DISABLED[/dim]"
+    console.print(f"[bold]Status:[/bold] {status}")
+
+    if settings["enabled"] or settings.get("subject") or settings.get("message"):
+        if settings.get("subject"):
+            console.print(f"[bold]Subject:[/bold] {settings['subject']}")
+        if settings.get("message"):
+            console.print(f"[bold]Message:[/bold]")
+            console.print(settings["message"][:500])
+        if settings.get("startTime"):
+            from datetime import datetime
+            start = datetime.fromtimestamp(settings["startTime"] / 1000)
+            console.print(f"[bold]Start:[/bold] {start.strftime('%Y-%m-%d')}")
+        if settings.get("endTime"):
+            from datetime import datetime
+            end = datetime.fromtimestamp(settings["endTime"] / 1000)
+            console.print(f"[bold]End:[/bold] {end.strftime('%Y-%m-%d')}")
+
+        restrictions = []
+        if settings.get("contactsOnly"):
+            restrictions.append("contacts only")
+        if settings.get("domainOnly"):
+            restrictions.append("domain only")
+        if restrictions:
+            console.print(f"[bold]Restrictions:[/bold] {', '.join(restrictions)}")
+
+
+@mail.command("vacation")
+@click.option("--enable", is_flag=True, help="Enable vacation responder")
+@click.option("--disable", is_flag=True, help="Disable vacation responder")
+@click.option("--message", "-m", help="Auto-reply message")
+@click.option("--subject", "-s", help="Auto-reply subject")
+@click.option("--start", "start_date", help="Start date (YYYY-MM-DD)")
+@click.option("--end", "end_date", help="End date (YYYY-MM-DD)")
+@click.option("--contacts-only", is_flag=True, help="Only reply to contacts")
+@click.option("--domain-only", is_flag=True, help="Only reply to same domain")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def vacation(
+    enable: bool,
+    disable: bool,
+    message: str | None,
+    subject: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    contacts_only: bool,
+    domain_only: bool,
+    as_json: bool,
+) -> None:
+    """Set vacation auto-reply settings.
+
+    Examples:
+
+        desk mail vacation --enable --message "I'm out of office until Monday."
+
+        desk mail vacation --enable --message "On vacation" --start 2024-02-10 --end 2024-02-17
+
+        desk mail vacation --disable
+    """
+    if enable and disable:
+        console.print("[red]Error: Cannot use both --enable and --disable[/red]")
+        sys.exit(1)
+
+    if not enable and not disable and not message and not subject:
+        console.print("[yellow]Nothing to do. Use --enable, --disable, or set message/subject.[/yellow]")
+        return
+
+    # Determine enabled state
+    if disable:
+        enabled = False
+    elif enable:
+        enabled = True
+    else:
+        # If setting message/subject but not explicitly enabling, enable it
+        enabled = True
+
+    client = _get_client()
+    settings = client.set_vacation(
+        enabled=enabled,
+        message=message,
+        subject=subject,
+        start_date=start_date,
+        end_date=end_date,
+        contacts_only=contacts_only,
+        domain_only=domain_only,
+    )
+
+    if as_json:
+        print(json.dumps(settings, indent=2))
+    else:
+        if enabled:
+            console.print("[green]Vacation responder enabled[/green]")
+        else:
+            console.print("[green]Vacation responder disabled[/green]")
+
+
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--add-label", "-a", "add_labels", multiple=True, help="Label to add (repeatable)")

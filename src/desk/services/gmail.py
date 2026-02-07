@@ -1172,3 +1172,98 @@ class GmailClient:
             "action": action,
             "actionSummary": ", ".join(actions) if actions else "(no actions)",
         }
+
+    # -------------------------------------------------------------------------
+    # Vacation Responder
+    # -------------------------------------------------------------------------
+
+    def get_vacation(self) -> dict:
+        """Get vacation auto-reply settings.
+
+        Returns:
+            Vacation settings dict with enabled, subject, message, dates
+        """
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .getVacation(userId=self.user_id)
+                .execute()
+            )
+            return {
+                "enabled": result.get("enableAutoReply", False),
+                "subject": result.get("responseSubject", ""),
+                "message": result.get("responseBodyPlainText", ""),
+                "startTime": result.get("startTime"),
+                "endTime": result.get("endTime"),
+                "contactsOnly": result.get("restrictToContacts", False),
+                "domainOnly": result.get("restrictToDomain", False),
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def set_vacation(
+        self,
+        enabled: bool,
+        message: str | None = None,
+        subject: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        contacts_only: bool = False,
+        domain_only: bool = False,
+    ) -> dict:
+        """Set vacation auto-reply settings.
+
+        Args:
+            enabled: Enable or disable auto-reply
+            message: Auto-reply message (plain text)
+            subject: Auto-reply subject
+            start_date: Start date (YYYY-MM-DD)
+            end_date: End date (YYYY-MM-DD)
+            contacts_only: Only reply to contacts
+            domain_only: Only reply to same domain
+
+        Returns:
+            Updated vacation settings
+        """
+        body = {"enableAutoReply": enabled}
+
+        if message is not None:
+            body["responseBodyPlainText"] = message
+        if subject is not None:
+            body["responseSubject"] = subject
+        if contacts_only:
+            body["restrictToContacts"] = True
+        if domain_only:
+            body["restrictToDomain"] = True
+
+        # Convert dates to epoch milliseconds
+        if start_date:
+            from datetime import datetime
+            dt = datetime.strptime(start_date, "%Y-%m-%d")
+            body["startTime"] = int(dt.timestamp() * 1000)
+        if end_date:
+            from datetime import datetime
+            dt = datetime.strptime(end_date, "%Y-%m-%d")
+            # End of day
+            dt = dt.replace(hour=23, minute=59, second=59)
+            body["endTime"] = int(dt.timestamp() * 1000)
+
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .updateVacation(userId=self.user_id, body=body)
+                .execute()
+            )
+            return {
+                "enabled": result.get("enableAutoReply", False),
+                "subject": result.get("responseSubject", ""),
+                "message": result.get("responseBodyPlainText", ""),
+                "startTime": result.get("startTime"),
+                "endTime": result.get("endTime"),
+                "contactsOnly": result.get("restrictToContacts", False),
+                "domainOnly": result.get("restrictToDomain", False),
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
