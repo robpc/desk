@@ -168,8 +168,9 @@ def thread(thread_id: str, as_json: bool) -> None:
 @mail.command("thread-archive")
 @click.argument("thread_id")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def thread_archive(thread_id: str, dry_run: bool, as_json: bool) -> None:
+def thread_archive(thread_id: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Archive an entire thread (remove from inbox).
 
     Examples:
@@ -179,7 +180,7 @@ def thread_archive(thread_id: str, dry_run: bool, as_json: bool) -> None:
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "thread-archive", "threadId": thread_id}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would archive thread {thread_id}[/yellow]")
         return
 
@@ -188,7 +189,7 @@ def thread_archive(thread_id: str, dry_run: bool, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"action": "thread-archive", "threadId": thread_id}))
-    else:
+    elif not quiet:
         console.print(f"[green]Archived thread {thread_id}[/green]")
 
 
@@ -196,8 +197,9 @@ def thread_archive(thread_id: str, dry_run: bool, as_json: bool) -> None:
 @click.argument("label_name")
 @click.argument("thread_id")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def thread_label(label_name: str, thread_id: str, dry_run: bool, as_json: bool) -> None:
+def thread_label(label_name: str, thread_id: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Add a label to an entire thread.
 
     Examples:
@@ -207,7 +209,7 @@ def thread_label(label_name: str, thread_id: str, dry_run: bool, as_json: bool) 
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "thread-label", "label": label_name, "threadId": thread_id}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would add label '{label_name}' to thread {thread_id}[/yellow]")
         return
 
@@ -216,15 +218,16 @@ def thread_label(label_name: str, thread_id: str, dry_run: bool, as_json: bool) 
 
     if as_json:
         print(json.dumps({"action": "thread-label", "label": label_name, "threadId": thread_id}))
-    else:
+    elif not quiet:
         console.print(f"[green]Added label '{label_name}' to thread {thread_id}[/green]")
 
 
 @mail.command("thread-trash")
 @click.argument("thread_id")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def thread_trash(thread_id: str, dry_run: bool, as_json: bool) -> None:
+def thread_trash(thread_id: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Move an entire thread to trash.
 
     Examples:
@@ -234,7 +237,7 @@ def thread_trash(thread_id: str, dry_run: bool, as_json: bool) -> None:
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "thread-trash", "threadId": thread_id}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would move thread {thread_id} to trash[/yellow]")
         return
 
@@ -243,7 +246,7 @@ def thread_trash(thread_id: str, dry_run: bool, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"action": "thread-trash", "threadId": thread_id}))
-    else:
+    elif not quiet:
         console.print(f"[green]Moved thread {thread_id} to trash[/green]")
 
 
@@ -275,6 +278,7 @@ def read(message_id: str, as_json: bool) -> None:
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def send(
     to_addrs: tuple[str, ...],
@@ -285,6 +289,7 @@ def send(
     body_file: str | None,
     from_stdin: bool,
     dry_run: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Send an email.
@@ -338,7 +343,7 @@ def send(
         }
         if as_json:
             print(json.dumps(preview, indent=2))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would send message:[/yellow]")
             console.print(f"  To: {', '.join(to_addrs)}")
             if cc_addrs:
@@ -360,7 +365,7 @@ def send(
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Sent message to {', '.join(to_addrs)}[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
 
@@ -407,6 +412,7 @@ def _get_body(
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def reply(
     message_id: str,
@@ -415,6 +421,7 @@ def reply(
     body_file: str | None,
     from_stdin: bool,
     dry_run: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Reply to a message.
@@ -439,7 +446,7 @@ def reply(
         }
         if as_json:
             print(json.dumps(preview, indent=2))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would {action} to message {message_id}[/yellow]")
             console.print(f"  Body: {len(body)} characters")
         return
@@ -449,7 +456,7 @@ def reply(
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         action = "Replied to all" if reply_all else "Replied to"
         console.print(f"[green]{action} message[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
@@ -462,6 +469,7 @@ def reply(
 @click.option("--body-file", "-f", "body_file", default=None, help="Read additional message from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read additional message from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def forward(
     message_id: str,
@@ -470,6 +478,7 @@ def forward(
     body_file: str | None,
     from_stdin: bool,
     dry_run: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Forward a message.
@@ -492,7 +501,7 @@ def forward(
         }
         if as_json:
             print(json.dumps(preview, indent=2))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would forward message {message_id} to {', '.join(to_addrs)}[/yellow]")
             if body:
                 console.print(f"  Additional note: {len(body)} characters")
@@ -503,7 +512,7 @@ def forward(
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Forwarded message to {', '.join(to_addrs)}[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
 
@@ -565,6 +574,7 @@ def draft() -> None:
 @click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def create(
     to_addrs: tuple[str, ...],
@@ -574,6 +584,7 @@ def create(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Create a draft.
@@ -597,7 +608,7 @@ def create(
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Created draft[/green]")
         console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
 
@@ -630,8 +641,9 @@ def draft_read(draft_id: str, as_json: bool) -> None:
 
 @draft.command("send")
 @click.argument("draft_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def draft_send(draft_id: str, as_json: bool) -> None:
+def draft_send(draft_id: str, quiet: bool, as_json: bool) -> None:
     """Send a draft.
 
     Examples:
@@ -643,15 +655,16 @@ def draft_send(draft_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Sent draft[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
 
 
 @draft.command("delete")
 @click.argument("draft_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def draft_delete(draft_id: str, as_json: bool) -> None:
+def draft_delete(draft_id: str, quiet: bool, as_json: bool) -> None:
     """Delete a draft.
 
     Examples:
@@ -663,7 +676,7 @@ def draft_delete(draft_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"action": "delete", "draftId": draft_id}))
-    else:
+    elif not quiet:
         console.print(f"[green]Deleted draft {draft_id}[/green]")
 
 
@@ -676,6 +689,7 @@ def draft_delete(draft_id: str, as_json: bool) -> None:
 @click.option("--body", "-b", "body_text", default=None, help="New body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read new body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read new body from stdin")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
     draft_id: str,
@@ -686,6 +700,7 @@ def update(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Update a draft.
@@ -715,7 +730,7 @@ def update(
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Updated draft[/green]")
         console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
 
@@ -887,8 +902,9 @@ def labels(as_json: bool) -> None:
 @mail.command("create-label")
 @click.argument("name")
 @click.option("--color", "-c", default=None, help="Label color (berry, red, orange, yellow, green, teal, blue, purple, gray, brown)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def create_label(name: str, color: str | None, as_json: bool) -> None:
+def create_label(name: str, color: str | None, quiet: bool, as_json: bool) -> None:
     """Create a new label.
 
     Use "/" for nested labels (appears hierarchically in Gmail UI).
@@ -909,7 +925,7 @@ def create_label(name: str, color: str | None, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(label, indent=2))
-    else:
+    elif not quiet:
         msg = f"[green]Created label '{name}'"
         if color:
             msg += f" (color: {color})"
@@ -920,8 +936,9 @@ def create_label(name: str, color: str | None, as_json: bool) -> None:
 @mail.command("delete-label")
 @click.argument("name")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete_label(name: str, yes: bool, as_json: bool) -> None:
+def delete_label(name: str, yes: bool, quiet: bool, as_json: bool) -> None:
     """Delete a label.
 
     This removes the label from all messages that have it. Messages are not deleted.
@@ -951,15 +968,16 @@ def delete_label(name: str, yes: bool, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"action": "delete-label", "name": name}))
-    else:
+    elif not quiet:
         console.print(f"[green]Deleted label '{name}'[/green]")
 
 
 @mail.command("rename-label")
 @click.argument("old_name")
 @click.argument("new_name")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def rename_label(old_name: str, new_name: str, as_json: bool) -> None:
+def rename_label(old_name: str, new_name: str, quiet: bool, as_json: bool) -> None:
     """Rename a label.
 
     Examples:
@@ -978,7 +996,7 @@ def rename_label(old_name: str, new_name: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(label, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Renamed '{old_name}' to '{new_name}'[/green]")
 
 
@@ -987,8 +1005,9 @@ def rename_label(old_name: str, new_name: str, as_json: bool) -> None:
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Add a label to messages.
 
     Examples:
@@ -1005,7 +1024,7 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: b
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "label", "label": label_name, "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would add label '{label_name}' to {len(ids)} message(s)[/yellow]")
         return
 
@@ -1018,7 +1037,7 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: b
 
     if as_json:
         print(json.dumps({"action": "label", "label": label_name, "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Added label '{label_name}' to {len(ids)} message(s)[/green]")
 
 
@@ -1026,8 +1045,9 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: b
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Archive messages (remove from inbox).
 
     Examples:
@@ -1044,7 +1064,7 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: b
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "archive", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would archive {len(ids)} message(s)[/yellow]")
         return
 
@@ -1053,7 +1073,7 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: b
 
     if as_json:
         print(json.dumps({"action": "archive", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Archived {len(ids)} message(s)[/green]")
 
 
@@ -1061,8 +1081,9 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: b
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as read.
 
     Examples:
@@ -1077,7 +1098,7 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json:
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "mark-read", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would mark {len(ids)} message(s) as read[/yellow]")
         return
 
@@ -1086,7 +1107,7 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json:
 
     if as_json:
         print(json.dumps({"action": "mark-read", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as read[/green]")
 
 
@@ -1094,8 +1115,9 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json:
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as unread.
 
     Examples:
@@ -1110,7 +1132,7 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_jso
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "mark-unread", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would mark {len(ids)} message(s) as unread[/yellow]")
         return
 
@@ -1119,7 +1141,7 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_jso
 
     if as_json:
         print(json.dumps({"action": "mark-unread", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as unread[/green]")
 
 
@@ -1127,8 +1149,9 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_jso
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Move messages to trash.
 
     Examples:
@@ -1143,7 +1166,7 @@ def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: boo
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "trash", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would move {len(ids)} message(s) to trash[/yellow]")
         return
 
@@ -1152,7 +1175,7 @@ def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: boo
 
     if as_json:
         print(json.dumps({"action": "trash", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Moved {len(ids)} message(s) to trash[/green]")
 
 
@@ -1196,8 +1219,9 @@ def unread(max_results: int, as_json: bool) -> None:
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Star messages.
 
     Examples:
@@ -1212,7 +1236,7 @@ def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "star", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would star {len(ids)} message(s)[/yellow]")
         return
 
@@ -1221,7 +1245,7 @@ def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool
 
     if as_json:
         print(json.dumps({"action": "star", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Starred {len(ids)} message(s)[/green]")
 
 
@@ -1229,8 +1253,9 @@ def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove star from messages.
 
     Examples:
@@ -1245,7 +1270,7 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bo
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "unstar", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would unstar {len(ids)} message(s)[/yellow]")
         return
 
@@ -1254,7 +1279,7 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bo
 
     if as_json:
         print(json.dumps({"action": "unstar", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Unstarred {len(ids)} message(s)[/green]")
 
 
@@ -1262,8 +1287,9 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bo
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Report messages as spam.
 
     Moves messages to spam folder.
@@ -1282,7 +1308,7 @@ def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "spam", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would report {len(ids)} message(s) as spam[/yellow]")
         return
 
@@ -1291,7 +1317,7 @@ def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool
 
     if as_json:
         print(json.dumps({"action": "spam", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Reported {len(ids)} message(s) as spam[/green]")
 
 
@@ -1299,8 +1325,9 @@ def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as not spam.
 
     Moves messages from spam folder to inbox.
@@ -1317,7 +1344,7 @@ def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: 
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "not-spam", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would mark {len(ids)} message(s) as not spam[/yellow]")
         return
 
@@ -1326,7 +1353,7 @@ def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: 
 
     if as_json:
         print(json.dumps({"action": "not-spam", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as not spam[/green]")
 
 
@@ -1334,8 +1361,9 @@ def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: 
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as important.
 
     Examples:
@@ -1350,7 +1378,7 @@ def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json:
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "important", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would mark {len(ids)} message(s) as important[/yellow]")
         return
 
@@ -1359,7 +1387,7 @@ def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json:
 
     if as_json:
         print(json.dumps({"action": "important", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as important[/green]")
 
 
@@ -1367,8 +1395,9 @@ def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json:
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove important marker from messages.
 
     Examples:
@@ -1383,7 +1412,7 @@ def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_j
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "not-important", "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would remove important from {len(ids)} message(s)[/yellow]")
         return
 
@@ -1392,7 +1421,7 @@ def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_j
 
     if as_json:
         print(json.dumps({"action": "not-important", "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Removed important from {len(ids)} message(s)[/green]")
 
 
@@ -1401,8 +1430,9 @@ def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_j
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, as_json: bool) -> None:
+def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove a label from messages.
 
     Examples:
@@ -1417,7 +1447,7 @@ def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "remove-label", "label": label_name, "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would remove label '{label_name}' from {len(ids)} message(s)[/yellow]")
         return
 
@@ -1431,7 +1461,7 @@ def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry
     if as_json:
         result = {"action": "remove-label", "label": label_name, "count": len(ids), "ids": ids}
         print(json.dumps(result))
-    else:
+    elif not quiet:
         console.print(f"[green]Removed label '{label_name}' from {len(ids)} message(s)[/green]")
 
 
@@ -1539,6 +1569,7 @@ def filter_detail(filter_id: str, as_json: bool) -> None:
 @click.option("--star", is_flag=True, help="Star the message")
 @click.option("--forward", help="Email to forward to")
 @click.option("--never-spam", is_flag=True, help="Never mark as spam")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def create_filter(
     from_addr: str | None,
@@ -1553,6 +1584,7 @@ def create_filter(
     star: bool,
     forward: str | None,
     never_spam: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Create an email filter.
@@ -1590,7 +1622,7 @@ def create_filter(
 
     if as_json:
         print(json.dumps(f, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Created filter[/green]")
         console.print(f"[dim]Filter ID: {f['id']}[/dim]")
 
@@ -1598,8 +1630,9 @@ def create_filter(
 @mail.command("delete-filter")
 @click.argument("filter_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete_filter(filter_id: str, yes: bool, as_json: bool) -> None:
+def delete_filter(filter_id: str, yes: bool, quiet: bool, as_json: bool) -> None:
     """Delete an email filter.
 
     Examples:
@@ -1621,7 +1654,7 @@ def delete_filter(filter_id: str, yes: bool, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"action": "delete-filter", "filterId": filter_id}))
-    else:
+    elif not quiet:
         console.print(f"[green]Deleted filter {filter_id}[/green]")
 
 
@@ -1684,6 +1717,7 @@ def vacation_status(as_json: bool) -> None:
 @click.option("--end", "end_date", help="End date (YYYY-MM-DD)")
 @click.option("--contacts-only", is_flag=True, help="Only reply to contacts")
 @click.option("--domain-only", is_flag=True, help="Only reply to same domain")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def vacation(
     enable: bool,
@@ -1694,6 +1728,7 @@ def vacation(
     end_date: str | None,
     contacts_only: bool,
     domain_only: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Set vacation auto-reply settings.
@@ -1736,7 +1771,7 @@ def vacation(
 
     if as_json:
         print(json.dumps(settings, indent=2))
-    else:
+    elif not quiet:
         if enabled:
             console.print("[green]Vacation responder enabled[/green]")
         else:
@@ -1751,6 +1786,7 @@ def vacation(
 )
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def modify(
     message_ids: tuple[str, ...],
@@ -1758,6 +1794,7 @@ def modify(
     remove_labels: tuple[str],
     stdin: bool,
     dry_run: bool,
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Modify message labels (generic operation).
@@ -1789,7 +1826,7 @@ def modify(
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would modify {len(ids)} message(s): {' '.join(changes)}[/yellow]")
         return
 
@@ -1802,5 +1839,5 @@ def modify(
 
     if as_json:
         print(json.dumps({"action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
-    else:
+    elif not quiet:
         console.print(f"[green]Modified {len(ids)} message(s): {' '.join(changes)}[/green]")

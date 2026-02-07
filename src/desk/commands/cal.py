@@ -119,6 +119,7 @@ def list_calendars(as_json: bool) -> None:
 @click.option("--end", required=True, help="End time (ISO 8601 or YYYY-MM-DD)")
 @click.option("--description", "-d", default="", help="Event description")
 @click.option("--attendee", "-a", "attendees", multiple=True, help="Attendee email (repeatable)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def create(
     summary: str,
@@ -126,6 +127,7 @@ def create(
     end: str,
     description: str,
     attendees: tuple[str, ...],
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Create a new event.
@@ -147,7 +149,7 @@ def create(
 
     if as_json:
         print(json.dumps(event, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Created event: {event['summary']}[/green]")
         if event.get("htmlLink"):
             console.print(f"[dim]{event['htmlLink']}[/dim]")
@@ -156,8 +158,9 @@ def create(
 @cal.command()
 @click.argument("event_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete(event_id: str, yes: bool, as_json: bool) -> None:
+def delete(event_id: str, yes: bool, quiet: bool, as_json: bool) -> None:
     """Delete an event.
 
     Deleting an event with attendees sends cancellation emails to all attendees.
@@ -203,7 +206,7 @@ def delete(event_id: str, yes: bool, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"eventId": event_id, "status": "deleted"}, indent=2))
-    else:
+    elif not quiet:
         console.print("[green]Event deleted.[/green]")
 
 
@@ -216,6 +219,7 @@ def delete(event_id: str, yes: bool, as_json: bool) -> None:
 @click.option(
     "--add-attendee", "-a", "add_attendees", multiple=True, help="Email to add (repeatable)"
 )
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
     event_id: str,
@@ -224,6 +228,7 @@ def update(
     end: str | None,
     description: str | None,
     add_attendees: tuple[str, ...],
+    quiet: bool,
     as_json: bool,
 ) -> None:
     """Update an existing event.
@@ -250,7 +255,7 @@ def update(
 
     if as_json:
         print(json.dumps(event, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Updated: {event['summary']}[/green]")
         if event.get("htmlLink"):
             console.print(f"[dim]{event['htmlLink']}[/dim]")
@@ -316,8 +321,9 @@ def invitations(max_results: int, as_json: bool) -> None:
     type=click.Choice(["accepted", "declined", "tentative"]),
     help="Your response",
 )
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def respond(event_id: str, status: str, as_json: bool) -> None:
+def respond(event_id: str, status: str, quiet: bool, as_json: bool) -> None:
     """Respond to an event invitation.
 
     Accepts, declines, or marks an event as tentative.
@@ -341,7 +347,7 @@ def respond(event_id: str, status: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(event, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Responded '{status}' to: {event['summary']}[/green]")
 
 

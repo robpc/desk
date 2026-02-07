@@ -31,8 +31,9 @@ def docs() -> None:
 @docs.command()
 @click.argument("title")
 @click.option("--body", "-b", default="", help="Initial document content")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def create(title: str, body: str, as_json: bool) -> None:
+def create(title: str, body: str, quiet: bool, as_json: bool) -> None:
     """Create a new Google Doc.
 
     Examples:
@@ -46,7 +47,7 @@ def create(title: str, body: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Created: {result['title']}[/green]")
         if result.get("webViewLink"):
             console.print(f"[dim]{result['webViewLink']}[/dim]")
@@ -84,8 +85,9 @@ def read(document_id: str, as_json: bool) -> None:
     default="append",
     help="Where to insert: append (end), prepend (beginning), replace (all)",
 )
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def update(document_id: str, text: str, mode: str, as_json: bool) -> None:
+def update(document_id: str, text: str, mode: str, quiet: bool, as_json: bool) -> None:
     """Insert or replace text in a document.
 
     Examples:
@@ -101,7 +103,7 @@ def update(document_id: str, text: str, mode: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Updated document ({mode})[/green]")
 
 
@@ -116,8 +118,9 @@ def update(document_id: str, text: str, mode: str, as_json: bool) -> None:
     default="pdf",
     help="Export format",
 )
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def export(document_id: str, dest: str, fmt: str, as_json: bool) -> None:
+def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) -> None:
     """Export a document to a different format.
 
     Examples:
@@ -142,5 +145,5 @@ def export(document_id: str, dest: str, fmt: str, as_json: bool) -> None:
     if as_json:
         out = {"documentId": document_id, "format": fmt, "path": str(dest_path)}
         print(json.dumps(out, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Exported to: {dest_path}[/green]")

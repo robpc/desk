@@ -1,7 +1,7 @@
 ---
 id: "026"
 title: Quiet Flag
-status: idea
+status: implemented
 effort: S
 value: Cleaner script output by suppressing success messages
 created: 2026-02-07

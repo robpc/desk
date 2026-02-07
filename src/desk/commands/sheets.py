@@ -80,8 +80,9 @@ def read(spreadsheet_id: str, ranges: tuple[str, ...], sheet_id: int | None, as_
 @click.argument("spreadsheet_id")
 @click.argument("range_")
 @click.argument("value")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def update_cell(spreadsheet_id: str, range_: str, value: str, as_json: bool) -> None:
+def update_cell(spreadsheet_id: str, range_: str, value: str, quiet: bool, as_json: bool) -> None:
     """Update a single cell value.
 
     Examples:
@@ -95,14 +96,15 @@ def update_cell(spreadsheet_id: str, range_: str, value: str, as_json: bool) -> 
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Updated {result['updatedRange']}[/green]")
 
 
 @sheets.command()
 @click.argument("title")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def create(title: str, as_json: bool) -> None:
+def create(title: str, quiet: bool, as_json: bool) -> None:
     """Create a new spreadsheet.
 
     Examples:
@@ -114,7 +116,7 @@ def create(title: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Created: {result['title']}[/green]")
         if result.get("spreadsheetUrl"):
             console.print(f"[dim]{result['spreadsheetUrl']}[/dim]")
@@ -124,8 +126,9 @@ def create(title: str, as_json: bool) -> None:
 @click.argument("spreadsheet_id")
 @click.argument("range_")
 @click.argument("values_json")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def write(spreadsheet_id: str, range_: str, values_json: str, as_json: bool) -> None:
+def write(spreadsheet_id: str, range_: str, values_json: str, quiet: bool, as_json: bool) -> None:
     """Write values to a range.
 
     VALUES_JSON is a JSON 2D array, e.g. '[["A","B"],["1","2"]]'
@@ -144,7 +147,7 @@ def write(spreadsheet_id: str, range_: str, values_json: str, as_json: bool) -> 
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(
             f"[green]Updated {result['updatedRange']} ({result['updatedCells']} cells)[/green]"
         )
@@ -154,8 +157,9 @@ def write(spreadsheet_id: str, range_: str, values_json: str, as_json: bool) -> 
 @click.argument("spreadsheet_id")
 @click.argument("range_")
 @click.argument("values_json")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def append(spreadsheet_id: str, range_: str, values_json: str, as_json: bool) -> None:
+def append(spreadsheet_id: str, range_: str, values_json: str, quiet: bool, as_json: bool) -> None:
     """Append rows to a spreadsheet.
 
     VALUES_JSON is a JSON 2D array of rows to append.
@@ -174,7 +178,7 @@ def append(spreadsheet_id: str, range_: str, values_json: str, as_json: bool) ->
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(
             f"[green]Appended {result['updatedRows']} rows to {result['updatedRange']}[/green]"
         )
@@ -183,8 +187,9 @@ def append(spreadsheet_id: str, range_: str, values_json: str, as_json: bool) ->
 @sheets.command()
 @click.argument("spreadsheet_id")
 @click.argument("range_")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def clear(spreadsheet_id: str, range_: str, as_json: bool) -> None:
+def clear(spreadsheet_id: str, range_: str, quiet: bool, as_json: bool) -> None:
     """Clear values in a range.
 
     Examples:
@@ -196,7 +201,7 @@ def clear(spreadsheet_id: str, range_: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Cleared {result['clearedRange']}[/green]")
 
 
@@ -244,8 +249,9 @@ def list_sheets(spreadsheet_id: str, as_json: bool) -> None:
 @click.argument("spreadsheet_id")
 @click.option("--name", "-n", required=True, help="Name for the new sheet")
 @click.option("--index", "-i", type=int, help="Position (0-based)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def add_sheet(spreadsheet_id: str, name: str, index: int | None, as_json: bool) -> None:
+def add_sheet(spreadsheet_id: str, name: str, index: int | None, quiet: bool, as_json: bool) -> None:
     """Add a new sheet (tab) to a spreadsheet.
 
     Examples:
@@ -259,7 +265,7 @@ def add_sheet(spreadsheet_id: str, name: str, index: int | None, as_json: bool) 
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Added sheet: {result['title']}[/green]")
         console.print(f"[dim]Sheet ID: {result['sheetId']}[/dim]")
 
@@ -268,8 +274,9 @@ def add_sheet(spreadsheet_id: str, name: str, index: int | None, as_json: bool) 
 @click.argument("spreadsheet_id")
 @click.option("--sheet-id", type=int, required=True, help="Sheet ID to delete")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, as_json: bool) -> None:
+def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, quiet: bool, as_json: bool) -> None:
     """Delete a sheet (tab) from a spreadsheet.
 
     Examples:
@@ -292,7 +299,7 @@ def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, as_json: bool) -
 
     if as_json:
         print(json.dumps({"action": "delete-sheet", "sheetId": sheet_id}))
-    else:
+    elif not quiet:
         console.print(f"[green]Deleted sheet {sheet_id}[/green]")
 
 
@@ -300,8 +307,9 @@ def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, as_json: bool) -
 @click.argument("spreadsheet_id")
 @click.option("--sheet-id", type=int, required=True, help="Sheet ID to rename")
 @click.option("--name", "-n", required=True, help="New name for the sheet")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def rename_sheet(spreadsheet_id: str, sheet_id: int, name: str, as_json: bool) -> None:
+def rename_sheet(spreadsheet_id: str, sheet_id: int, name: str, quiet: bool, as_json: bool) -> None:
     """Rename a sheet (tab).
 
     Examples:
@@ -313,7 +321,7 @@ def rename_sheet(spreadsheet_id: str, sheet_id: int, name: str, as_json: bool) -
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Renamed sheet to: {result['title']}[/green]")
 
 

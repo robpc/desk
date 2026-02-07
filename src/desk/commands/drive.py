@@ -135,8 +135,9 @@ def recent(max_results: int, as_json: bool) -> None:
 @drive.command()
 @click.argument("local_path", type=click.Path(exists=True))
 @click.option("--folder", "-f", "folder_id", help="Parent folder ID")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def upload(local_path: str, folder_id: str | None, as_json: bool) -> None:
+def upload(local_path: str, folder_id: str | None, quiet: bool, as_json: bool) -> None:
     """Upload a local file to Drive.
 
     Examples:
@@ -150,7 +151,7 @@ def upload(local_path: str, folder_id: str | None, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Uploaded: {result['name']}[/green]")
         if result.get("webViewLink"):
             console.print(f"[dim]{result['webViewLink']}[/dim]")
@@ -159,8 +160,9 @@ def upload(local_path: str, folder_id: str | None, as_json: bool) -> None:
 @drive.command()
 @click.argument("file_id")
 @click.argument("dest", default=".", type=click.Path())
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def download(file_id: str, dest: str, as_json: bool) -> None:
+def download(file_id: str, dest: str, quiet: bool, as_json: bool) -> None:
     """Download a file from Drive.
 
     Google Docs export as PDF, Sheets as CSV.
@@ -176,15 +178,16 @@ def download(file_id: str, dest: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"fileId": file_id, "path": saved}, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Downloaded to: {saved}[/green]")
 
 
 @drive.command()
 @click.argument("name")
 @click.option("--parent", "-p", "parent_id", help="Parent folder ID")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mkdir(name: str, parent_id: str | None, as_json: bool) -> None:
+def mkdir(name: str, parent_id: str | None, quiet: bool, as_json: bool) -> None:
     """Create a folder in Drive.
 
     Examples:
@@ -198,7 +201,7 @@ def mkdir(name: str, parent_id: str | None, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Created folder: {result['name']}[/green]")
         if result.get("webViewLink"):
             console.print(f"[dim]{result['webViewLink']}[/dim]")
@@ -207,8 +210,9 @@ def mkdir(name: str, parent_id: str | None, as_json: bool) -> None:
 @drive.command()
 @click.argument("file_id")
 @click.argument("folder_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def move(file_id: str, folder_id: str, as_json: bool) -> None:
+def move(file_id: str, folder_id: str, quiet: bool, as_json: bool) -> None:
     """Move a file to a different folder.
 
     Examples:
@@ -220,14 +224,15 @@ def move(file_id: str, folder_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Moved: {result['name']}[/green]")
 
 
 @drive.command()
 @click.argument("file_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def trash(file_id: str, as_json: bool) -> None:
+def trash(file_id: str, quiet: bool, as_json: bool) -> None:
     """Move a file to trash.
 
     Examples:
@@ -239,7 +244,7 @@ def trash(file_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Trashed: {result['name']}[/green]")
 
 
@@ -253,8 +258,9 @@ def trash(file_id: str, as_json: bool) -> None:
     default="writer",
     help="Permission role",
 )
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def share(file_id: str, email: str, role: str, as_json: bool) -> None:
+def share(file_id: str, email: str, role: str, quiet: bool, as_json: bool) -> None:
     """Share a file with someone.
 
     Examples:
@@ -268,14 +274,15 @@ def share(file_id: str, email: str, role: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Shared with {email} as {role}[/green]")
 
 
 @drive.command()
 @click.argument("file_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def star(file_id: str, as_json: bool) -> None:
+def star(file_id: str, quiet: bool, as_json: bool) -> None:
     """Star a file.
 
     Examples:
@@ -287,14 +294,15 @@ def star(file_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Starred: {result['name']}[/green]")
 
 
 @drive.command()
 @click.argument("file_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def unstar(file_id: str, as_json: bool) -> None:
+def unstar(file_id: str, quiet: bool, as_json: bool) -> None:
     """Unstar a file.
 
     Examples:
@@ -306,7 +314,7 @@ def unstar(file_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Unstarred: {result['name']}[/green]")
 
 
@@ -314,8 +322,9 @@ def unstar(file_id: str, as_json: bool) -> None:
 @click.argument("file_id")
 @click.option("--name", "-n", help="Name for the copy")
 @click.option("--folder", "-f", "folder_id", help="Destination folder ID")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def copy(file_id: str, name: str | None, folder_id: str | None, as_json: bool) -> None:
+def copy(file_id: str, name: str | None, folder_id: str | None, quiet: bool, as_json: bool) -> None:
     """Copy a file in Drive.
 
     Creates a copy of the file. Works with all file types including Google Docs,
@@ -334,7 +343,7 @@ def copy(file_id: str, name: str | None, folder_id: str | None, as_json: bool) -
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Copied to: {result['name']}[/green]")
         console.print(f"[dim]File ID: {result['id']}[/dim]")
         if result.get("webViewLink"):
@@ -388,8 +397,9 @@ def permissions(file_id: str, as_json: bool) -> None:
 @click.argument("file_id")
 @click.argument("email")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def unshare(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
+def unshare(file_id: str, email: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove a user's access to a file.
 
     Examples:
@@ -401,7 +411,7 @@ def unshare(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "unshare", "fileId": file_id, "email": email}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would remove {email}'s access to file {file_id}[/yellow]")
         return
 
@@ -414,7 +424,7 @@ def unshare(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps({"action": "unshare", "fileId": file_id, "email": email}))
-    else:
+    elif not quiet:
         console.print(f"[green]Removed {email}'s access[/green]")
 
 
@@ -422,8 +432,9 @@ def unshare(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
 @click.argument("file_id")
 @click.argument("email")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def transfer_owner(file_id: str, email: str, dry_run: bool, as_json: bool) -> None:
+def transfer_owner(file_id: str, email: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Transfer ownership of a file.
 
     The new owner must be in the same Google Workspace domain.
@@ -436,7 +447,7 @@ def transfer_owner(file_id: str, email: str, dry_run: bool, as_json: bool) -> No
     if dry_run:
         if as_json:
             print(json.dumps({"dry_run": True, "action": "transfer-owner", "fileId": file_id, "newOwner": email}))
-        else:
+        elif not quiet:
             console.print(f"[yellow]Would transfer ownership of file {file_id} to {email}[/yellow]")
         return
 
@@ -445,7 +456,7 @@ def transfer_owner(file_id: str, email: str, dry_run: bool, as_json: bool) -> No
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Transferred ownership to {email}[/green]")
 
 
@@ -499,8 +510,9 @@ def comments(file_id: str, include_resolved: bool, as_json: bool) -> None:
 @drive.command("add-comment")
 @click.argument("file_id")
 @click.option("--text", "-t", required=True, help="Comment text")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def add_comment(file_id: str, text: str, as_json: bool) -> None:
+def add_comment(file_id: str, text: str, quiet: bool, as_json: bool) -> None:
     """Add a comment to a file.
 
     Works with all file types including Google Docs, Sheets, and Slides.
@@ -514,7 +526,7 @@ def add_comment(file_id: str, text: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Added comment[/green]")
         console.print(f"[dim]Comment ID: {result['id']}[/dim]")
 
@@ -523,8 +535,9 @@ def add_comment(file_id: str, text: str, as_json: bool) -> None:
 @click.argument("file_id")
 @click.argument("comment_id")
 @click.option("--reopen", is_flag=True, help="Reopen instead of resolve")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def resolve_comment(file_id: str, comment_id: str, reopen: bool, as_json: bool) -> None:
+def resolve_comment(file_id: str, comment_id: str, reopen: bool, quiet: bool, as_json: bool) -> None:
     """Resolve or reopen a comment.
 
     Examples:
@@ -538,7 +551,7 @@ def resolve_comment(file_id: str, comment_id: str, reopen: bool, as_json: bool) 
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         action = "Reopened" if reopen else "Resolved"
         console.print(f"[green]{action} comment {comment_id}[/green]")
 
@@ -547,8 +560,9 @@ def resolve_comment(file_id: str, comment_id: str, reopen: bool, as_json: bool) 
 @click.argument("file_id")
 @click.argument("comment_id")
 @click.option("--text", "-t", required=True, help="Reply text")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def reply_comment(file_id: str, comment_id: str, text: str, as_json: bool) -> None:
+def reply_comment(file_id: str, comment_id: str, text: str, quiet: bool, as_json: bool) -> None:
     """Reply to a comment.
 
     Examples:
@@ -560,7 +574,7 @@ def reply_comment(file_id: str, comment_id: str, text: str, as_json: bool) -> No
 
     if as_json:
         print(json.dumps(result, indent=2))
-    else:
+    elif not quiet:
         console.print(f"[green]Added reply[/green]")
         console.print(f"[dim]Reply ID: {result['id']}[/dim]")
 
