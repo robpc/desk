@@ -280,6 +280,72 @@ def find(query: str, max_results: int, as_json: bool) -> None:
 
 
 @cal.command()
+@click.option("--max", "-n", "max_results", default=20, help="Max results")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def invitations(max_results: int, as_json: bool) -> None:
+    """List pending invitations.
+
+    Shows events where you haven't yet responded (needsAction).
+
+    Examples:
+
+        desk cal invitations
+
+        desk cal invitations --max 10
+    """
+    client = _get_client()
+    events = client.invitations(max_results=max_results)
+
+    if as_json:
+        print(json.dumps(events, indent=2))
+        return
+
+    if not events:
+        console.print("No pending invitations.")
+        return
+
+    _print_events(events, "Pending Invitations")
+
+
+@cal.command()
+@click.argument("event_id")
+@click.option(
+    "--status",
+    "-s",
+    required=True,
+    type=click.Choice(["accepted", "declined", "tentative"]),
+    help="Your response",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def respond(event_id: str, status: str, as_json: bool) -> None:
+    """Respond to an event invitation.
+
+    Accepts, declines, or marks an event as tentative.
+    Sends your response to the organizer.
+
+    Examples:
+
+        desk cal respond <event-id> --status accepted
+
+        desk cal respond <event-id> --status declined
+
+        desk cal respond <event-id> --status tentative
+    """
+    client = _get_client()
+
+    try:
+        event = client.respond(event_id, status)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps(event, indent=2))
+    else:
+        console.print(f"[green]Responded '{status}' to: {event['summary']}[/green]")
+
+
+@cal.command()
 @click.argument("emails", nargs=-1, required=True)
 @click.option("--start", required=True, help="Start of time range (ISO 8601)")
 @click.option("--end", required=True, help="End of time range (ISO 8601)")

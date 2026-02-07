@@ -1,7 +1,7 @@
 ---
 id: "017"
 title: Calendar RSVP and Invitation Response
-status: idea
+status: implemented
 effort: M
 value: Enable agents to manage meeting invitations
 created: 2026-02-07

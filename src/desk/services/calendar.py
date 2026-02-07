@@ -289,6 +289,94 @@ class CalendarClient:
             dt = dt.replace(tzinfo=local_tz)
         return {"dateTime": dt.isoformat()}
 
+    def invitations(self, max_results: int = 20, calendar_id: str = "primary") -> list[dict]:
+        """List pending invitations (events where user needs to respond).
+
+        Args:
+            max_results: Maximum number of results
+            calendar_id: Calendar ID
+
+        Returns:
+            List of events where user's response status is 'needsAction'
+        """
+        now = datetime.now().astimezone()
+        try:
+            results = (
+                self.service.events()
+                .list(
+                    calendarId=calendar_id,
+                    timeMin=now.isoformat(),
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
+
+            # Filter for events where user needs to respond
+            invitations = []
+            for event in results.get("items", []):
+                attendees = event.get("attendees", [])
+                for attendee in attendees:
+                    if attendee.get("self") and attendee.get("responseStatus") == "needsAction":
+                        invitations.append(self._parse_event(event))
+                        break
+
+            return invitations
+        except HttpError as error:
+            raise RuntimeError(f"Calendar API error: {error}")
+
+    def respond(
+        self,
+        event_id: str,
+        response: str,
+        calendar_id: str = "primary",
+    ) -> dict:
+        """Respond to an event invitation.
+
+        Args:
+            event_id: The event ID
+            response: Response status ('accepted', 'declined', 'tentative')
+            calendar_id: Calendar ID
+
+        Returns:
+            Updated event dict
+        """
+        valid_responses = ("accepted", "declined", "tentative")
+        if response not in valid_responses:
+            raise ValueError(f"Invalid response '{response}'. Must be one of: {valid_responses}")
+
+        try:
+            # Get the event
+            event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+
+            # Find self in attendees and update response
+            attendees = event.get("attendees", [])
+            for attendee in attendees:
+                if attendee.get("self"):
+                    attendee["responseStatus"] = response
+                    break
+            else:
+                # User not in attendees - this shouldn't happen for invitations
+                raise ValueError("You are not an attendee of this event")
+
+            event["attendees"] = attendees
+
+            # Update the event
+            result = (
+                self.service.events()
+                .update(
+                    calendarId=calendar_id,
+                    eventId=event_id,
+                    body=event,
+                    sendUpdates="all",
+                )
+                .execute()
+            )
+            return self._parse_event(result)
+        except HttpError as error:
+            raise RuntimeError(f"Calendar API error: {error}")
+
     def freebusy(
         self, emails: list[str], start: str, end: str
     ) -> dict[str, list[dict]]:
