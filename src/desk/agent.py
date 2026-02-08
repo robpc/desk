@@ -102,11 +102,73 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "Check the query syntax",
         "See Gmail search operators: https://support.google.com/mail/answer/7190",
     ],
+    ErrorCode.INVALID_INPUT: [
+        "Message IDs are hex strings like '19c3aa4804ae3ab4'",
+        "Use `desk mail search` to find valid message IDs",
+        "Check for typos or truncated IDs",
+    ],
+    ErrorCode.OPERATION_FAILED: [
+        "Check the error message for details",
+        "Verify you have permission for this operation",
+        "Try the operation again - it may be a temporary issue",
+    ],
     ErrorCode.LOCAL_FILE_NOT_FOUND: [
         "Check that the file path is correct",
         "Use an absolute path to avoid ambiguity",
     ],
 }
+
+
+def parse_api_error(error_str: str) -> str:
+    """Extract human-readable message from API error strings.
+
+    Google API errors often look like:
+    <HttpError 400 when requesting ... returned "Invalid id value". Details: "...">
+
+    This extracts just the useful part: "Invalid id value"
+    """
+    import re
+
+    # Try to extract quoted message from HttpError format
+    # Pattern: returned "message" or "reason": "message"
+    patterns = [
+        r'returned "([^"]+)"',  # <HttpError ... returned "message">
+        r'"message":\s*"([^"]+)"',  # {"message": "..."}
+        r'"reason":\s*"([^"]+)"',  # {"reason": "..."}
+        r'Error:\s*(.+?)(?:\.|$)',  # Error: message.
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, error_str)
+        if match:
+            return match.group(1)
+
+    # If no pattern matches, try to clean up the string
+    # Remove common prefixes
+    cleaned = error_str
+    prefixes_to_remove = [
+        "Gmail API error: ",
+        "Drive API error: ",
+        "Calendar API error: ",
+        "Sheets API error: ",
+        "Docs API error: ",
+    ]
+    for prefix in prefixes_to_remove:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+            break
+
+    # Truncate if too long (likely contains full HTTP response)
+    if len(cleaned) > 200:
+        # Try to find a natural break point
+        for sep in [". ", ": ", " - "]:
+            if sep in cleaned[:150]:
+                cleaned = cleaned[:cleaned.index(sep) + 1]
+                break
+        else:
+            cleaned = cleaned[:150] + "..."
+
+    return cleaned
 
 
 def structured_error(

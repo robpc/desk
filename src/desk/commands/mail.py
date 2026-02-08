@@ -9,11 +9,13 @@ from rich.table import Table
 
 from desk.agent import (
     ErrorCode,
+    ERROR_SUGGESTIONS,
     structured_error,
     operation_receipt,
     dry_run_preview,
     get_undo_info,
     output_result,
+    parse_api_error,
 )
 from desk.auth import get_credentials
 from desk.idempotency import check_idempotency, record_idempotency
@@ -85,36 +87,38 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
         as_json: Whether to output structured JSON
         context: Additional context about the operation
     """
-    error_str = str(e)
+    raw_error = str(e)
+    # Parse to get human-readable message
+    error_msg = parse_api_error(raw_error)
 
     # Determine error code based on error message
-    if "not found" in error_str.lower() or "404" in error_str:
+    if "not found" in raw_error.lower() or "404" in raw_error:
         code = ErrorCode.MESSAGE_NOT_FOUND
-    elif "401" in error_str or "invalid credentials" in error_str.lower():
+    elif "401" in raw_error or "invalid credentials" in raw_error.lower():
         code = ErrorCode.AUTH_EXPIRED
-    elif "403" in error_str or "permission" in error_str.lower():
+    elif "403" in raw_error or "permission" in raw_error.lower():
         code = ErrorCode.PERMISSION_DENIED
-    elif "429" in error_str or "rate" in error_str.lower():
+    elif "429" in raw_error or "rate" in raw_error.lower():
         code = ErrorCode.RATE_LIMITED
-    elif "400" in error_str or "invalid" in error_str.lower():
+    elif "400" in raw_error or "invalid" in raw_error.lower():
         code = ErrorCode.INVALID_INPUT
     else:
         code = ErrorCode.OPERATION_FAILED
 
+    # Get suggestions for this error code
+    suggestions = ERROR_SUGGESTIONS.get(code, [])
+
     if as_json:
         error = structured_error(
             code=code,
-            message=error_str,
+            message=error_msg,
+            suggestions=suggestions,
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
         print(json.dumps(error, indent=2))
     else:
-        console.print(f"[red]Error: {error_str}[/red]")
-        suggestions = error.get("error", {}).get("suggestions", []) if as_json else []
-        if not suggestions:
-            from desk.agent import ERROR_SUGGESTIONS
-            suggestions = ERROR_SUGGESTIONS.get(code, [])
+        console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
             console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
