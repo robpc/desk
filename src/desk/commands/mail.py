@@ -1124,18 +1124,28 @@ def delete_label(name: str, yes: bool, quiet: bool, as_json: bool) -> None:
 
     This removes the label from all messages that have it. Messages are not deleted.
 
+    Note: Labels with many messages may take a long time to delete.
+
     Examples:
 
         desk mail delete-label "Old Project"
 
         desk mail delete-label "Temp" --yes
     """
-    client = _get_client()
+    client = _get_client(as_json)
 
     # Confirm unless --yes flag provided
     if not yes:
         if not sys.stdin.isatty():
-            console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            if as_json:
+                error = structured_error(
+                    ErrorCode.INVALID_INPUT,
+                    "Non-interactive mode requires --yes flag",
+                    suggestions=["Add --yes flag to skip confirmation"],
+                )
+                output_result(error, as_json, quiet)
+            else:
+                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
         if not click.confirm(f"Delete label '{name}'? This removes it from all messages."):
             console.print("[yellow]Cancelled[/yellow]")
@@ -1144,11 +1154,50 @@ def delete_label(name: str, yes: bool, quiet: bool, as_json: bool) -> None:
     try:
         client.delete_label(name)
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        error = structured_error(
+            ErrorCode.LABEL_NOT_FOUND,
+            str(e),
+        )
+        output_result(error, as_json, quiet)
+        sys.exit(1)
+    except TimeoutError as e:
+        error = structured_error(
+            ErrorCode.TIMEOUT,
+            f"Delete label timed out: {e}",
+            suggestions=[
+                "Labels with many messages take longer to delete",
+                "The operation may still complete on the server",
+                "Check `desk mail labels` to verify the label was deleted",
+                "If not deleted, try again - the server may be less busy",
+            ],
+            retryable=True,
+        )
+        output_result(error, as_json, quiet)
+        sys.exit(1)
+    except RuntimeError as e:
+        error_str = str(e)
+        # Check for scope errors
+        if "insufficient" in error_str.lower() and "scope" in error_str.lower():
+            error = structured_error(
+                ErrorCode.INSUFFICIENT_SCOPES,
+                parse_api_error(error_str),
+            )
+        else:
+            error = structured_error(
+                ErrorCode.OPERATION_FAILED,
+                parse_api_error(error_str),
+                retryable=True,
+            )
+        output_result(error, as_json, quiet)
         sys.exit(1)
 
     if as_json:
-        print(json.dumps({"action": "delete-label", "name": name}))
+        receipt = operation_receipt(
+            "delete-label",
+            {"name": name},
+            undo_command=None,  # Can't undo label deletion
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Deleted label '{name}'[/green]")
 
@@ -1982,17 +2031,48 @@ def delete_filter(filter_id: str, yes: bool, quiet: bool, as_json: bool) -> None
     """
     if not yes:
         if not sys.stdin.isatty():
-            console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            if as_json:
+                error = structured_error(
+                    ErrorCode.INVALID_INPUT,
+                    "Non-interactive mode requires --yes flag",
+                    suggestions=["Add --yes flag to skip confirmation"],
+                )
+                output_result(error, as_json, quiet)
+            else:
+                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
         if not click.confirm(f"Delete filter {filter_id}?"):
             console.print("[yellow]Cancelled[/yellow]")
             return
 
-    client = _get_client()
-    client.delete_filter(filter_id)
+    client = _get_client(as_json)
+
+    try:
+        client.delete_filter(filter_id)
+    except RuntimeError as e:
+        error_str = str(e)
+        # Check for scope errors
+        if "insufficient" in error_str.lower() and "scope" in error_str.lower():
+            error = structured_error(
+                ErrorCode.INSUFFICIENT_SCOPES,
+                parse_api_error(error_str),
+            )
+        else:
+            error = structured_error(
+                ErrorCode.OPERATION_FAILED,
+                parse_api_error(error_str),
+                retryable=True,
+            )
+        output_result(error, as_json, quiet)
+        sys.exit(1)
 
     if as_json:
-        print(json.dumps({"action": "delete-filter", "filterId": filter_id}))
+        receipt = operation_receipt(
+            "delete-filter",
+            {"filterId": filter_id},
+            undo_command=None,  # Can't undo filter deletion
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Deleted filter {filter_id}[/green]")
 

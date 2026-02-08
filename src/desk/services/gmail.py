@@ -1,6 +1,7 @@
 """Gmail API wrapper."""
 
 import base64
+import socket
 from email.mime.text import MIMEText
 
 from google.oauth2.credentials import Credentials
@@ -307,6 +308,10 @@ class GmailClient:
             self.service.users().labels().delete(
                 userId=self.user_id, id=label_id
             ).execute()
+        except socket.timeout as e:
+            raise TimeoutError(
+                f"Label deletion timed out (labels with many messages can take a while): {e}"
+            )
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 

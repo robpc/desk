@@ -49,6 +49,8 @@ class ErrorCode(str, Enum):
     OPERATION_FAILED = "OPERATION_FAILED"
     ALREADY_EXISTS = "ALREADY_EXISTS"
     CONFLICT = "CONFLICT"
+    TIMEOUT = "TIMEOUT"
+    INSUFFICIENT_SCOPES = "INSUFFICIENT_SCOPES"
 
     # File I/O errors
     LOCAL_FILE_NOT_FOUND = "LOCAL_FILE_NOT_FOUND"
@@ -115,6 +117,17 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
     ErrorCode.LOCAL_FILE_NOT_FOUND: [
         "Check that the file path is correct",
         "Use an absolute path to avoid ambiguity",
+    ],
+    ErrorCode.TIMEOUT: [
+        "The operation is taking longer than expected",
+        "This can happen with large datasets (e.g., labels with many messages)",
+        "The operation may still complete - check the result before retrying",
+        "Try again later when the server is less busy",
+    ],
+    ErrorCode.INSUFFICIENT_SCOPES: [
+        "Your credentials don't include the required permissions",
+        "Run `desk auth login` to re-authenticate with updated scopes",
+        "This often happens after desk adds new features requiring additional permissions",
     ],
 }
 
