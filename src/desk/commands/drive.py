@@ -7,20 +7,76 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from desk.agent import (
+    ErrorCode,
+    ERROR_SUGGESTIONS,
+    structured_error,
+    operation_receipt,
+    dry_run_preview,
+    parse_api_error,
+    get_undo_info,
+    output_result,
+)
 from desk.auth import get_credentials
 from desk.services.drive import DriveClient
 
 console = Console()
 
 
-def _get_client() -> DriveClient:
+def _get_client(as_json: bool = False) -> DriveClient:
     """Get authenticated Drive client or exit."""
     creds = get_credentials()
     if not creds:
-        console.print("[red]Not authenticated.[/red]")
-        console.print("Run: [cyan]desk setup[/cyan]")
+        if as_json:
+            error = structured_error(
+                ErrorCode.AUTH_REQUIRED,
+                "Not authenticated",
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Not authenticated.[/red]")
+            console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return DriveClient(creds)
+
+
+def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) -> None:
+    """Handle API errors with structured output when --json is used."""
+    raw_error = str(e)
+    error_msg = parse_api_error(raw_error)
+
+    if "not found" in raw_error.lower() or "404" in raw_error:
+        code = ErrorCode.FILE_NOT_FOUND
+    elif "401" in raw_error or "invalid credentials" in raw_error.lower():
+        code = ErrorCode.AUTH_EXPIRED
+    elif "403" in raw_error or "permission" in raw_error.lower():
+        code = ErrorCode.PERMISSION_DENIED
+    elif "429" in raw_error or "rate" in raw_error.lower():
+        code = ErrorCode.RATE_LIMITED
+    elif "400" in raw_error or "invalid" in raw_error.lower():
+        code = ErrorCode.INVALID_INPUT
+    else:
+        code = ErrorCode.OPERATION_FAILED
+
+    suggestions = ERROR_SUGGESTIONS.get(code, [])
+
+    if as_json:
+        error = structured_error(
+            code=code,
+            message=error_msg,
+            suggestions=suggestions,
+            retryable=code == ErrorCode.RATE_LIMITED,
+            details=context,
+        )
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {error_msg}[/red]")
+        if suggestions:
+            console.print("[dim]Suggestions:[/dim]")
+            for s in suggestions:
+                console.print(f"  [cyan]- {s}[/cyan]")
+
+    sys.exit(1)
 
 
 @click.group()
@@ -50,8 +106,11 @@ def search(query: str, max_results: int, limit: int | None, page_token: str | No
     if limit is not None:
         max_results = limit
 
-    client = _get_client()
-    result = client.search(query, max_results=max_results, page_token=page_token)
+    client = _get_client(as_json)
+    try:
+        result = client.search(query, max_results=max_results, page_token=page_token)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"query": query})
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -81,8 +140,11 @@ def read(file_id: str, as_json: bool) -> None:
 
         desk drive read <file-id>
     """
-    client = _get_client()
-    content = client.read(file_id)
+    client = _get_client(as_json)
+    try:
+        content = client.read(file_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
     if as_json:
         print(json.dumps({"fileId": file_id, "content": content}, indent=2))
@@ -100,8 +162,11 @@ def info(file_id: str, as_json: bool) -> None:
 
         desk drive info <file-id>
     """
-    client = _get_client()
-    metadata = client.info(file_id)
+    client = _get_client(as_json)
+    try:
+        metadata = client.info(file_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
     if as_json:
         print(json.dumps(metadata, indent=2))
@@ -134,8 +199,11 @@ def recent(max_results: int, limit: int | None, page_token: str | None, as_json:
     if limit is not None:
         max_results = limit
 
-    client = _get_client()
-    result = client.recent(max_results=max_results, page_token=page_token)
+    client = _get_client(as_json)
+    try:
+        result = client.recent(max_results=max_results, page_token=page_token)
+    except Exception as e:
+        _handle_api_error(e, as_json)
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -166,15 +234,22 @@ def upload(local_path: str, folder_id: str | None, quiet: bool, as_json: bool) -
 
         desk drive upload data.csv --folder <folder-id>
     """
-    client = _get_client()
-    result = client.upload(local_path, folder_id=folder_id)
+    client = _get_client(as_json)
+    try:
+        result = client.upload(local_path, folder_id=folder_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"local_path": local_path, "folder_id": folder_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Uploaded: {result['name']}[/green]")
-        if result.get("webViewLink"):
-            console.print(f"[dim]{result['webViewLink']}[/dim]")
+    receipt = operation_receipt(
+        operation="upload",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+            "link": result.get("webViewLink"),
+        },
+        undo_command=f"desk drive trash {result.get('id')}",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -193,13 +268,20 @@ def download(file_id: str, dest: str, quiet: bool, as_json: bool) -> None:
 
         desk drive download <file-id> ~/Downloads/
     """
-    client = _get_client()
-    saved = client.download(file_id, dest)
+    client = _get_client(as_json)
+    try:
+        saved = client.download(file_id, dest)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "dest": dest})
 
-    if as_json:
-        print(json.dumps({"fileId": file_id, "path": saved}, indent=2))
-    elif not quiet:
-        console.print(f"[green]Downloaded to: {saved}[/green]")
+    receipt = operation_receipt(
+        operation="download",
+        target={
+            "id": file_id,
+            "local_path": saved,
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -216,15 +298,22 @@ def mkdir(name: str, parent_id: str | None, quiet: bool, as_json: bool) -> None:
 
         desk drive mkdir "Subfolder" --parent <folder-id>
     """
-    client = _get_client()
-    result = client.mkdir(name, parent_id=parent_id)
+    client = _get_client(as_json)
+    try:
+        result = client.mkdir(name, parent_id=parent_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"name": name, "parent_id": parent_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Created folder: {result['name']}[/green]")
-        if result.get("webViewLink"):
-            console.print(f"[dim]{result['webViewLink']}[/dim]")
+    receipt = operation_receipt(
+        operation="mkdir",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+            "link": result.get("webViewLink"),
+        },
+        undo_command=f"desk drive trash {result.get('id')}",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -239,33 +328,100 @@ def move(file_id: str, folder_id: str, quiet: bool, as_json: bool) -> None:
 
         desk drive move <file-id> <folder-id>
     """
-    client = _get_client()
-    result = client.move(file_id, folder_id)
+    client = _get_client(as_json)
+    try:
+        result = client.move(file_id, folder_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "folder_id": folder_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Moved: {result['name']}[/green]")
+    receipt = operation_receipt(
+        operation="move",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+            "new_folder": folder_id,
+        },
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@drive.command()
+@click.argument("file_id")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def trash(file_id: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
+    """Move a file to trash.
+
+    Examples:
+
+        desk drive trash <file-id>
+
+        desk drive trash <file-id> --dry-run
+    """
+    client = _get_client(as_json)
+
+    # Get file info for preview/receipt
+    try:
+        file_info = client.info(file_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
+
+    undo_cmd, undo_expires, _ = get_undo_info("drive-trash", file_id)
+
+    if dry_run:
+        preview = dry_run_preview(
+            operation="trash",
+            targets=[{"id": file_id, "name": file_info.get("name")}],
+            reversible=True,
+            undo_command=undo_cmd,
+        )
+        output_result(preview, as_json, quiet)
+        return
+
+    try:
+        result = client.trash(file_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
+
+    receipt = operation_receipt(
+        operation="trash",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+        },
+        undo_command=undo_cmd,
+        undo_expires=undo_expires,
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
 @click.argument("file_id")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def trash(file_id: str, quiet: bool, as_json: bool) -> None:
-    """Move a file to trash.
+def untrash(file_id: str, quiet: bool, as_json: bool) -> None:
+    """Restore a file from trash.
 
     Examples:
 
-        desk drive trash <file-id>
+        desk drive untrash <file-id>
     """
-    client = _get_client()
-    result = client.trash(file_id)
+    client = _get_client(as_json)
+    try:
+        result = client.untrash(file_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Trashed: {result['name']}[/green]")
+    receipt = operation_receipt(
+        operation="untrash",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+        },
+        undo_command=f"desk drive trash {file_id}",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -278,9 +434,10 @@ def trash(file_id: str, quiet: bool, as_json: bool) -> None:
     default="writer",
     help="Permission role",
 )
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def share(file_id: str, email: str, role: str, quiet: bool, as_json: bool) -> None:
+def share(file_id: str, email: str, role: str, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Share a file with someone.
 
     Examples:
@@ -288,14 +445,42 @@ def share(file_id: str, email: str, role: str, quiet: bool, as_json: bool) -> No
         desk drive share <file-id> bob@example.com
 
         desk drive share <file-id> bob@example.com --role reader
-    """
-    client = _get_client()
-    result = client.share(file_id, email, role=role)
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Shared with {email} as {role}[/green]")
+        desk drive share <file-id> bob@example.com --dry-run
+    """
+    client = _get_client(as_json)
+
+    if dry_run:
+        # Get file info for preview
+        try:
+            file_info = client.info(file_id)
+        except Exception as e:
+            _handle_api_error(e, as_json, {"file_id": file_id})
+
+        preview = dry_run_preview(
+            operation="share",
+            targets=[{"id": file_id, "name": file_info.get("name"), "email": email, "role": role}],
+            reversible=True,
+            undo_command=f"desk drive unshare {file_id} {email}",
+        )
+        output_result(preview, as_json, quiet)
+        return
+
+    try:
+        result = client.share(file_id, email, role=role)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "email": email, "role": role})
+
+    receipt = operation_receipt(
+        operation="share",
+        target={
+            "id": file_id,
+            "email": email,
+            "role": role,
+        },
+        undo_command=f"desk drive unshare {file_id} {email}",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -309,13 +494,23 @@ def star(file_id: str, quiet: bool, as_json: bool) -> None:
 
         desk drive star <file-id>
     """
-    client = _get_client()
-    result = client.star(file_id, starred=True)
+    client = _get_client(as_json)
+    try:
+        result = client.star(file_id, starred=True)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Starred: {result['name']}[/green]")
+    undo_cmd, _, _ = get_undo_info("drive-star", file_id)
+
+    receipt = operation_receipt(
+        operation="star",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+        },
+        undo_command=undo_cmd,
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -329,13 +524,23 @@ def unstar(file_id: str, quiet: bool, as_json: bool) -> None:
 
         desk drive unstar <file-id>
     """
-    client = _get_client()
-    result = client.star(file_id, starred=False)
+    client = _get_client(as_json)
+    try:
+        result = client.star(file_id, starred=False)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Unstarred: {result['name']}[/green]")
+    undo_cmd, _, _ = get_undo_info("drive-unstar", file_id)
+
+    receipt = operation_receipt(
+        operation="unstar",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+        },
+        undo_command=undo_cmd,
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -358,16 +563,23 @@ def copy(file_id: str, name: str | None, folder_id: str | None, quiet: bool, as_
 
         desk drive copy <file-id> --folder <folder-id>
     """
-    client = _get_client()
-    result = client.copy(file_id, name=name, folder_id=folder_id)
+    client = _get_client(as_json)
+    try:
+        result = client.copy(file_id, name=name, folder_id=folder_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "name": name, "folder_id": folder_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Copied to: {result['name']}[/green]")
-        console.print(f"[dim]File ID: {result['id']}[/dim]")
-        if result.get("webViewLink"):
-            console.print(f"[dim]{result['webViewLink']}[/dim]")
+    receipt = operation_receipt(
+        operation="copy",
+        target={
+            "id": result.get("id"),
+            "name": result.get("name"),
+            "source_id": file_id,
+            "link": result.get("webViewLink"),
+        },
+        undo_command=f"desk drive trash {result.get('id')}",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -382,8 +594,11 @@ def permissions(file_id: str, as_json: bool) -> None:
 
         desk drive permissions <file-id>
     """
-    client = _get_client()
-    perms = client.list_permissions(file_id)
+    client = _get_client(as_json)
+    try:
+        perms = client.list_permissions(file_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
     if as_json:
         print(json.dumps(perms, indent=2))
@@ -428,24 +643,48 @@ def unshare(file_id: str, email: str, dry_run: bool, quiet: bool, as_json: bool)
 
         desk drive unshare <file-id> bob@example.com --dry-run
     """
+    client = _get_client(as_json)
+
     if dry_run:
-        if as_json:
-            print(json.dumps({"dry_run": True, "action": "unshare", "fileId": file_id, "email": email}))
-        elif not quiet:
-            console.print(f"[yellow]Would remove {email}'s access to file {file_id}[/yellow]")
+        # Get file info for preview
+        try:
+            file_info = client.info(file_id)
+        except Exception as e:
+            _handle_api_error(e, as_json, {"file_id": file_id})
+
+        preview = dry_run_preview(
+            operation="unshare",
+            targets=[{"id": file_id, "name": file_info.get("name"), "email": email}],
+            reversible=False,
+            warnings=["Re-sharing may require the user to accept the invitation again"],
+        )
+        output_result(preview, as_json, quiet)
         return
 
-    client = _get_client()
     try:
         client.unshare(file_id, email)
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_INPUT,
+                str(e),
+                suggestions=["Run `desk drive permissions <file-id>` to see who has access"],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "email": email})
 
-    if as_json:
-        print(json.dumps({"action": "unshare", "fileId": file_id, "email": email}))
-    elif not quiet:
-        console.print(f"[green]Removed {email}'s access[/green]")
+    receipt = operation_receipt(
+        operation="unshare",
+        target={
+            "id": file_id,
+            "email": email,
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command("transfer-owner")
@@ -464,20 +703,40 @@ def transfer_owner(file_id: str, email: str, dry_run: bool, quiet: bool, as_json
 
         desk drive transfer-owner <file-id> newowner@example.com
     """
+    client = _get_client(as_json)
+
     if dry_run:
-        if as_json:
-            print(json.dumps({"dry_run": True, "action": "transfer-owner", "fileId": file_id, "newOwner": email}))
-        elif not quiet:
-            console.print(f"[yellow]Would transfer ownership of file {file_id} to {email}[/yellow]")
+        # Get file info for preview
+        try:
+            file_info = client.info(file_id)
+        except Exception as e:
+            _handle_api_error(e, as_json, {"file_id": file_id})
+
+        preview = dry_run_preview(
+            operation="transfer-owner",
+            targets=[{"id": file_id, "name": file_info.get("name"), "new_owner": email}],
+            reversible=False,
+            warnings=[
+                "You will become an editor after transfer",
+                "The new owner must be in the same Google Workspace domain",
+            ],
+        )
+        output_result(preview, as_json, quiet)
         return
 
-    client = _get_client()
-    result = client.transfer_ownership(file_id, email)
+    try:
+        client.transfer_ownership(file_id, email)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "email": email})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Transferred ownership to {email}[/green]")
+    receipt = operation_receipt(
+        operation="transfer-owner",
+        target={
+            "id": file_id,
+            "new_owner": email,
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command()
@@ -495,8 +754,11 @@ def comments(file_id: str, include_resolved: bool, as_json: bool) -> None:
 
         desk drive comments <file-id> --include-resolved
     """
-    client = _get_client()
-    comment_list = client.list_comments(file_id, include_resolved=include_resolved)
+    client = _get_client(as_json)
+    try:
+        comment_list = client.list_comments(file_id, include_resolved=include_resolved)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
     if as_json:
         print(json.dumps(comment_list, indent=2))
@@ -541,14 +803,21 @@ def add_comment(file_id: str, text: str, quiet: bool, as_json: bool) -> None:
 
         desk drive add-comment <file-id> --text "Please review this section"
     """
-    client = _get_client()
-    result = client.add_comment(file_id, text)
+    client = _get_client(as_json)
+    try:
+        result = client.add_comment(file_id, text)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Added comment[/green]")
-        console.print(f"[dim]Comment ID: {result['id']}[/dim]")
+    receipt = operation_receipt(
+        operation="add-comment",
+        target={
+            "id": result.get("id"),
+            "file_id": file_id,
+            "content": text[:50] + ("..." if len(text) > 50 else ""),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command("resolve-comment")
@@ -566,14 +835,23 @@ def resolve_comment(file_id: str, comment_id: str, reopen: bool, quiet: bool, as
 
         desk drive resolve-comment <file-id> <comment-id> --reopen
     """
-    client = _get_client()
-    result = client.resolve_comment(file_id, comment_id, resolved=not reopen)
+    client = _get_client(as_json)
+    try:
+        client.resolve_comment(file_id, comment_id, resolved=not reopen)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "comment_id": comment_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        action = "Reopened" if reopen else "Resolved"
-        console.print(f"[green]{action} comment {comment_id}[/green]")
+    operation = "reopen-comment" if reopen else "resolve-comment"
+    undo_flag = "" if reopen else " --reopen"
+    receipt = operation_receipt(
+        operation=operation,
+        target={
+            "id": comment_id,
+            "file_id": file_id,
+        },
+        undo_command=f"desk drive resolve-comment {file_id} {comment_id}{undo_flag}",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @drive.command("reply-comment")
@@ -589,14 +867,22 @@ def reply_comment(file_id: str, comment_id: str, text: str, quiet: bool, as_json
 
         desk drive reply-comment <file-id> <comment-id> --text "Done, thanks!"
     """
-    client = _get_client()
-    result = client.reply_comment(file_id, comment_id, text)
+    client = _get_client(as_json)
+    try:
+        result = client.reply_comment(file_id, comment_id, text)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"file_id": file_id, "comment_id": comment_id})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Added reply[/green]")
-        console.print(f"[dim]Reply ID: {result['id']}[/dim]")
+    receipt = operation_receipt(
+        operation="reply-comment",
+        target={
+            "id": result.get("id"),
+            "file_id": file_id,
+            "comment_id": comment_id,
+            "content": text[:50] + ("..." if len(text) > 50 else ""),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 def _print_file_table(files: list[dict]) -> None:

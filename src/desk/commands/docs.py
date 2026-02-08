@@ -6,20 +6,74 @@ import sys
 import click
 from rich.console import Console
 
+from desk.agent import (
+    ErrorCode,
+    ERROR_SUGGESTIONS,
+    structured_error,
+    operation_receipt,
+    parse_api_error,
+    output_result,
+)
 from desk.auth import get_credentials
 from desk.services.docs import DocsClient
 
 console = Console()
 
 
-def _get_client() -> DocsClient:
+def _get_client(as_json: bool = False) -> DocsClient:
     """Get authenticated Docs client or exit."""
     creds = get_credentials()
     if not creds:
-        console.print("[red]Not authenticated.[/red]")
-        console.print("Run: [cyan]desk setup[/cyan]")
+        if as_json:
+            error = structured_error(
+                ErrorCode.AUTH_REQUIRED,
+                "Not authenticated",
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Not authenticated.[/red]")
+            console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return DocsClient(creds)
+
+
+def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) -> None:
+    """Handle API errors with structured output when --json is used."""
+    raw_error = str(e)
+    error_msg = parse_api_error(raw_error)
+
+    if "not found" in raw_error.lower() or "404" in raw_error:
+        code = ErrorCode.DOCUMENT_NOT_FOUND
+    elif "401" in raw_error or "invalid credentials" in raw_error.lower():
+        code = ErrorCode.AUTH_EXPIRED
+    elif "403" in raw_error or "permission" in raw_error.lower():
+        code = ErrorCode.PERMISSION_DENIED
+    elif "429" in raw_error or "rate" in raw_error.lower():
+        code = ErrorCode.RATE_LIMITED
+    elif "400" in raw_error or "invalid" in raw_error.lower():
+        code = ErrorCode.INVALID_INPUT
+    else:
+        code = ErrorCode.OPERATION_FAILED
+
+    suggestions = ERROR_SUGGESTIONS.get(code, [])
+
+    if as_json:
+        error = structured_error(
+            code=code,
+            message=error_msg,
+            suggestions=suggestions,
+            retryable=code == ErrorCode.RATE_LIMITED,
+            details=context,
+        )
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {error_msg}[/red]")
+        if suggestions:
+            console.print("[dim]Suggestions:[/dim]")
+            for s in suggestions:
+                console.print(f"  [cyan]- {s}[/cyan]")
+
+    sys.exit(1)
 
 
 @click.group()
@@ -42,15 +96,21 @@ def create(title: str, body: str, quiet: bool, as_json: bool) -> None:
 
         desk docs create "Draft" --body "Hello world"
     """
-    client = _get_client()
-    result = client.create(title, body=body)
+    client = _get_client(as_json)
+    try:
+        result = client.create(title, body=body)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"title": title})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Created: {result['title']}[/green]")
-        if result.get("webViewLink"):
-            console.print(f"[dim]{result['webViewLink']}[/dim]")
+    receipt = operation_receipt(
+        operation="create",
+        target={
+            "id": result.get("documentId"),
+            "title": result.get("title"),
+            "link": result.get("webViewLink"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @docs.command()
@@ -63,8 +123,11 @@ def read(document_id: str, as_json: bool) -> None:
 
         desk docs read <document-id>
     """
-    client = _get_client()
-    result = client.read(document_id)
+    client = _get_client(as_json)
+    try:
+        result = client.read(document_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id})
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -98,13 +161,23 @@ def update(document_id: str, text: str, mode: str, quiet: bool, as_json: bool) -
 
         desk docs update <id> "Replace everything" --mode replace
     """
-    client = _get_client()
-    result = client.update(document_id, text, mode=mode)
+    client = _get_client(as_json)
+    try:
+        result = client.update(document_id, text, mode=mode)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "mode": mode})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Updated document ({mode})[/green]")
+    receipt = operation_receipt(
+        operation="update",
+        target={
+            "id": document_id,
+        },
+        changes={
+            "mode": mode,
+            "text_length": len(text),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @docs.command()
@@ -133,17 +206,36 @@ def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) ->
     """
     from pathlib import Path
 
-    client = _get_client()
-    content = client.export(document_id, fmt=fmt)
+    client = _get_client(as_json)
+    try:
+        content = client.export(document_id, fmt=fmt)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "format": fmt})
 
     dest_path = Path(dest)
-    if isinstance(content, str):
-        dest_path.write_text(content, encoding="utf-8")
-    else:
-        dest_path.write_bytes(content)
+    try:
+        if isinstance(content, str):
+            dest_path.write_text(content, encoding="utf-8")
+        else:
+            dest_path.write_bytes(content)
+    except OSError as e:
+        if as_json:
+            error = structured_error(
+                ErrorCode.LOCAL_FILE_WRITE_ERROR,
+                f"Failed to write file: {e}",
+                suggestions=["Check that the destination path is writable", "Check disk space"],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error writing file: {e}[/red]")
+        sys.exit(1)
 
-    if as_json:
-        out = {"documentId": document_id, "format": fmt, "path": str(dest_path)}
-        print(json.dumps(out, indent=2))
-    elif not quiet:
-        console.print(f"[green]Exported to: {dest_path}[/green]")
+    receipt = operation_receipt(
+        operation="export",
+        target={
+            "id": document_id,
+            "format": fmt,
+            "local_path": str(dest_path),
+        },
+    )
+    output_result(receipt, as_json, quiet)

@@ -7,20 +7,74 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from desk.agent import (
+    ErrorCode,
+    ERROR_SUGGESTIONS,
+    structured_error,
+    operation_receipt,
+    parse_api_error,
+    output_result,
+)
 from desk.auth import get_credentials
 from desk.services.sheets import SheetsClient
 
 console = Console()
 
 
-def _get_client() -> SheetsClient:
+def _get_client(as_json: bool = False) -> SheetsClient:
     """Get authenticated Sheets client or exit."""
     creds = get_credentials()
     if not creds:
-        console.print("[red]Not authenticated.[/red]")
-        console.print("Run: [cyan]desk setup[/cyan]")
+        if as_json:
+            error = structured_error(
+                ErrorCode.AUTH_REQUIRED,
+                "Not authenticated",
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Not authenticated.[/red]")
+            console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return SheetsClient(creds)
+
+
+def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) -> None:
+    """Handle API errors with structured output when --json is used."""
+    raw_error = str(e)
+    error_msg = parse_api_error(raw_error)
+
+    if "not found" in raw_error.lower() or "404" in raw_error:
+        code = ErrorCode.SPREADSHEET_NOT_FOUND
+    elif "401" in raw_error or "invalid credentials" in raw_error.lower():
+        code = ErrorCode.AUTH_EXPIRED
+    elif "403" in raw_error or "permission" in raw_error.lower():
+        code = ErrorCode.PERMISSION_DENIED
+    elif "429" in raw_error or "rate" in raw_error.lower():
+        code = ErrorCode.RATE_LIMITED
+    elif "400" in raw_error or "invalid" in raw_error.lower():
+        code = ErrorCode.INVALID_INPUT
+    else:
+        code = ErrorCode.OPERATION_FAILED
+
+    suggestions = ERROR_SUGGESTIONS.get(code, [])
+
+    if as_json:
+        error = structured_error(
+            code=code,
+            message=error_msg,
+            suggestions=suggestions,
+            retryable=code == ErrorCode.RATE_LIMITED,
+            details=context,
+        )
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {error_msg}[/red]")
+        if suggestions:
+            console.print("[dim]Suggestions:[/dim]")
+            for s in suggestions:
+                console.print(f"  [cyan]- {s}[/cyan]")
+
+    sys.exit(1)
 
 
 @click.group()
@@ -47,12 +101,15 @@ def read(spreadsheet_id: str, ranges: tuple[str, ...], sheet_id: int | None, as_
 
         desk sheets read <id> --range "Sheet1!A:A" --range "Sheet1!C:C"
     """
-    client = _get_client()
-    result = client.read(
-        spreadsheet_id,
-        ranges=list(ranges) if ranges else None,
-        sheet_id=sheet_id,
-    )
+    client = _get_client(as_json)
+    try:
+        result = client.read(
+            spreadsheet_id,
+            ranges=list(ranges) if ranges else None,
+            sheet_id=sheet_id,
+        )
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id})
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -91,13 +148,21 @@ def update_cell(spreadsheet_id: str, range_: str, value: str, quiet: bool, as_js
 
         desk sheets update-cell <id> "Sheet1!B2" "42"
     """
-    client = _get_client()
-    result = client.update_cell(spreadsheet_id, range_, value)
+    client = _get_client(as_json)
+    try:
+        result = client.update_cell(spreadsheet_id, range_, value)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "range": range_})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Updated {result['updatedRange']}[/green]")
+    receipt = operation_receipt(
+        operation="update-cell",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "range": result.get("updatedRange"),
+            "value": value,
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command()
@@ -111,15 +176,21 @@ def create(title: str, quiet: bool, as_json: bool) -> None:
 
         desk sheets create "Q1 Budget"
     """
-    client = _get_client()
-    result = client.create(title)
+    client = _get_client(as_json)
+    try:
+        result = client.create(title)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"title": title})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Created: {result['title']}[/green]")
-        if result.get("spreadsheetUrl"):
-            console.print(f"[dim]{result['spreadsheetUrl']}[/dim]")
+    receipt = operation_receipt(
+        operation="create",
+        target={
+            "id": result.get("spreadsheetId"),
+            "title": result.get("title"),
+            "link": result.get("spreadsheetUrl"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command()
@@ -137,20 +208,35 @@ def write(spreadsheet_id: str, range_: str, values_json: str, quiet: bool, as_js
 
         desk sheets write <id> "Sheet1!A1:B2" '[["Name","Age"],["Alice","30"]]'
     """
-    client = _get_client()
+    client = _get_client(as_json)
     try:
         values = json.loads(values_json)
     except json.JSONDecodeError:
-        console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_INPUT,
+                "Invalid JSON. Expected a 2D array like '[[\"a\",\"b\"]]'",
+                suggestions=["Ensure values are a JSON 2D array", "Check for proper escaping of quotes"],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
         sys.exit(1)
-    result = client.write(spreadsheet_id, range_, values)
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(
-            f"[green]Updated {result['updatedRange']} ({result['updatedCells']} cells)[/green]"
-        )
+    try:
+        result = client.write(spreadsheet_id, range_, values)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "range": range_})
+
+    receipt = operation_receipt(
+        operation="write",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "range": result.get("updatedRange"),
+            "cells_updated": result.get("updatedCells"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command()
@@ -168,20 +254,35 @@ def append(spreadsheet_id: str, range_: str, values_json: str, quiet: bool, as_j
 
         desk sheets append <id> "Sheet1!A:Z" '[["Alice","30"],["Bob","25"]]'
     """
-    client = _get_client()
+    client = _get_client(as_json)
     try:
         values = json.loads(values_json)
     except json.JSONDecodeError:
-        console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_INPUT,
+                "Invalid JSON. Expected a 2D array like '[[\"a\",\"b\"]]'",
+                suggestions=["Ensure values are a JSON 2D array", "Check for proper escaping of quotes"],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
         sys.exit(1)
-    result = client.append(spreadsheet_id, range_, values)
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(
-            f"[green]Appended {result['updatedRows']} rows to {result['updatedRange']}[/green]"
-        )
+    try:
+        result = client.append(spreadsheet_id, range_, values)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "range": range_})
+
+    receipt = operation_receipt(
+        operation="append",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "range": result.get("updatedRange"),
+            "rows_appended": result.get("updatedRows"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command()
@@ -196,13 +297,20 @@ def clear(spreadsheet_id: str, range_: str, quiet: bool, as_json: bool) -> None:
 
         desk sheets clear <id> "Sheet1!A1:C10"
     """
-    client = _get_client()
-    result = client.clear(spreadsheet_id, range_)
+    client = _get_client(as_json)
+    try:
+        result = client.clear(spreadsheet_id, range_)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "range": range_})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Cleared {result['clearedRange']}[/green]")
+    receipt = operation_receipt(
+        operation="clear",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "range": result.get("clearedRange"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command("list-sheets")
@@ -215,8 +323,11 @@ def list_sheets(spreadsheet_id: str, as_json: bool) -> None:
 
         desk sheets list-sheets <spreadsheet-id>
     """
-    client = _get_client()
-    sheet_list = client.list_sheets(spreadsheet_id)
+    client = _get_client(as_json)
+    try:
+        sheet_list = client.list_sheets(spreadsheet_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id})
 
     if as_json:
         print(json.dumps(sheet_list, indent=2))
@@ -260,14 +371,22 @@ def add_sheet(spreadsheet_id: str, name: str, index: int | None, quiet: bool, as
 
         desk sheets add-sheet <id> --name "Summary" --index 0
     """
-    client = _get_client()
-    result = client.add_sheet(spreadsheet_id, name, index=index)
+    client = _get_client(as_json)
+    try:
+        result = client.add_sheet(spreadsheet_id, name, index=index)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "name": name})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Added sheet: {result['title']}[/green]")
-        console.print(f"[dim]Sheet ID: {result['sheetId']}[/dim]")
+    receipt = operation_receipt(
+        operation="add-sheet",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_id": result.get("sheetId"),
+            "name": result.get("title"),
+        },
+        undo_command=f"desk sheets delete-sheet {spreadsheet_id} --sheet-id {result.get('sheetId')} --yes",
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command("delete-sheet")
@@ -285,22 +404,38 @@ def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, quiet: bool, as_
 
         desk sheets delete-sheet <id> --sheet-id 123456 --yes
     """
+    client = _get_client(as_json)
+
     if not yes:
         if not sys.stdin.isatty():
-            console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            if as_json:
+                error = structured_error(
+                    ErrorCode.INVALID_INPUT,
+                    "Non-interactive mode requires --yes flag",
+                    suggestions=["Use --yes to confirm deletion in non-interactive mode"],
+                )
+                print(json.dumps(error, indent=2))
+            else:
+                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
         import click as click_module
         if not click_module.confirm(f"Delete sheet {sheet_id}? This cannot be undone."):
             console.print("[yellow]Cancelled[/yellow]")
             return
 
-    client = _get_client()
-    client.delete_sheet(spreadsheet_id, sheet_id)
+    try:
+        client.delete_sheet(spreadsheet_id, sheet_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "sheet_id": sheet_id})
 
-    if as_json:
-        print(json.dumps({"action": "delete-sheet", "sheetId": sheet_id}))
-    elif not quiet:
-        console.print(f"[green]Deleted sheet {sheet_id}[/green]")
+    receipt = operation_receipt(
+        operation="delete-sheet",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_id": sheet_id,
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @sheets.command("rename-sheet")
@@ -316,13 +451,21 @@ def rename_sheet(spreadsheet_id: str, sheet_id: int, name: str, quiet: bool, as_
 
         desk sheets rename-sheet <id> --sheet-id 123456 --name "New Name"
     """
-    client = _get_client()
-    result = client.rename_sheet(spreadsheet_id, sheet_id, name)
+    client = _get_client(as_json)
+    try:
+        result = client.rename_sheet(spreadsheet_id, sheet_id, name)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "sheet_id": sheet_id, "name": name})
 
-    if as_json:
-        print(json.dumps(result, indent=2))
-    elif not quiet:
-        console.print(f"[green]Renamed sheet to: {result['title']}[/green]")
+    receipt = operation_receipt(
+        operation="rename-sheet",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_id": sheet_id,
+            "name": result.get("title"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 def _print_values_table(values: list[list]) -> None:

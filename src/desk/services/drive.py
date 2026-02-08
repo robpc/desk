@@ -288,6 +288,25 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    def untrash(self, file_id: str) -> dict:
+        """Restore a file from trash.
+
+        Args:
+            file_id: The file ID
+
+        Returns:
+            Updated file metadata
+        """
+        try:
+            result = (
+                self.service.files()
+                .update(fileId=file_id, body={"trashed": False}, fields="id, name, trashed")
+                .execute()
+            )
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
     def share(self, file_id: str, email: str, role: str = "writer") -> dict:
         """Share a file with someone.
 
