@@ -31,19 +31,119 @@ def _get_credentials_or_exit():
     return creds
 
 
-@click.group()
+def _get_capabilities() -> dict:
+    """Return structured capabilities for agent introspection."""
+    return {
+        "version": __version__,
+        "agent_first": True,
+        "services": {
+            "mail": {
+                "description": "Gmail operations",
+                "commands": {
+                    "search": {"description": "Search messages", "batch": False, "destructive": False},
+                    "threads": {"description": "Search threads", "batch": False, "destructive": False},
+                    "thread": {"description": "Read thread", "batch": False, "destructive": False},
+                    "read": {"description": "Read message", "batch": False, "destructive": False},
+                    "send": {"description": "Send email", "batch": False, "destructive": True, "reversible": False},
+                    "reply": {"description": "Reply to message", "batch": False, "destructive": True, "reversible": False},
+                    "forward": {"description": "Forward message", "batch": False, "destructive": True, "reversible": False},
+                    "archive": {"description": "Archive messages", "batch": True, "destructive": False, "reversible": True, "undo": "unarchive"},
+                    "trash": {"description": "Move to trash", "batch": True, "destructive": True, "reversible": True, "undo": "untrash", "undo_expires": "30 days"},
+                    "label": {"description": "Add label", "batch": True, "destructive": False, "reversible": True, "undo": "remove-label"},
+                    "remove-label": {"description": "Remove label", "batch": True, "destructive": False, "reversible": True, "undo": "label"},
+                    "mark-read": {"description": "Mark as read", "batch": True, "destructive": False, "reversible": True, "undo": "mark-unread"},
+                    "mark-unread": {"description": "Mark as unread", "batch": True, "destructive": False, "reversible": True, "undo": "mark-read"},
+                    "star": {"description": "Star messages", "batch": True, "destructive": False, "reversible": True, "undo": "unstar"},
+                    "unstar": {"description": "Remove star", "batch": True, "destructive": False, "reversible": True, "undo": "star"},
+                    "labels": {"description": "List labels", "batch": False, "destructive": False},
+                    "drafts": {"description": "List drafts", "batch": False, "destructive": False},
+                    "filters": {"description": "List filters", "batch": False, "destructive": False},
+                },
+            },
+            "drive": {
+                "description": "Google Drive operations",
+                "commands": {
+                    "search": {"description": "Search files", "batch": False, "destructive": False},
+                    "read": {"description": "Read file content", "batch": False, "destructive": False},
+                    "info": {"description": "File metadata", "batch": False, "destructive": False},
+                    "recent": {"description": "Recent files", "batch": False, "destructive": False},
+                    "upload": {"description": "Upload file", "batch": False, "destructive": False},
+                    "download": {"description": "Download file", "batch": False, "destructive": False},
+                    "mkdir": {"description": "Create folder", "batch": False, "destructive": False},
+                    "trash": {"description": "Move to trash", "batch": False, "destructive": True, "reversible": True, "undo_expires": "30 days"},
+                    "star": {"description": "Star file", "batch": False, "destructive": False, "reversible": True},
+                    "unstar": {"description": "Remove star", "batch": False, "destructive": False, "reversible": True},
+                },
+            },
+            "cal": {
+                "description": "Google Calendar operations",
+                "commands": {
+                    "today": {"description": "Today's events", "batch": False, "destructive": False},
+                    "week": {"description": "This week's events", "batch": False, "destructive": False},
+                    "next": {"description": "Upcoming events", "batch": False, "destructive": False},
+                    "list": {"description": "List calendars", "batch": False, "destructive": False},
+                    "create": {"description": "Create event", "batch": False, "destructive": False},
+                    "delete": {"description": "Delete event", "batch": False, "destructive": True, "reversible": False},
+                    "update": {"description": "Update event", "batch": False, "destructive": False},
+                    "find": {"description": "Search events", "batch": False, "destructive": False},
+                },
+            },
+            "sheets": {
+                "description": "Google Sheets operations",
+                "commands": {
+                    "read": {"description": "Read spreadsheet", "batch": False, "destructive": False},
+                    "write": {"description": "Write values", "batch": False, "destructive": True},
+                    "append": {"description": "Append rows", "batch": False, "destructive": False},
+                    "clear": {"description": "Clear range", "batch": False, "destructive": True},
+                    "create": {"description": "Create spreadsheet", "batch": False, "destructive": False},
+                },
+            },
+            "docs": {
+                "description": "Google Docs operations",
+                "commands": {
+                    "read": {"description": "Read document", "batch": False, "destructive": False},
+                    "create": {"description": "Create document", "batch": False, "destructive": False},
+                    "update": {"description": "Update document", "batch": False, "destructive": True},
+                    "export": {"description": "Export document", "batch": False, "destructive": False},
+                },
+            },
+        },
+        "global_flags": {
+            "--json": "Output as JSON (agent-friendly structured output)",
+            "--quiet": "Suppress success messages",
+            "--dry-run": "Preview without executing (on mutating commands)",
+            "--verbose": "Verbose output for debugging",
+        },
+        "agent_features": {
+            "structured_errors": "Errors include code, message, suggestions, and retryable flag",
+            "operation_receipts": "Mutating operations return receipts with undo commands",
+            "dry_run_preview": "Dry-run shows target details and reversibility",
+        },
+    }
+
+
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.option("--capabilities", is_flag=True, help="Show capabilities for agent introspection")
 @click.pass_context
-def main(ctx: click.Context, verbose: bool) -> None:
+def main(ctx: click.Context, verbose: bool, capabilities: bool) -> None:
     """Desk - Google Workspace from the command line."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+
+    if capabilities:
+        print(json.dumps(_get_capabilities(), indent=2))
+        ctx.exit(0)
 
     # Auto-migrate legacy ~/.gmail-cli/ config
     if migrate_legacy_config():
         console.print("[dim]Migrated config from ~/.gmail-cli/ to ~/.desk/[/dim]")
         console.print("[dim]Run 'desk auth login' to grant expanded API access.[/dim]")
+
+    # If no command provided and no flags handled, show help
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 # --- Setup command ---

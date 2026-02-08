@@ -7,18 +7,34 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from desk.agent import (
+    ErrorCode,
+    structured_error,
+    operation_receipt,
+    dry_run_preview,
+    get_undo_info,
+    output_result,
+)
 from desk.auth import get_credentials
+from desk.idempotency import check_idempotency, record_idempotency
 from desk.services.gmail import GmailClient
 
 console = Console()
 
 
-def _get_client() -> GmailClient:
+def _get_client(as_json: bool = False) -> GmailClient:
     """Get authenticated Gmail client or exit."""
     creds = get_credentials()
     if not creds:
-        console.print("[red]Not authenticated.[/red]")
-        console.print("Run: [cyan]desk setup[/cyan]")
+        if as_json:
+            error = structured_error(
+                ErrorCode.AUTH_REQUIRED,
+                "Not authenticated",
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Not authenticated.[/red]")
+            console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return GmailClient(creds)
 
@@ -32,6 +48,33 @@ def _collect_ids(message_ids: tuple[str, ...], stdin: bool) -> list[str]:
             if line:
                 ids.append(line)
     return ids
+
+
+def _get_message_summaries(client: GmailClient, ids: list[str], max_fetch: int = 10) -> list[dict]:
+    """Fetch basic message info for receipts/previews.
+
+    For large batches, only fetches first max_fetch items to avoid slowdown.
+    Returns list of dicts with id, subject, from, date.
+    """
+    summaries = []
+    for msg_id in ids[:max_fetch]:
+        try:
+            msg = client.read(msg_id)
+            summaries.append({
+                "id": msg_id,
+                "subject": msg.get("subject", "(no subject)"),
+                "from": msg.get("from", "unknown"),
+                "date": msg.get("date", ""),
+            })
+        except Exception:
+            # If we can't fetch details, include just the ID
+            summaries.append({"id": msg_id})
+
+    # For remaining items, just include IDs
+    for msg_id in ids[max_fetch:]:
+        summaries.append({"id": msg_id})
+
+    return summaries
 
 
 @click.group()
@@ -299,6 +342,7 @@ def read(message_id: str, as_json: bool) -> None:
 @click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--idempotency-key", "idempotency_key", default=None, help="Key for safe retries (prevents duplicate sends)")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -310,6 +354,7 @@ def send(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    idempotency_key: str | None,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -317,6 +362,9 @@ def send(
     """Send an email.
 
     Body can be provided via --body, --body-file, or --stdin.
+
+    Use --idempotency-key for safe retries (agents). If a send with the same key
+    was already performed, returns the cached result instead of sending again.
 
     Examples:
 
@@ -327,6 +375,9 @@ def send(
         echo "Report content" | desk mail send --to "boss@example.com" --subject "Report" --stdin
 
         desk mail send --to "user@example.com" --subject "Notes" --body-file notes.txt
+
+        # Safe retry with idempotency key
+        desk mail send --to "user@example.com" --subject "Report" --body "..." --idempotency-key "task-123"
     """
     # Determine body source
     body_sources = sum([body_text is not None, body_file is not None, from_stdin])
@@ -354,16 +405,22 @@ def send(
         body = sys.stdin.read()
 
     if dry_run:
-        preview = {
-            "dry_run": True,
-            "action": "send",
+        targets = [{
             "to": list(to_addrs),
             "cc": list(cc_addrs) if cc_addrs else [],
             "bcc": list(bcc_addrs) if bcc_addrs else [],
             "subject": subject,
-            "body_preview": body[:200] + "..." if len(body) > 200 else body,
-        }
+            "body_length": len(body),
+            "body_preview": body[:100] + "..." if len(body) > 100 else body,
+        }]
         if as_json:
+            preview = dry_run_preview(
+                operation="send",
+                targets=targets,
+                reversible=False,
+                undo_command=None,
+                warnings=["This action cannot be undone - email will be sent immediately"],
+            )
             print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would send message:[/yellow]")
@@ -374,9 +431,28 @@ def send(
                 console.print(f"  BCC: {', '.join(bcc_addrs)}")
             console.print(f"  Subject: {subject}")
             console.print(f"  Body: {len(body)} characters")
+            console.print(f"\n[yellow]Warning: This action cannot be undone[/yellow]")
         return
 
-    client = _get_client()
+    # Check idempotency key before sending
+    if idempotency_key:
+        cached = check_idempotency(idempotency_key)
+        if cached:
+            if as_json:
+                receipt = cached["result"]
+                receipt["idempotency"] = {
+                    "key": idempotency_key,
+                    "status": "cached",
+                    "original_timestamp": cached["original_timestamp"],
+                    "note": "Operation was already executed; returning cached result",
+                }
+                print(json.dumps(receipt, indent=2))
+            elif not quiet:
+                console.print(f"[yellow]Already sent (cached from {cached['original_timestamp']})[/yellow]")
+                console.print(f"[dim]Message ID: {cached['result'].get('targets', [{}])[0].get('id', 'unknown')}[/dim]")
+            return
+
+    client = _get_client(as_json)
     result = client.send(
         to=list(to_addrs),
         subject=subject,
@@ -385,8 +461,28 @@ def send(
         bcc=list(bcc_addrs) if bcc_addrs else None,
     )
 
+    receipt = operation_receipt(
+        operation="send",
+        target={
+            "id": result.get("id", "unknown"),
+            "thread_id": result.get("threadId", "unknown"),
+            "to": list(to_addrs),
+            "subject": subject,
+        },
+        undo_command=None,
+        undo_expires=None,
+    )
+
+    # Record for idempotency if key provided
+    if idempotency_key:
+        record_idempotency(idempotency_key, "mail.send", receipt)
+        receipt["idempotency"] = {
+            "key": idempotency_key,
+            "status": "executed",
+        }
+
     if as_json:
-        print(json.dumps(result, indent=2))
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Sent message to {', '.join(to_addrs)}[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
@@ -1053,14 +1149,23 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: b
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("label", ids, label=label_name)
+
     if dry_run:
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "label", "label": label_name, "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="label",
+                targets=[{"id": i, "label": label_name} for i in ids],
+                reversible=reversible,
+                undo_command=undo_cmd,
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would add label '{label_name}' to {len(ids)} message(s)[/yellow]")
+            console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     label_id = client._get_label_id(label_name)
     if not label_id:
         label_id = client._resolve_label(label_name)
@@ -1068,9 +1173,17 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: b
     client.batch_modify(ids, add_labels=[label_id])
 
     if as_json:
-        print(json.dumps({"action": "label", "label": label_name, "count": len(ids), "ids": ids}))
+        receipt = operation_receipt(
+            operation="label",
+            target=[{"id": i} for i in ids],
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_added": [label_name]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Added label '{label_name}' to {len(ids)} message(s)[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
 @mail.command()
@@ -1093,20 +1206,47 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: boo
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("archive", ids)
+
     if dry_run:
+        client = _get_client(as_json)
+        targets = _get_message_summaries(client, ids)
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "archive", "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="archive",
+                targets=targets,
+                reversible=reversible,
+                undo_command=undo_cmd,
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
-            console.print(f"[yellow]Would archive {len(ids)} message(s)[/yellow]")
+            console.print(f"[yellow]Would archive {len(ids)} message(s):[/yellow]")
+            for t in targets[:5]:
+                if "subject" in t:
+                    console.print(f"  - {t['subject']} (from {t.get('from', 'unknown')})")
+                else:
+                    console.print(f"  - {t['id']}")
+            if len(ids) > 5:
+                console.print(f"  ... and {len(ids) - 5} more")
+            console.print(f"\n[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     client.batch_modify(ids, remove_labels=["INBOX"])
 
     if as_json:
-        print(json.dumps({"action": "archive", "count": len(ids), "ids": ids}))
+        targets = _get_message_summaries(client, ids)
+        receipt = operation_receipt(
+            operation="archive",
+            target=targets,
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_removed": ["INBOX"]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Archived {len(ids)} message(s)[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
 @mail.command("mark-read")
@@ -1127,20 +1267,37 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: b
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("mark-read", ids)
+
     if dry_run:
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "mark-read", "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="mark-read",
+                targets=[{"id": i} for i in ids],
+                reversible=reversible,
+                undo_command=undo_cmd,
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would mark {len(ids)} message(s) as read[/yellow]")
+            console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     client.batch_modify(ids, remove_labels=["UNREAD"])
 
     if as_json:
-        print(json.dumps({"action": "mark-read", "count": len(ids), "ids": ids}))
+        receipt = operation_receipt(
+            operation="mark-read",
+            target=[{"id": i} for i in ids],
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_removed": ["UNREAD"]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as read[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
 @mail.command("mark-unread")
@@ -1161,20 +1318,37 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("mark-unread", ids)
+
     if dry_run:
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "mark-unread", "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="mark-unread",
+                targets=[{"id": i} for i in ids],
+                reversible=reversible,
+                undo_command=undo_cmd,
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would mark {len(ids)} message(s) as unread[/yellow]")
+            console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     client.batch_modify(ids, add_labels=["UNREAD"])
 
     if as_json:
-        print(json.dumps({"action": "mark-unread", "count": len(ids), "ids": ids}))
+        receipt = operation_receipt(
+            operation="mark-unread",
+            target=[{"id": i} for i in ids],
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_added": ["UNREAD"]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as unread[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
 @mail.command()
@@ -1195,20 +1369,50 @@ def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool,
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("trash", ids)
+
     if dry_run:
+        client = _get_client(as_json)
+        targets = _get_message_summaries(client, ids)
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "trash", "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="trash",
+                targets=targets,
+                reversible=reversible,
+                undo_command=undo_cmd,
+                warnings=["Messages in trash are auto-deleted after 30 days"],
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
-            console.print(f"[yellow]Would move {len(ids)} message(s) to trash[/yellow]")
+            console.print(f"[yellow]Would move {len(ids)} message(s) to trash:[/yellow]")
+            for t in targets[:5]:
+                if "subject" in t:
+                    console.print(f"  - {t['subject']} (from {t.get('from', 'unknown')})")
+                else:
+                    console.print(f"  - {t['id']}")
+            if len(ids) > 5:
+                console.print(f"  ... and {len(ids) - 5} more")
+            console.print(f"\n[yellow]Warning: Messages in trash are auto-deleted after 30 days[/yellow]")
+            console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     client.batch_modify(ids, add_labels=["TRASH"], remove_labels=["INBOX"])
 
     if as_json:
-        print(json.dumps({"action": "trash", "count": len(ids), "ids": ids}))
+        targets = _get_message_summaries(client, ids)
+        receipt = operation_receipt(
+            operation="trash",
+            target=targets,
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_added": ["TRASH"], "labels_removed": ["INBOX"]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Moved {len(ids)} message(s) to trash[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
+        console.print(f"[dim]Expires: {undo_expires}[/dim]")
 
 
 @mail.command()
@@ -1275,20 +1479,37 @@ def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, 
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("star", ids)
+
     if dry_run:
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "star", "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="star",
+                targets=[{"id": i} for i in ids],
+                reversible=reversible,
+                undo_command=undo_cmd,
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would star {len(ids)} message(s)[/yellow]")
+            console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     client.batch_modify(ids, add_labels=["STARRED"])
 
     if as_json:
-        print(json.dumps({"action": "star", "count": len(ids), "ids": ids}))
+        receipt = operation_receipt(
+            operation="star",
+            target=[{"id": i} for i in ids],
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_added": ["STARRED"]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Starred {len(ids)} message(s)[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
 @mail.command()
@@ -1309,20 +1530,37 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
 
+    undo_cmd, undo_expires, reversible = get_undo_info("unstar", ids)
+
     if dry_run:
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "unstar", "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="unstar",
+                targets=[{"id": i} for i in ids],
+                reversible=reversible,
+                undo_command=undo_cmd,
+            )
+            print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would unstar {len(ids)} message(s)[/yellow]")
+            console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
-    client = _get_client()
+    client = _get_client(as_json)
     client.batch_modify(ids, remove_labels=["STARRED"])
 
     if as_json:
-        print(json.dumps({"action": "unstar", "count": len(ids), "ids": ids}))
+        receipt = operation_receipt(
+            operation="unstar",
+            target=[{"id": i} for i in ids],
+            undo_command=undo_cmd,
+            undo_expires=undo_expires,
+            changes={"labels_removed": ["STARRED"]},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Unstarred {len(ids)} message(s)[/green]")
+        console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
 @mail.command()
