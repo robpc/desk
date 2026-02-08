@@ -4,6 +4,8 @@ import base64
 import socket
 from email.mime.text import MIMEText
 
+import google_auth_httplib2
+import httplib2
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -13,8 +15,22 @@ class GmailClient:
     """Client for Gmail API operations."""
 
     def __init__(self, credentials: Credentials):
+        self.credentials = credentials
         self.service = build("gmail", "v1", credentials=credentials)
         self.user_id = "me"
+
+    def _build_service_with_timeout(self, timeout: int):
+        """Build a Gmail service with a custom timeout.
+
+        Args:
+            timeout: Timeout in seconds for HTTP operations.
+
+        Returns:
+            A Gmail service instance with the custom timeout.
+        """
+        http = httplib2.Http(timeout=timeout)
+        authed_http = google_auth_httplib2.AuthorizedHttp(self.credentials, http=http)
+        return build("gmail", "v1", http=authed_http)
 
     def search(
         self, query: str, max_results: int = 20, page_token: str | None = None
@@ -282,14 +298,17 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
-    def delete_label(self, name: str) -> None:
+    def delete_label(self, name: str, timeout: int | None = None) -> None:
         """Delete a label.
 
         Args:
             name: Label name to delete.
+            timeout: Optional timeout in seconds (default uses standard timeout).
+                     Use higher values for labels with many messages.
 
         Raises:
             ValueError: If label not found or is a system label.
+            TimeoutError: If the operation times out.
         """
         label_id = self._get_label_id(name)
         if not label_id:
@@ -304,8 +323,14 @@ class GmailClient:
         if name.upper() in system_labels:
             raise ValueError(f"Cannot delete system label: {name}")
 
+        # Use custom timeout service if specified
+        service = (
+            self._build_service_with_timeout(timeout) if timeout
+            else self.service
+        )
+
         try:
-            self.service.users().labels().delete(
+            service.users().labels().delete(
                 userId=self.user_id, id=label_id
             ).execute()
         except socket.timeout as e:

@@ -1119,18 +1119,25 @@ def create_label(name: str, color: str | None, quiet: bool, as_json: bool) -> No
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete_label(name: str, yes: bool, quiet: bool, as_json: bool) -> None:
+@click.option(
+    "--timeout", "-t", type=int, default=None,
+    help="Timeout in seconds (default: 60). Use higher values for labels with many messages."
+)
+def delete_label(name: str, yes: bool, quiet: bool, as_json: bool, timeout: int | None) -> None:
     """Delete a label.
 
     This removes the label from all messages that have it. Messages are not deleted.
 
-    Note: Labels with many messages may take a long time to delete.
+    Note: Labels with many messages may take a long time to delete. Use --timeout
+    to extend the timeout for large labels (e.g., --timeout 300 for 5 minutes).
 
     Examples:
 
         desk mail delete-label "Old Project"
 
         desk mail delete-label "Temp" --yes
+
+        desk mail delete-label "Github" --yes --timeout 300
     """
     client = _get_client(as_json)
 
@@ -1152,7 +1159,7 @@ def delete_label(name: str, yes: bool, quiet: bool, as_json: bool) -> None:
             return
 
     try:
-        client.delete_label(name)
+        client.delete_label(name, timeout=timeout)
     except ValueError as e:
         error = structured_error(
             ErrorCode.LABEL_NOT_FOUND,
@@ -1166,9 +1173,9 @@ def delete_label(name: str, yes: bool, quiet: bool, as_json: bool) -> None:
             f"Delete label timed out: {e}",
             suggestions=[
                 "Labels with many messages take longer to delete",
+                "Try --timeout 300 (5 min) or --timeout 600 (10 min) for large labels",
                 "The operation may still complete on the server",
-                "Check `desk mail labels` to verify the label was deleted",
-                "If not deleted, try again - the server may be less busy",
+                "Check `desk mail labels` to verify, or delete manually in Gmail settings",
             ],
             retryable=True,
         )
