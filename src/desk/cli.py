@@ -126,15 +126,33 @@ def _get_capabilities() -> dict:
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
-@click.option("--capabilities", is_flag=True, help="Show capabilities for agent introspection")
+@click.option("--capabilities", "capabilities_service", default=None, required=False,
+              help="Show capabilities. Use 'all' for everything or specify service: mail, drive, cal, sheets, docs")
 @click.pass_context
-def main(ctx: click.Context, verbose: bool, capabilities: bool) -> None:
+def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) -> None:
     """Desk - Google Workspace from the command line."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
 
-    if capabilities:
-        print(json.dumps(_get_capabilities(), indent=2))
+    if capabilities_service is not None:
+        caps = _get_capabilities()
+        if capabilities_service not in ("all", "") and capabilities_service in caps["services"]:
+            # Filter to just the requested service
+            filtered = {
+                "version": caps["version"],
+                "agent_first": caps["agent_first"],
+                "service": capabilities_service,
+                "commands": caps["services"][capabilities_service]["commands"],
+                "global_flags": caps["global_flags"],
+            }
+            print(json.dumps(filtered, indent=2))
+        elif capabilities_service not in ("all", ""):
+            # Unknown service
+            console.print(f"[red]Unknown service: {capabilities_service}[/red]")
+            console.print(f"[dim]Available: all, {', '.join(caps['services'].keys())}[/dim]")
+            ctx.exit(1)
+        else:
+            print(json.dumps(caps, indent=2))
         ctx.exit(0)
 
     # Auto-migrate legacy ~/.gmail-cli/ config
