@@ -77,6 +77,52 @@ def _get_message_summaries(client: GmailClient, ids: list[str], max_fetch: int =
     return summaries
 
 
+def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) -> None:
+    """Handle API errors with structured output when --json is used.
+
+    Args:
+        e: The exception that occurred
+        as_json: Whether to output structured JSON
+        context: Additional context about the operation
+    """
+    error_str = str(e)
+
+    # Determine error code based on error message
+    if "not found" in error_str.lower() or "404" in error_str:
+        code = ErrorCode.MESSAGE_NOT_FOUND
+    elif "401" in error_str or "invalid credentials" in error_str.lower():
+        code = ErrorCode.AUTH_EXPIRED
+    elif "403" in error_str or "permission" in error_str.lower():
+        code = ErrorCode.PERMISSION_DENIED
+    elif "429" in error_str or "rate" in error_str.lower():
+        code = ErrorCode.RATE_LIMITED
+    elif "400" in error_str or "invalid" in error_str.lower():
+        code = ErrorCode.INVALID_INPUT
+    else:
+        code = ErrorCode.OPERATION_FAILED
+
+    if as_json:
+        error = structured_error(
+            code=code,
+            message=error_str,
+            retryable=code == ErrorCode.RATE_LIMITED,
+            details=context,
+        )
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {error_str}[/red]")
+        suggestions = error.get("error", {}).get("suggestions", []) if as_json else []
+        if not suggestions:
+            from desk.agent import ERROR_SUGGESTIONS
+            suggestions = ERROR_SUGGESTIONS.get(code, [])
+        if suggestions:
+            console.print("[dim]Suggestions:[/dim]")
+            for s in suggestions:
+                console.print(f"  [cyan]- {s}[/cyan]")
+
+    sys.exit(1)
+
+
 @click.group()
 def mail() -> None:
     """Gmail — search, read, label, archive."""
@@ -320,8 +366,11 @@ def thread_trash(thread_id: str, dry_run: bool, quiet: bool, as_json: bool) -> N
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def read(message_id: str, as_json: bool) -> None:
     """Read a message by ID."""
-    client = _get_client()
-    message = client.read(message_id)
+    client = _get_client(as_json)
+    try:
+        message = client.read(message_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"operation": "read", "message_id": message_id})
 
     if as_json:
         print(json.dumps(message, indent=2))
@@ -1232,7 +1281,10 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: boo
         return
 
     client = _get_client(as_json)
-    client.batch_modify(ids, remove_labels=["INBOX"])
+    try:
+        client.batch_modify(ids, remove_labels=["INBOX"])
+    except Exception as e:
+        _handle_api_error(e, as_json, {"operation": "archive", "ids": ids})
 
     if as_json:
         targets = _get_message_summaries(client, ids)
@@ -1397,7 +1449,10 @@ def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool,
         return
 
     client = _get_client(as_json)
-    client.batch_modify(ids, add_labels=["TRASH"], remove_labels=["INBOX"])
+    try:
+        client.batch_modify(ids, add_labels=["TRASH"], remove_labels=["INBOX"])
+    except Exception as e:
+        _handle_api_error(e, as_json, {"operation": "trash", "ids": ids})
 
     if as_json:
         targets = _get_message_summaries(client, ids)
@@ -2105,19 +2160,35 @@ def modify(
 
     if dry_run:
         if as_json:
-            print(json.dumps({"dry_run": True, "action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
+            preview = dry_run_preview(
+                operation="modify",
+                targets=[{"id": i} for i in ids],
+                reversible=True,
+                undo_command=None,  # Undo depends on what labels were changed
+            )
+            preview["changes"] = {"add_labels": list(add_labels), "remove_labels": list(remove_labels)}
+            print(json.dumps(preview, indent=2))
         elif not quiet:
             console.print(f"[yellow]Would modify {len(ids)} message(s): {' '.join(changes)}[/yellow]")
         return
 
-    client = _get_client()
-    client.batch_modify(
-        ids,
-        add_labels=list(add_labels) if add_labels else None,
-        remove_labels=list(remove_labels) if remove_labels else None,
-    )
+    client = _get_client(as_json)
+    try:
+        client.batch_modify(
+            ids,
+            add_labels=list(add_labels) if add_labels else None,
+            remove_labels=list(remove_labels) if remove_labels else None,
+        )
+    except Exception as e:
+        _handle_api_error(e, as_json, {"operation": "modify", "ids": ids})
 
     if as_json:
-        print(json.dumps({"action": "modify", "changes": changes, "count": len(ids), "ids": ids}))
+        receipt = operation_receipt(
+            operation="modify",
+            target=[{"id": i} for i in ids],
+            undo_command=None,
+            changes={"labels_added": list(add_labels), "labels_removed": list(remove_labels)},
+        )
+        print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Modified {len(ids)} message(s): {' '.join(changes)}[/green]")
