@@ -38,6 +38,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 010 | [Thread Support](010-threads.md) | implemented | M | Work with email conversations |
 | 011 | [Dry Run Mode](011-dry-run.md) | implemented | S | Preview actions without executing |
 | 013 | [Safety Confirmations](013-safety-confirmations.md) | implemented | M | Prevent accidental destructive actions |
+| 014 | [Test Suite](014-test-suite.md) | implemented | L | Confidence in changes, prevent regressions |
 
 ## Adding an Idea
 

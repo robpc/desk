@@ -1,11 +1,11 @@
 ---
 id: 014
 title: Test Suite
-status: idea
+status: implemented
 effort: L
 value: Confidence in changes, prevent regressions, enable refactoring
 created: 2026-02-06
-updated: 2026-02-06
+updated: 2026-02-08
 adr: null
 ---
 
@@ -88,6 +88,27 @@ def test_gmail_search():
 ## Effort Guess
 
 L - 5 service clients × ~10 methods each × multiple test cases = significant work. Plus CLI integration tests. Estimate 1000-1500 lines of test code.
+
+## Implementation Summary
+
+Implemented 122 tests across three categories:
+
+| Category | File | Tests |
+|----------|------|-------|
+| Agent utilities | `tests/test_agent.py` | 48 |
+| Service clients | `tests/test_services/*.py` | 54 |
+| CLI commands | `tests/test_commands/*.py` | 20 |
+
+**Key decisions:**
+- Used `unittest.mock` with `patch()` for mocking Google APIs
+- Mocked at the `build()` level to isolate service clients
+- Used Click's `CliRunner` for CLI integration tests
+- Added `pytest-mock` to dev dependencies
+
+**Coverage:**
+- All 5 service clients (Gmail, Drive, Calendar, Sheets, Docs)
+- All 5 CLI command groups (mail, drive, cal, sheets, docs)
+- Agent-first utilities (structured errors, operation receipts, dry-run previews)
 
 ## Notes
 
