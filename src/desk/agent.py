@@ -122,7 +122,7 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "The operation is taking longer than expected",
         "This can happen with large datasets (e.g., labels with many messages)",
         "The operation may still complete - check the result before retrying",
-        "Try again later when the server is less busy",
+        "For very large labels, consider deleting manually in Gmail settings",
     ],
     ErrorCode.INSUFFICIENT_SCOPES: [
         "Your credentials don't include the required permissions",
