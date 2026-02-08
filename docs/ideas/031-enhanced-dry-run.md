@@ -1,7 +1,7 @@
 ---
 id: 031
 title: Enhanced Dry-Run with Target Details
-status: planned
+status: implemented
 effort: S
 value: Agents can preview exactly what will happen before committing
 created: 2025-02-07

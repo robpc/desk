@@ -1,7 +1,7 @@
 ---
 id: 032
 title: Context Flag and Capabilities Endpoint
-status: planned
+status: implemented
 effort: M
 value: Agents know what actions are available and can plan accordingly
 created: 2025-02-07

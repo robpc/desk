@@ -1,7 +1,7 @@
 ---
 id: 030
 title: Operation Receipts with Undo Commands
-status: planned
+status: implemented
 effort: M
 value: Agents get proof of what happened and can reverse mistakes
 created: 2025-02-07

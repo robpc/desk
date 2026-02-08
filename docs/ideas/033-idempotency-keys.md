@@ -1,7 +1,7 @@
 ---
 id: 033
 title: Idempotency Keys for Critical Operations
-status: planned
+status: implemented
 effort: S
 value: Agents can safely retry without duplicate sends
 created: 2025-02-07

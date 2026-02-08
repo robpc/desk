@@ -1,7 +1,7 @@
 ---
 id: 029
 title: Structured Errors with Suggestions
-status: planned
+status: implemented
 effort: M
 value: Agents can recover from errors without human intervention
 created: 2025-02-07

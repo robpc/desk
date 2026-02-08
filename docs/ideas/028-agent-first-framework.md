@@ -1,7 +1,7 @@
 ---
 id: 028
 title: Agent-First Framework
-status: planned
+status: implemented
 effort: M
 value: Foundation for all agent-first features - decorators and utilities
 created: 2025-02-07
