@@ -32,6 +32,44 @@ class GmailClient:
         authed_http = google_auth_httplib2.AuthorizedHttp(self.credentials, http=http)
         return build("gmail", "v1", http=authed_http)
 
+    def _batch_get(self, requests: list[tuple[str, object]]) -> dict[str, dict]:
+        """Execute multiple API requests in a single batch HTTP call.
+
+        Args:
+            requests: List of (request_id, HttpRequest) tuples. The HttpRequest
+                objects should be un-executed (built via .get() without .execute()).
+
+        Returns:
+            Dict mapping request_id to response dict. Failed individual requests
+            are silently omitted.
+
+        Raises:
+            RuntimeError: If ALL requests in the batch fail.
+        """
+        if not requests:
+            return {}
+
+        results: dict[str, dict] = {}
+        errors: list[str] = []
+
+        def callback(request_id, response, exception):
+            if exception is not None:
+                errors.append(request_id)
+            else:
+                results[request_id] = response
+
+        batch = self.service.new_batch_http_request(callback=callback)
+        for request_id, request in requests:
+            batch.add(request, request_id=request_id)
+        batch.execute()
+
+        if errors and not results:
+            raise RuntimeError(
+                f"All {len(errors)} batch requests failed"
+            )
+
+        return results
+
     def search(
         self, query: str, max_results: int = 20, page_token: str | None = None
     ) -> dict:
@@ -58,10 +96,10 @@ class GmailClient:
 
             messages = results.get("messages", [])
 
-            # Fetch snippets for each message
-            detailed = []
-            for msg in messages:
-                detail = (
+            # Batch-fetch metadata for all messages
+            requests = [
+                (
+                    msg["id"],
                     self.service.users()
                     .messages()
                     .get(
@@ -69,10 +107,18 @@ class GmailClient:
                         id=msg["id"],
                         format="metadata",
                         metadataHeaders=["From", "Subject", "Date"],
-                    )
-                    .execute()
+                    ),
                 )
-                detailed.append(self._parse_message_metadata(detail))
+                for msg in messages
+            ]
+            batch_results = self._batch_get(requests)
+
+            # Preserve Gmail's ordering
+            detailed = [
+                self._parse_message_metadata(batch_results[msg["id"]])
+                for msg in messages
+                if msg["id"] in batch_results
+            ]
 
             result = {"messages": detailed}
             if results.get("nextPageToken"):
@@ -112,17 +158,25 @@ class GmailClient:
 
             threads = results.get("threads", [])
 
-            # Fetch details for each thread
-            detailed = []
-            for thread in threads:
-                detail = (
+            # Batch-fetch details for all threads
+            requests = [
+                (
+                    thread["id"],
                     self.service.users()
                     .threads()
-                    .get(userId=self.user_id, id=thread["id"], format="metadata")
-                    .execute()
+                    .get(userId=self.user_id, id=thread["id"], format="metadata"),
                 )
+                for thread in threads
+            ]
+            batch_results = self._batch_get(requests)
+
+            # Preserve Gmail's ordering
+            detailed = []
+            for thread in threads:
+                if thread["id"] not in batch_results:
+                    continue
+                detail = batch_results[thread["id"]]
                 messages = detail.get("messages", [])
-                # Get first message for subject/from
                 first_msg = messages[0] if messages else {}
                 headers = {
                     h["name"]: h["value"]
@@ -618,15 +672,24 @@ class GmailClient:
 
             drafts = results.get("drafts", [])
 
-            # Fetch details for each draft
-            detailed = []
-            for draft in drafts:
-                detail = (
+            # Batch-fetch details for all drafts
+            requests = [
+                (
+                    draft["id"],
                     self.service.users()
                     .drafts()
-                    .get(userId=self.user_id, id=draft["id"], format="metadata")
-                    .execute()
+                    .get(userId=self.user_id, id=draft["id"], format="metadata"),
                 )
+                for draft in drafts
+            ]
+            batch_results = self._batch_get(requests)
+
+            # Preserve ordering
+            detailed = []
+            for draft in drafts:
+                if draft["id"] not in batch_results:
+                    continue
+                detail = batch_results[draft["id"]]
                 msg = detail.get("message", {})
                 headers = {
                     h["name"]: h["value"]

@@ -7,6 +7,42 @@ from unittest.mock import MagicMock, patch
 from googleapiclient.errors import HttpError
 
 
+class MockBatchHttpRequest:
+    """Mock for service.new_batch_http_request() that simulates batch execution.
+
+    Stores added requests and, on execute(), invokes callbacks with responses
+    from a provided response_map (keyed by request_id).
+    """
+
+    def __init__(self, callback, response_map=None, error_ids=None):
+        self._callback = callback
+        self._response_map = response_map or {}
+        self._error_ids = set(error_ids or [])
+        self._requests = []
+
+    def add(self, request, request_id=None):
+        self._requests.append((request_id, request))
+
+    def execute(self):
+        for request_id, _request in self._requests:
+            if request_id in self._error_ids:
+                self._callback(request_id, None, Exception(f"Error for {request_id}"))
+            elif request_id in self._response_map:
+                self._callback(request_id, self._response_map[request_id], None)
+            else:
+                # Default: call back with empty dict
+                self._callback(request_id, {}, None)
+
+
+def _make_batch_factory(response_map=None, error_ids=None):
+    """Create a factory function for MockBatchHttpRequest with preset responses."""
+    def factory(callback):
+        return MockBatchHttpRequest(
+            callback, response_map=response_map, error_ids=error_ids
+        )
+    return factory
+
+
 class TestGmailClientInit:
     """Tests for GmailClient initialization."""
 
@@ -22,8 +58,112 @@ class TestGmailClientInit:
             assert client.user_id == "me"
 
 
+class TestBatchGet:
+    """Tests for GmailClient._batch_get helper."""
+
+    def test_empty_input_returns_empty_dict(self, mock_credentials):
+        """Should return empty dict for empty request list."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            result = client._batch_get([])
+
+            assert result == {}
+
+    def test_all_succeed_returns_complete_dict(self, mock_credentials):
+        """Should return all results when all requests succeed."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            response_map = {
+                "id1": {"data": "response1"},
+                "id2": {"data": "response2"},
+                "id3": {"data": "response3"},
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            requests = [
+                ("id1", MagicMock()),
+                ("id2", MagicMock()),
+                ("id3", MagicMock()),
+            ]
+            result = client._batch_get(requests)
+
+            assert result == response_map
+
+    def test_partial_failure_omits_failed_items(self, mock_credentials):
+        """Should omit failed items and return the rest."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            response_map = {
+                "id1": {"data": "response1"},
+                "id3": {"data": "response3"},
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map, error_ids=["id2"]
+            )
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            requests = [
+                ("id1", MagicMock()),
+                ("id2", MagicMock()),
+                ("id3", MagicMock()),
+            ]
+            result = client._batch_get(requests)
+
+            assert "id1" in result
+            assert "id2" not in result
+            assert "id3" in result
+
+    def test_all_fail_raises_runtime_error(self, mock_credentials):
+        """Should raise RuntimeError when ALL requests fail."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                error_ids=["id1", "id2"]
+            )
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            requests = [("id1", MagicMock()), ("id2", MagicMock())]
+
+            with pytest.raises(RuntimeError, match="All 2 batch requests failed"):
+                client._batch_get(requests)
+
+
 class TestGmailSearch:
     """Tests for GmailClient.search method."""
+
+    def _make_msg_response(self, msg_id, thread_id="thread1"):
+        return {
+            "id": msg_id,
+            "threadId": thread_id,
+            "snippet": "Test snippet",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "test@example.com"},
+                    {"name": "Subject", "value": "Test Subject"},
+                    {"name": "Date", "value": "Mon, 1 Jan 2024 10:00:00 -0500"},
+                ]
+            },
+        }
 
     def test_search_returns_messages(self, mock_credentials):
         """Should return list of messages matching query."""
@@ -31,7 +171,6 @@ class TestGmailSearch:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
 
-            # Configure mock chain
             messages_mock = mock_service.users.return_value.messages.return_value
             messages_mock.list.return_value.execute.return_value = {
                 "messages": [
@@ -39,18 +178,14 @@ class TestGmailSearch:
                     {"id": "msg2", "threadId": "thread2"},
                 ]
             }
-            messages_mock.get.return_value.execute.return_value = {
-                "id": "msg1",
-                "threadId": "thread1",
-                "snippet": "Test snippet",
-                "payload": {
-                    "headers": [
-                        {"name": "From", "value": "test@example.com"},
-                        {"name": "Subject", "value": "Test Subject"},
-                        {"name": "Date", "value": "Mon, 1 Jan 2024 10:00:00 -0500"},
-                    ]
-                },
+
+            response_map = {
+                "msg1": self._make_msg_response("msg1", "thread1"),
+                "msg2": self._make_msg_response("msg2", "thread2"),
             }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
 
             from desk.services.gmail import GmailClient
 
@@ -59,6 +194,8 @@ class TestGmailSearch:
 
             assert "messages" in result
             assert len(result["messages"]) == 2
+            assert result["messages"][0]["id"] == "msg1"
+            assert result["messages"][1]["id"] == "msg2"
 
     def test_search_with_max_results(self, mock_credentials):
         """Should pass max_results to API."""
@@ -132,6 +269,38 @@ class TestGmailSearch:
             client = GmailClient(mock_credentials)
             with pytest.raises(RuntimeError, match="Gmail API error"):
                 client.search("invalid query syntax")
+
+    def test_search_preserves_order(self, mock_credentials):
+        """Should preserve Gmail's message ordering."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            messages_mock = mock_service.users.return_value.messages.return_value
+            messages_mock.list.return_value.execute.return_value = {
+                "messages": [
+                    {"id": "msg3", "threadId": "t3"},
+                    {"id": "msg1", "threadId": "t1"},
+                    {"id": "msg2", "threadId": "t2"},
+                ]
+            }
+
+            response_map = {
+                "msg1": self._make_msg_response("msg1", "t1"),
+                "msg2": self._make_msg_response("msg2", "t2"),
+                "msg3": self._make_msg_response("msg3", "t3"),
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            result = client.search("is:unread")
+
+            ids = [m["id"] for m in result["messages"]]
+            assert ids == ["msg3", "msg1", "msg2"]
 
 
 class TestGmailRead:
@@ -460,7 +629,8 @@ class TestGmailThreads:
             threads_mock.list.return_value.execute.return_value = {
                 "threads": [{"id": "thread1"}, {"id": "thread2"}]
             }
-            threads_mock.get.return_value.execute.return_value = {
+
+            thread_response = {
                 "id": "thread1",
                 "snippet": "Thread snippet",
                 "messages": [
@@ -475,6 +645,13 @@ class TestGmailThreads:
                     }
                 ],
             }
+            response_map = {
+                "thread1": thread_response,
+                "thread2": {**thread_response, "id": "thread2"},
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
 
             from desk.services.gmail import GmailClient
 
@@ -516,3 +693,77 @@ class TestGmailThreads:
             assert result["id"] == "thread123"
             assert result["messageCount"] == 1
             assert len(result["messages"]) == 1
+
+
+class TestGmailListDrafts:
+    """Tests for GmailClient.list_drafts method."""
+
+    def test_list_drafts_returns_drafts(self, mock_credentials):
+        """Should return list of drafts with details."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            drafts_mock = mock_service.users.return_value.drafts.return_value
+            drafts_mock.list.return_value.execute.return_value = {
+                "drafts": [{"id": "draft1"}, {"id": "draft2"}]
+            }
+
+            response_map = {
+                "draft1": {
+                    "id": "draft1",
+                    "message": {
+                        "id": "msg1",
+                        "snippet": "Draft 1 snippet",
+                        "payload": {
+                            "headers": [
+                                {"name": "To", "value": "alice@example.com"},
+                                {"name": "Subject", "value": "Draft Subject 1"},
+                            ]
+                        },
+                    },
+                },
+                "draft2": {
+                    "id": "draft2",
+                    "message": {
+                        "id": "msg2",
+                        "snippet": "Draft 2 snippet",
+                        "payload": {
+                            "headers": [
+                                {"name": "To", "value": "bob@example.com"},
+                                {"name": "Subject", "value": "Draft Subject 2"},
+                            ]
+                        },
+                    },
+                },
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            result = client.list_drafts()
+
+            assert "drafts" in result
+            assert len(result["drafts"]) == 2
+            assert result["drafts"][0]["id"] == "draft1"
+            assert result["drafts"][0]["to"] == "alice@example.com"
+            assert result["drafts"][1]["subject"] == "Draft Subject 2"
+
+    def test_list_drafts_empty(self, mock_credentials):
+        """Should return empty list when no drafts."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            drafts_mock = mock_service.users.return_value.drafts.return_value
+            drafts_mock.list.return_value.execute.return_value = {"drafts": []}
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            result = client.list_drafts()
+
+            assert result == {"drafts": []}

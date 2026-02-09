@@ -39,6 +39,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 011 | [Dry Run Mode](011-dry-run.md) | implemented | S | Preview actions without executing |
 | 013 | [Safety Confirmations](013-safety-confirmations.md) | implemented | M | Prevent accidental destructive actions |
 | 014 | [Test Suite](014-test-suite.md) | implemented | L | Confidence in changes, prevent regressions |
+| 035 | [Performance Optimization - Batch Fetch](035-performance-optimization.md) | implemented | M | 5-10x speedup for listing commands |
 
 ## Adding an Idea
 
