@@ -5,16 +5,17 @@ import sys
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 from desk.agent import (
-    ErrorCode,
     ERROR_SUGGESTIONS,
-    structured_error,
+    ErrorCode,
     operation_receipt,
-    parse_api_error,
     output_result,
+    parse_api_error,
+    structured_error,
 )
-from desk.auth import get_credentials
+from desk.auth import get_credentials, get_last_auth_failure
 from desk.services.docs import DocsClient
 
 console = Console()
@@ -24,15 +25,20 @@ def _get_client(as_json: bool = False) -> DocsClient:
     """Get authenticated Docs client or exit."""
     creds = get_credentials()
     if not creds:
+        reason, error_code = get_last_auth_failure()
         if as_json:
+            code = ErrorCode(error_code) if error_code else ErrorCode.AUTH_REQUIRED
             error = structured_error(
-                ErrorCode.AUTH_REQUIRED,
-                "Not authenticated",
+                code,
+                reason or "Not authenticated",
             )
             print(json.dumps(error, indent=2))
         else:
             console.print("[red]Not authenticated.[/red]")
-            console.print("Run: [cyan]desk setup[/cyan]")
+            if reason:
+                console.print(f"[yellow]{escape(reason)}[/yellow]")
+            else:
+                console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return DocsClient(creds)
 

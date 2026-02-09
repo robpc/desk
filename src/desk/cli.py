@@ -7,12 +7,14 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 from desk import __version__
 from desk.auth import (
     AuthMethod,
     get_auth_status,
     get_credentials,
+    get_last_auth_failure,
     login,
     login_with_gcloud,
 )
@@ -25,8 +27,12 @@ def _get_credentials_or_exit():
     """Get authenticated credentials or exit with setup instructions."""
     creds = get_credentials()
     if not creds:
+        reason, _error_code = get_last_auth_failure()
         console.print("[red]Not authenticated.[/red]")
-        console.print("Run: [cyan]desk setup[/cyan]")
+        if reason:
+            console.print(f"[yellow]{escape(reason)}[/yellow]")
+        else:
+            console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return creds
 

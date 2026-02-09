@@ -14,37 +14,59 @@ class CalendarClient:
         self.service = build("calendar", "v3", credentials=credentials)
 
     def today(
-        self, calendar_id: str = "primary", page_token: str | None = None
+        self,
+        calendar_id: str = "primary",
+        page_token: str | None = None,
+        date: str | None = None,
     ) -> dict:
-        """Get today's events.
+        """Get events for a specific day (defaults to today).
 
         Args:
             calendar_id: Calendar ID
             page_token: Token for fetching next page of results
+            date: Optional date string (YYYY-MM-DD). Defaults to today.
 
         Returns:
             Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
-        now = datetime.now().astimezone()
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if date:
+            # Build naive midnight, then localize via astimezone() so the
+            # offset is correct for that specific date (handles DST).
+            naive = datetime.strptime(date, "%Y-%m-%d")
+            start = naive.astimezone().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+        else:
+            now = datetime.now().astimezone()
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
         return self._list_events(calendar_id, start, end, page_token=page_token)
 
     def week(
-        self, calendar_id: str = "primary", page_token: str | None = None
+        self,
+        calendar_id: str = "primary",
+        page_token: str | None = None,
+        date: str | None = None,
     ) -> dict:
-        """Get this week's events (Monday through Sunday).
+        """Get events for a week (defaults to this week, Monday through Sunday).
 
         Args:
             calendar_id: Calendar ID
             page_token: Token for fetching next page of results
+            date: Optional date string (YYYY-MM-DD). Shows the week containing this date.
 
         Returns:
             Dict with 'events' list and 'nextPageToken' (if more results exist)
         """
-        now = datetime.now().astimezone()
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        # Go to start of current week (Monday)
+        if date:
+            naive = datetime.strptime(date, "%Y-%m-%d")
+            anchor = naive.astimezone().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+        else:
+            anchor = datetime.now().astimezone()
+        start = anchor.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Go to start of week (Monday)
         start = start - timedelta(days=start.weekday())
         end = start + timedelta(days=7)
         return self._list_events(calendar_id, start, end, page_token=page_token)
