@@ -1,0 +1,10 @@
+version: 2
+updates:
+    - package-ecosystem: pip
+      directory: /
+      schedule:
+        interval: weekly
+        day: wednesday
+        time: "11:00"
+      allow:
+        - dependency-type: all
