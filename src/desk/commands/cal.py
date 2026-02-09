@@ -5,18 +5,19 @@ import sys
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from desk.agent import (
-    ErrorCode,
     ERROR_SUGGESTIONS,
-    structured_error,
-    operation_receipt,
+    ErrorCode,
     dry_run_preview,
-    parse_api_error,
+    operation_receipt,
     output_result,
+    parse_api_error,
+    structured_error,
 )
-from desk.auth import get_credentials
+from desk.auth import get_credentials, get_last_auth_failure
 from desk.services.calendar import CalendarClient
 
 console = Console()
@@ -26,15 +27,19 @@ def _get_client(as_json: bool = False) -> CalendarClient:
     """Get authenticated Calendar client or exit."""
     creds = get_credentials()
     if not creds:
+        reason = get_last_auth_failure()
         if as_json:
             error = structured_error(
                 ErrorCode.AUTH_REQUIRED,
-                "Not authenticated",
+                reason or "Not authenticated",
             )
             print(json.dumps(error, indent=2))
         else:
             console.print("[red]Not authenticated.[/red]")
-            console.print("Run: [cyan]desk setup[/cyan]")
+            if reason:
+                console.print(f"[yellow]{escape(reason)}[/yellow]")
+            else:
+                console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return CalendarClient(creds)
 
@@ -85,18 +90,21 @@ def cal() -> None:
 
 
 @cal.command()
+@click.option("--date", "-d", default=None, help="Date to show (YYYY-MM-DD). Defaults to today.")
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def today(page_token: str | None, as_json: bool) -> None:
-    """Show today's events.
+def today(date: str | None, page_token: str | None, as_json: bool) -> None:
+    """Show events for a day.
 
     Examples:
 
         desk cal today
+
+        desk cal today --date 2026-02-09
     """
     client = _get_client(as_json)
     try:
-        result = client.today(page_token=page_token)
+        result = client.today(page_token=page_token, date=date)
     except Exception as e:
         _handle_api_error(e, as_json)
 
@@ -105,25 +113,29 @@ def today(page_token: str | None, as_json: bool) -> None:
         return
 
     events = result.get("events", [])
-    _print_events(events, "Today")
+    title = f"Events for {date}" if date else "Today"
+    _print_events(events, title)
 
     if result.get("nextPageToken"):
         console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
 @cal.command()
+@click.option("--date", "-d", default=None, help="Date in target week (YYYY-MM-DD)")
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def week(page_token: str | None, as_json: bool) -> None:
-    """Show this week's events.
+def week(date: str | None, page_token: str | None, as_json: bool) -> None:
+    """Show events for a week.
 
     Examples:
 
         desk cal week
+
+        desk cal week --date 2026-02-12
     """
     client = _get_client(as_json)
     try:
-        result = client.week(page_token=page_token)
+        result = client.week(page_token=page_token, date=date)
     except Exception as e:
         _handle_api_error(e, as_json)
 
@@ -132,7 +144,8 @@ def week(page_token: str | None, as_json: bool) -> None:
         return
 
     events = result.get("events", [])
-    _print_events(events, "This week")
+    title = f"Week of {date}" if date else "This week"
+    _print_events(events, title)
 
     if result.get("nextPageToken"):
         console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")

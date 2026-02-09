@@ -24,6 +24,14 @@ if os.environ.get("DESK_DEBUG"):
     logging.basicConfig(level=logging.DEBUG)
     _logger.setLevel(logging.DEBUG)
 
+# Track why auth failed so callers can surface it
+_last_auth_failure: dict[str, str | None] = {"reason": None}
+
+
+def get_last_auth_failure() -> str | None:
+    """Return a human-readable reason for the last auth failure, if any."""
+    return _last_auth_failure["reason"]
+
 
 class AuthMethod:
     """Authentication method identifiers."""
@@ -43,6 +51,9 @@ def get_credentials() -> Credentials | None:
 
     Returns None if no valid credentials exist.
     """
+    # Clear any stale failure reason from a previous call
+    _last_auth_failure["reason"] = None
+
     # First, try existing token from OAuth flow
     creds = _get_oauth_credentials()
     if creds:
@@ -65,9 +76,11 @@ def _get_oauth_credentials() -> Credentials | None:
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
     except (ValueError, KeyError) as e:
         _logger.debug(f"Failed to parse token file: {e}")
+        _last_auth_failure["reason"] = f"Corrupted token file: {e}"
         return None
     except Exception as e:
         _logger.debug(f"Unexpected error loading token file: {type(e).__name__}: {e}")
+        _last_auth_failure["reason"] = f"Could not load token file: {type(e).__name__}: {e}"
         return None
 
     if creds.valid:
@@ -78,12 +91,25 @@ def _get_oauth_credentials() -> Credentials | None:
             creds.refresh(Request())
             _save_credentials(creds)
             return creds
-        except (RefreshError, TransportError) as e:
+        except RefreshError as e:
             _logger.debug(f"Token refresh failed: {e}")
+            _last_auth_failure["reason"] = (
+                "Token expired or revoked — run `desk auth login`"
+            )
+            return None
+        except TransportError as e:
+            _logger.debug(f"Token refresh network error: {e}")
+            _last_auth_failure["reason"] = f"Network error during token refresh: {e}"
             return None
         except Exception as e:
             _logger.debug(f"Unexpected error refreshing token: {type(e).__name__}: {e}")
+            _last_auth_failure["reason"] = f"Token refresh failed: {type(e).__name__}: {e}"
             return None
+
+    if not creds.refresh_token:
+        _last_auth_failure["reason"] = "Token expired and no refresh token — run `desk auth login`"
+    else:
+        _last_auth_failure["reason"] = "Token invalid — run `desk auth login`"
 
     return None
 
