@@ -46,6 +46,18 @@ Direct user-facing latency improvement. Every `desk mail` listing command benefi
 
 M — Three methods to refactor with a shared helper, plus test updates. Straightforward pattern replacement.
 
+## Round 2: Additional Optimizations (2026-02-09)
+
+After the batch-fetch N+1 fix dropped `desk mail search` from ~5.5s to ~1.6s, four more optimizations were implemented:
+
+1. **Label cache** — `_get_label_id()` now caches `list_labels()` results per-instance. Operations like `batch_modify(ids, add_labels=["A", "B"])` that previously triggered 2 separate label-list API calls now use 1. Cache invalidated on `create_label`/`delete_label`/`rename_label`.
+
+2. **Batch-fetch `_get_message_summaries()`** — dry-run/receipt output in archive/trash commands previously did up to 10 sequential `client.read()` (full message) calls. Now uses `_batch_get()` with `format="metadata"` — 1 batch call instead of 10 sequential.
+
+3. **Lazy Drive service in DocsClient** — `__init__` no longer calls `build("drive", "v3", ...)`. Drive service is a `@property` that builds on first access. `read()` and `update()` never touch it, so they skip the Drive discovery fetch entirely.
+
+4. **Timeout service cache in GmailClient** — `_build_service_with_timeout()` now caches by timeout value. Repeated calls with the same timeout reuse the service instead of re-fetching the discovery doc.
+
 ## Notes
 
 - Google Batch API docs: https://developers.google.com/gmail/api/guides/batch

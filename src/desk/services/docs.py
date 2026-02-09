@@ -9,10 +9,18 @@ class DocsClient:
     """Client for Google Docs API operations."""
 
     def __init__(self, credentials: Credentials):
+        self.credentials = credentials
         self.service = build("docs", "v1", credentials=credentials)
         # Drive API needed for webViewLink (create) and export (PDF/TXT/DOCX)
-        # since Docs API doesn't provide these operations
-        self._drive = build("drive", "v3", credentials=credentials)
+        # since Docs API doesn't provide these operations.
+        # Lazy-loaded: read() and update() don't need it.
+        self.__drive = None
+
+    @property
+    def _drive(self):
+        if self.__drive is None:
+            self.__drive = build("drive", "v3", credentials=self.credentials)
+        return self.__drive
 
     def create(self, title: str, body: str = "") -> dict:
         """Create a new Google Doc.

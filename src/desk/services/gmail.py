@@ -18,9 +18,14 @@ class GmailClient:
         self.credentials = credentials
         self.service = build("gmail", "v1", credentials=credentials)
         self.user_id = "me"
+        self._labels_cache: list[dict] | None = None
+        self._timeout_services: dict[int, object] = {}
 
     def _build_service_with_timeout(self, timeout: int):
         """Build a Gmail service with a custom timeout.
+
+        Caches by timeout value so repeated calls with the same timeout
+        reuse the same service (avoids re-fetching the discovery doc).
 
         Args:
             timeout: Timeout in seconds for HTTP operations.
@@ -28,9 +33,11 @@ class GmailClient:
         Returns:
             A Gmail service instance with the custom timeout.
         """
-        http = httplib2.Http(timeout=timeout)
-        authed_http = google_auth_httplib2.AuthorizedHttp(self.credentials, http=http)
-        return build("gmail", "v1", http=authed_http)
+        if timeout not in self._timeout_services:
+            http = httplib2.Http(timeout=timeout)
+            authed_http = google_auth_httplib2.AuthorizedHttp(self.credentials, http=http)
+            self._timeout_services[timeout] = build("gmail", "v1", http=authed_http)
+        return self._timeout_services[timeout]
 
     def _batch_get(self, requests: list[tuple[str, object]]) -> dict[str, dict]:
         """Execute multiple API requests in a single batch HTTP call.
@@ -348,6 +355,7 @@ class GmailClient:
                 .create(userId=self.user_id, body=body)
                 .execute()
             )
+            self._labels_cache = None
             return label
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -387,6 +395,7 @@ class GmailClient:
             service.users().labels().delete(
                 userId=self.user_id, id=label_id
             ).execute()
+            self._labels_cache = None
         except socket.timeout as e:
             raise TimeoutError(
                 f"Label deletion timed out (labels with many messages can take a while): {e}"
@@ -426,6 +435,7 @@ class GmailClient:
                 )
                 .execute()
             )
+            self._labels_cache = None
             return label
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
@@ -1061,9 +1071,14 @@ class GmailClient:
         return label
 
     def _get_label_id(self, label_name: str) -> str | None:
-        """Get label ID by name."""
-        labels = self.list_labels()
-        for label in labels:
+        """Get label ID by name.
+
+        Uses a per-instance cache to avoid repeated list_labels() API calls
+        within a single CLI command.
+        """
+        if self._labels_cache is None:
+            self._labels_cache = self.list_labels()
+        for label in self._labels_cache:
             if label["name"].lower() == label_name.lower():
                 return label["id"]
         return None

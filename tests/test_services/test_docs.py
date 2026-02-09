@@ -9,19 +9,35 @@ from googleapiclient.errors import HttpError
 class TestDocsClientInit:
     """Tests for DocsClient initialization."""
 
-    def test_creates_services_with_credentials(self, mock_credentials):
-        """Should create Docs and Drive services with provided credentials."""
+    def test_creates_only_docs_service_on_init(self, mock_credentials):
+        """Should only create Docs service on init; Drive is lazy."""
         with patch("desk.services.docs.build") as mock_build:
             mock_build.return_value = MagicMock()
             from desk.services.docs import DocsClient
 
             client = DocsClient(mock_credentials)
 
-            # DocsClient creates both docs and drive services
+            # Only Docs service created eagerly
+            assert mock_build.call_count == 1
+            assert mock_build.call_args_list[0][0] == ("docs", "v1")
+
+    def test_drive_service_created_lazily_on_first_access(self, mock_credentials):
+        """Drive service should be created on first access to _drive property."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            assert mock_build.call_count == 1
+
+            # Access _drive triggers Drive build
+            _ = client._drive
             assert mock_build.call_count == 2
-            calls = mock_build.call_args_list
-            assert calls[0][0] == ("docs", "v1")
-            assert calls[1][0] == ("drive", "v3")
+            assert mock_build.call_args_list[1][0] == ("drive", "v3")
+
+            # Second access should not trigger another build
+            _ = client._drive
+            assert mock_build.call_count == 2
 
 
 class TestDocsRead:
@@ -51,6 +67,27 @@ class TestDocsRead:
 
             assert "documentId" in result
             assert result["title"] == "Test Document"
+
+    def test_read_does_not_build_drive_service(self, mock_credentials):
+        """read() should not trigger Drive service creation."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test",
+                "body": {"content": []},
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.read("doc123")
+
+            # Only Docs build, no Drive build
+            assert mock_build.call_count == 1
 
     def test_read_not_found_raises_error(self, mock_credentials):
         """Should raise error when document not found."""
@@ -95,6 +132,28 @@ class TestDocsCreate:
             assert result["documentId"] == "new_doc_id"
             assert result["title"] == "New Document"
             documents_mock.create.assert_called_once()
+
+    def test_create_triggers_drive_build(self, mock_credentials):
+        """create() needs Drive for webViewLink, so it should build Drive."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.create.return_value.execute.return_value = {
+                "documentId": "new_doc_id",
+                "title": "New Document",
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            assert mock_build.call_count == 1  # Only Docs
+
+            client.create("New Document")
+
+            # Docs + Drive = 2 builds
+            assert mock_build.call_count == 2
 
 
 class TestDocsUpdate:

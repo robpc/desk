@@ -62,21 +62,44 @@ def _get_message_summaries(client: GmailClient, ids: list[str], max_fetch: int =
     """Fetch basic message info for receipts/previews.
 
     For large batches, only fetches first max_fetch items to avoid slowdown.
+    Uses batch metadata fetch (1 API call) instead of sequential full reads.
     Returns list of dicts with id, subject, from, date.
     """
+    fetch_ids = ids[:max_fetch]
     summaries = []
-    for msg_id in ids[:max_fetch]:
+
+    if fetch_ids:
+        requests = [
+            (
+                msg_id,
+                client.service.users()
+                .messages()
+                .get(
+                    userId=client.user_id,
+                    id=msg_id,
+                    format="metadata",
+                    metadataHeaders=["From", "Subject", "Date"],
+                ),
+            )
+            for msg_id in fetch_ids
+        ]
         try:
-            msg = client.read(msg_id)
-            summaries.append({
-                "id": msg_id,
-                "subject": msg.get("subject", "(no subject)"),
-                "from": msg.get("from", "unknown"),
-                "date": msg.get("date", ""),
-            })
-        except Exception:
-            # If we can't fetch details, include just the ID
-            summaries.append({"id": msg_id})
+            batch_results = client._batch_get(requests)
+        except RuntimeError:
+            batch_results = {}
+
+        # Build summaries preserving order
+        for msg_id in fetch_ids:
+            if msg_id in batch_results:
+                parsed = client._parse_message_metadata(batch_results[msg_id])
+                summaries.append({
+                    "id": msg_id,
+                    "subject": parsed.get("subject", "(no subject)"),
+                    "from": parsed.get("from", "unknown"),
+                    "date": parsed.get("date", ""),
+                })
+            else:
+                summaries.append({"id": msg_id})
 
     # For remaining items, just include IDs
     for msg_id in ids[max_fetch:]:

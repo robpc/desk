@@ -767,3 +767,150 @@ class TestGmailListDrafts:
             result = client.list_drafts()
 
             assert result == {"drafts": []}
+
+
+class TestLabelCache:
+    """Tests for label cache behavior in GmailClient."""
+
+    def test_label_cache_avoids_repeated_api_calls(self, mock_credentials):
+        """_get_label_id should call list_labels once, then use cache."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            labels_mock = mock_service.users.return_value.labels.return_value
+            labels_mock.list.return_value.execute.return_value = {
+                "labels": [
+                    {"id": "Label_1", "name": "Work"},
+                    {"id": "Label_2", "name": "Personal"},
+                ]
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+
+            # First call populates cache
+            result1 = client._get_label_id("Work")
+            assert result1 == "Label_1"
+
+            # Second call should use cache, not call API again
+            result2 = client._get_label_id("Personal")
+            assert result2 == "Label_2"
+
+            # list_labels should have been called only once
+            labels_mock.list.return_value.execute.assert_called_once()
+
+    def test_label_cache_invalidated_after_create(self, mock_credentials):
+        """Cache should be cleared after create_label."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            labels_mock = mock_service.users.return_value.labels.return_value
+            labels_mock.list.return_value.execute.return_value = {
+                "labels": []
+            }
+            labels_mock.create.return_value.execute.return_value = {
+                "id": "Label_new", "name": "NewLabel"
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+
+            # Populate cache
+            client._get_label_id("anything")
+            assert client._labels_cache is not None
+
+            # create_label should invalidate
+            client.create_label("NewLabel")
+            assert client._labels_cache is None
+
+    def test_label_cache_invalidated_after_delete(self, mock_credentials):
+        """Cache should be cleared after delete_label."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            labels_mock = mock_service.users.return_value.labels.return_value
+            labels_mock.list.return_value.execute.return_value = {
+                "labels": [{"id": "Label_1", "name": "ToDelete"}]
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+
+            # Populate cache
+            client._get_label_id("ToDelete")
+            assert client._labels_cache is not None
+
+            # delete_label should invalidate
+            client.delete_label("ToDelete")
+            assert client._labels_cache is None
+
+    def test_label_cache_invalidated_after_rename(self, mock_credentials):
+        """Cache should be cleared after rename_label."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            labels_mock = mock_service.users.return_value.labels.return_value
+            # First call: returns old label; second call (after invalidation): returns renamed
+            labels_mock.list.return_value.execute.side_effect = [
+                {"labels": [{"id": "Label_1", "name": "OldName"}]},
+                {"labels": [{"id": "Label_1", "name": "OldName"}]},
+                {"labels": [{"id": "Label_1", "name": "NewName"}]},
+            ]
+            labels_mock.patch.return_value.execute.return_value = {
+                "id": "Label_1", "name": "NewName"
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+
+            # Populate cache via rename_label's internal _get_label_id calls
+            client.rename_label("OldName", "NewName")
+
+            # Cache should be invalidated
+            assert client._labels_cache is None
+
+
+class TestTimeoutServiceCache:
+    """Tests for timeout service caching in GmailClient."""
+
+    def test_timeout_service_cached_by_value(self, mock_credentials):
+        """Same timeout value should return cached service."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+
+            svc1 = client._build_service_with_timeout(300)
+            svc2 = client._build_service_with_timeout(300)
+
+            assert svc1 is svc2
+            # build() called once for __init__, once for timeout=300
+            assert mock_build.call_count == 2
+
+    def test_different_timeouts_get_different_services(self, mock_credentials):
+        """Different timeout values should create separate services."""
+        with patch("desk.services.gmail.build") as mock_build:
+            # Return a new MagicMock for each call so they're distinct objects
+            mock_build.side_effect = lambda *a, **kw: MagicMock()
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+
+            svc1 = client._build_service_with_timeout(300)
+            svc2 = client._build_service_with_timeout(600)
+
+            assert svc1 is not svc2
+            # build() called once for __init__, once for 300, once for 600
+            assert mock_build.call_count == 3
