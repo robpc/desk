@@ -14,7 +14,6 @@ from google.auth import default as google_auth_default
 from google.auth.exceptions import DefaultCredentialsError, RefreshError, TransportError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 
 from desk.config import CREDENTIALS_FILE, GCLOUD_SCOPES, SCOPES, TOKEN_FILE, ensure_config_dir
 
@@ -131,6 +130,10 @@ def _get_adc_credentials() -> Credentials | None:
         # ADC credentials auto-refresh, but let's ensure they're valid
         if hasattr(creds, "refresh") and not creds.valid:
             creds.refresh(Request())
+        # Cache to token.json so subsequent invocations reuse the access token
+        # instead of refreshing every time (~300ms savings per call)
+        if hasattr(creds, "to_json") and getattr(creds, "refresh_token", None):
+            _save_credentials(creds)
         return creds
     except DefaultCredentialsError:
         _logger.debug("No Application Default Credentials found")
@@ -169,6 +172,8 @@ def login(verbose: bool = False) -> Credentials:
     if verbose:
         print(f"Using credentials from {CREDENTIALS_FILE}")
         print("Opening browser for authentication...")
+
+    from google_auth_oauthlib.flow import InstalledAppFlow
 
     flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
     creds = flow.run_local_server(port=0)
@@ -231,8 +236,15 @@ def _gcloud_available() -> bool:
 
 def _save_credentials(creds: Credentials) -> None:
     """Save credentials to token file."""
+    import json
+
     ensure_config_dir()
-    TOKEN_FILE.write_text(creds.to_json())
+    data = json.loads(creds.to_json())
+    # Preserve quota_project_id for gcloud ADC credentials —
+    # to_json() omits it, but from_authorized_user_file() restores it
+    if getattr(creds, "quota_project_id", None):
+        data["quota_project_id"] = creds.quota_project_id
+    TOKEN_FILE.write_text(json.dumps(data))
     os.chmod(TOKEN_FILE, 0o600)
 
 
