@@ -68,6 +68,10 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "Run `desk auth login` to refresh credentials",
         "Token may have been revoked - check Google account security settings",
     ],
+    ErrorCode.AUTH_INVALID: [
+        "Run `desk auth login` to re-authenticate",
+        "Token file may be corrupted - delete ~/.desk/token.json and re-login",
+    ],
     ErrorCode.MESSAGE_NOT_FOUND: [
         "Run `desk mail search` to find valid message IDs",
         "The message may have been deleted",

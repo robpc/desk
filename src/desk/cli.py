@@ -27,7 +27,7 @@ def _get_credentials_or_exit():
     """Get authenticated credentials or exit with setup instructions."""
     creds = get_credentials()
     if not creds:
-        reason = get_last_auth_failure()
+        reason, _error_code = get_last_auth_failure()
         console.print("[red]Not authenticated.[/red]")
         if reason:
             console.print(f"[yellow]{escape(reason)}[/yellow]")

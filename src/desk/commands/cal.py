@@ -27,10 +27,11 @@ def _get_client(as_json: bool = False) -> CalendarClient:
     """Get authenticated Calendar client or exit."""
     creds = get_credentials()
     if not creds:
-        reason = get_last_auth_failure()
+        reason, error_code = get_last_auth_failure()
         if as_json:
+            code = ErrorCode(error_code) if error_code else ErrorCode.AUTH_REQUIRED
             error = structured_error(
-                ErrorCode.AUTH_REQUIRED,
+                code,
                 reason or "Not authenticated",
             )
             print(json.dumps(error, indent=2))
