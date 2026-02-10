@@ -197,18 +197,18 @@ def search(query: str, max_results: int, limit: int | None, page_token: str | No
         console.print("No messages found.")
         return
 
-    table = Table(show_header=True)
-    table.add_column("ID", style="dim", width=16)
-    table.add_column("From", width=30)
-    table.add_column("Subject", width=40)
-    table.add_column("Date", width=20)
+    table = Table(show_header=True, expand=True)
+    table.add_column("ID", style="dim", min_width=16, no_wrap=True)
+    table.add_column("From", min_width=20, ratio=1, no_wrap=True)
+    table.add_column("Subject", min_width=30, ratio=2)
+    table.add_column("Date", min_width=20, no_wrap=True)
 
     for msg in messages:
         table.add_row(
             msg["id"],
-            msg["from"][:30],
-            msg["subject"][:40],
-            msg["date"][:20],
+            msg["from"],
+            msg["subject"],
+            msg["date"],
         )
 
     console.print(table)
@@ -1598,18 +1598,18 @@ def unread(max_results: int, limit: int | None, page_token: str | None, as_json:
         console.print("No unread messages.")
         return
 
-    table = Table(show_header=True)
-    table.add_column("ID", style="dim", width=16)
-    table.add_column("From", width=30)
-    table.add_column("Subject", width=40)
-    table.add_column("Date", width=20)
+    table = Table(show_header=True, expand=True)
+    table.add_column("ID", style="dim", min_width=16, no_wrap=True)
+    table.add_column("From", min_width=20, ratio=1, no_wrap=True)
+    table.add_column("Subject", min_width=30, ratio=2)
+    table.add_column("Date", min_width=20, no_wrap=True)
 
     for msg in messages:
         table.add_row(
             msg["id"],
-            msg["from"][:30],
-            msg["subject"][:40],
-            msg["date"][:20],
+            msg["from"],
+            msg["subject"],
+            msg["date"],
         )
 
     console.print(table)
