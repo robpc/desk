@@ -57,6 +57,12 @@ class ErrorCode(str, Enum):
     LOCAL_FILE_READ_ERROR = "LOCAL_FILE_READ_ERROR"
     LOCAL_FILE_WRITE_ERROR = "LOCAL_FILE_WRITE_ERROR"
 
+    # Update errors
+    UPDATE_FAILED = "UPDATE_FAILED"
+    UPDATE_NO_GIT = "UPDATE_NO_GIT"
+    UPDATE_UNKNOWN_INSTALL = "UPDATE_UNKNOWN_INSTALL"
+    UPDATE_NETWORK_ERROR = "UPDATE_NETWORK_ERROR"
+
 
 # Standard suggestions for common errors
 ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
@@ -132,6 +138,27 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "Your credentials don't include the required permissions",
         "Run `desk auth login` to re-authenticate with updated scopes",
         "This often happens after desk adds new features requiring additional permissions",
+    ],
+    ErrorCode.UPDATE_FAILED: [
+        "Check the error message for details",
+        "If local branch has diverged, resolve manually with git pull --rebase",
+        "Check SSH key configuration if authentication failed",
+    ],
+    ErrorCode.UPDATE_NO_GIT: [
+        "git is required for updates but was not found in PATH",
+        "Install git and ensure it's on your PATH",
+        "Or reinstall desk: pip install git+<repo-url>",
+    ],
+    ErrorCode.UPDATE_UNKNOWN_INSTALL: [
+        "Could not determine how desk was installed",
+        "For editable install: cd <repo> && git pull && pip install -e .",
+        "For pip from git: pip install --upgrade git+<repo-url>",
+    ],
+    ErrorCode.UPDATE_NETWORK_ERROR: [
+        "Could not reach the remote repository",
+        "Check your network connection",
+        "If using SSH, verify your SSH key is loaded: ssh-add -l",
+        "Try again in a moment",
     ],
 }
 

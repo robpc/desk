@@ -145,6 +145,15 @@ def _get_capabilities() -> dict:
             "operation_receipts": "Mutating operations return receipts with undo commands",
             "dry_run_preview": "Dry-run shows target details and reversibility",
         },
+        "utility_commands": {
+            "update": {
+                "description": "Self-update desk to latest version",
+                "flags": {
+                    "--check": "Check for updates without applying",
+                    "--json": "Structured output for agents",
+                },
+            },
+        },
     }
 
 
@@ -350,6 +359,147 @@ def auth_status(as_json: bool, verify: bool) -> None:
             console.print("Quick setup: [cyan]desk setup --gcloud[/cyan]")
         else:
             console.print("Run: [cyan]desk setup[/cyan] for setup instructions")
+
+
+# --- Update command ---
+
+
+@main.command()
+@click.option("--check", is_flag=True, help="Check for updates without applying")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def update(ctx: click.Context, check: bool, as_json: bool) -> None:
+    """Update desk to the latest version.
+
+    Detects how desk was installed and performs the appropriate update.
+    Supports editable git clones and pip-from-git installs.
+
+    \b
+    Examples:
+        desk update              # Update to latest
+        desk update --check      # Check without updating
+        desk update --check --json  # Machine-readable check
+    """
+    from desk.update import (
+        InstallMethod,
+        apply_update,
+        check_for_updates,
+        detect_install,
+    )
+
+    verbose = ctx.obj.get("verbose", False)
+
+    info = detect_install()
+
+    if verbose:
+        console.print(f"[dim]Install method: {info.method.value}[/dim]")
+        if info.repo_path:
+            console.print(f"[dim]Repo path: {info.repo_path}[/dim]")
+        if info.git_url:
+            console.print(f"[dim]Git URL: {info.git_url}[/dim]")
+
+    if info.method == InstallMethod.UNKNOWN:
+        if as_json:
+            from desk.agent import ErrorCode, structured_error
+
+            print(json.dumps(structured_error(
+                ErrorCode.UPDATE_UNKNOWN_INSTALL,
+                "Cannot determine how desk was installed",
+            ), indent=2))
+        else:
+            console.print("[red]Cannot determine how desk was installed.[/red]")
+            console.print()
+            console.print("Manual update options:")
+            console.print("  Editable: [cyan]cd <repo> && git pull && pip install -e .[/cyan]")
+            console.print("  Pip:     [cyan]pip install --upgrade git+<repo-url>[/cyan]")
+        sys.exit(1)
+
+    # Check for updates
+    if check or info.method == InstallMethod.EDITABLE_GIT:
+        status = check_for_updates(info)
+
+        if status.error:
+            if as_json:
+                from desk.agent import ErrorCode, structured_error
+
+                code = getattr(ErrorCode, status.error_code, ErrorCode.OPERATION_FAILED)
+                print(json.dumps(structured_error(
+                    code, status.error, retryable=status.error_code == "UPDATE_NETWORK_ERROR",
+                ), indent=2))
+            else:
+                console.print(f"[red]{status.error}[/red]")
+            sys.exit(1)
+
+        if check:
+            if as_json:
+                print(json.dumps({
+                    "update_available": status.update_available,
+                    "current_version": status.current_version,
+                    "remote_version": status.remote_version,
+                    "commits_behind": status.commits_behind,
+                    "install_method": info.method.value,
+                }, indent=2))
+            elif status.update_available:
+                version_str = f"{status.current_version}"
+                if status.remote_version:
+                    version_str += f" → {status.remote_version}"
+                behind = f"{status.commits_behind} commits behind"
+                console.print(f"Update available: {version_str} ({behind})")
+            else:
+                console.print(f"desk is up to date ({status.current_version})")
+            return
+
+        if not status.update_available:
+            if as_json:
+                print(json.dumps({
+                    "update_available": False,
+                    "current_version": status.current_version,
+                    "install_method": info.method.value,
+                }, indent=2))
+            else:
+                console.print(f"desk is up to date ({status.current_version})")
+            return
+
+    # Apply update
+    if not as_json:
+        if info.method == InstallMethod.EDITABLE_GIT:
+            console.print("Pulling latest from origin/main...")
+        else:
+            console.print("Upgrading from git...")
+
+    result = apply_update(info)
+
+    if not result.success:
+        if as_json:
+            from desk.agent import ErrorCode, structured_error
+
+            code = getattr(ErrorCode, result.error_code, ErrorCode.OPERATION_FAILED)
+            print(json.dumps(structured_error(
+                code, result.error or "Update failed",
+                retryable=result.error_code == "UPDATE_NETWORK_ERROR",
+            ), indent=2))
+        else:
+            console.print(f"[red]{result.error}[/red]")
+            if result.error_code == "UPDATE_FAILED" and "diverged" in (result.error or ""):
+                console.print()
+                console.print("Resolve manually:")
+                repo = info.repo_path
+                console.print(f"  [cyan]cd {repo} && git pull --rebase origin main[/cyan]")
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps({
+            "success": True,
+            "previous_version": result.previous_version,
+            "new_version": result.new_version,
+            "install_method": info.method.value,
+        }, indent=2))
+    else:
+        if result.previous_version == result.new_version:
+            console.print(f"desk is up to date ({result.new_version})")
+        else:
+            old, new = result.previous_version, result.new_version
+            console.print(f"[green]Updated: {old} → {new}[/green]")
 
 
 # --- Register subcommand groups ---
