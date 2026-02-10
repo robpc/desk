@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 
 import click
 from rich.console import Console
@@ -23,6 +24,9 @@ from desk.idempotency import check_idempotency, record_idempotency
 from desk.services.gmail import GmailClient
 
 console = Console()
+
+# Max IDs per Gmail batchModify call
+_BATCH_MODIFY_CHUNK = 1000
 
 
 def _get_client(as_json: bool = False) -> GmailClient:
@@ -154,6 +158,177 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
                 console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
+
+
+def _query_bulk_operate(
+    client: GmailClient,
+    query: str,
+    operation: str,
+    add_labels: list[str] | None = None,
+    remove_labels: list[str] | None = None,
+    dry_run: bool = False,
+    quiet: bool = False,
+    as_json: bool = False,
+) -> None:
+    """Execute a bulk operation on all messages matching a query.
+
+    Paginates through all matching messages and calls batchModify in chunks
+    of 1000. Emits per-batch JSON receipts when --json is used.
+
+    Args:
+        client: Authenticated Gmail client
+        query: Gmail search query
+        operation: Operation name (e.g., "archive", "mark-read")
+        add_labels: Labels to add
+        remove_labels: Labels to remove
+        dry_run: If True, show count and exit without executing
+        quiet: Suppress human-readable output
+        as_json: Output structured JSON
+    """
+    if dry_run:
+        count = client.count_messages(query)
+        if as_json:
+            preview = dry_run_preview(
+                operation=operation,
+                targets=[{"query": query, "estimated_count": count}],
+                reversible=True,
+                undo_command=None,
+            )
+            print(json.dumps(preview, indent=2))
+        elif not quiet:
+            console.print(f"[yellow]Query '{query}' matches ~{count} message(s)[/yellow]")
+            console.print(
+                f"[dim]Use --yes to execute: desk mail {operation} --query '{query}' --yes[/dim]"
+            )
+        return
+
+    # Fetch all matching IDs
+    start_time = time.monotonic()
+    all_ids = client.search_all_ids(query)
+    total = len(all_ids)
+
+    if total == 0:
+        if as_json:
+            print(json.dumps({
+                "success": True,
+                "operation": operation,
+                "query": query,
+                "total_processed": 0,
+                "message": "No messages matched query",
+            }, indent=2))
+        elif not quiet:
+            console.print(f"[yellow]No messages match query: {query}[/yellow]")
+        return
+
+    # Process in chunks of 1000
+    total_processed = 0
+    total_failed = 0
+    batch_num = 0
+
+    for i in range(0, total, _BATCH_MODIFY_CHUNK):
+        chunk = all_ids[i : i + _BATCH_MODIFY_CHUNK]
+        batch_num += 1
+
+        try:
+            client.batch_modify(chunk, add_labels=add_labels, remove_labels=remove_labels)
+            total_processed += len(chunk)
+        except Exception as e:
+            total_failed += len(chunk)
+            if as_json:
+                print(json.dumps({
+                    "batch": batch_num,
+                    "error": str(e),
+                    "failed_count": len(chunk),
+                    "total_so_far": total_processed,
+                }, indent=2), flush=True)
+                continue
+            else:
+                ctx = {"operation": operation, "query": query, "batch": batch_num}
+                _handle_api_error(e, as_json, ctx)
+
+        if as_json:
+            print(json.dumps({
+                "batch": batch_num,
+                "processed": len(chunk),
+                "total_so_far": total_processed,
+                "failed": 0,
+            }, indent=2), flush=True)
+
+    elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
+    if as_json:
+        print(json.dumps({
+            "complete": True,
+            "operation": operation,
+            "query": query,
+            "total_processed": total_processed,
+            "total_failed": total_failed,
+            "elapsed_ms": elapsed_ms,
+        }, indent=2))
+    elif not quiet:
+        console.print(
+            f"[green]{operation}: processed {total_processed} message(s) matching '{query}'[/green]"
+        )
+        if total_failed:
+            console.print(f"[red]Failed: {total_failed}[/red]")
+
+
+def _resolve_query_or_ids(
+    message_ids: tuple[str, ...],
+    stdin: bool,
+    query: str | None,
+    yes: bool,
+    operation: str,
+    as_json: bool,
+) -> tuple[list[str] | None, str | None]:
+    """Resolve message IDs from arguments/stdin, or validate --query + --yes.
+
+    Returns:
+        (ids, query) — one will be set, the other None.
+        If --query is used without --yes (and not dry-run), exits with error.
+    """
+    if query and message_ids:
+        msg = "--query and message IDs are mutually exclusive"
+        if as_json:
+            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    if query and stdin:
+        msg = "--query and --stdin are mutually exclusive"
+        if as_json:
+            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    if query:
+        if not yes:
+            # Check count and tell the user to add --yes
+            creds = get_credentials()
+            if not creds:
+                console.print("[red]Not authenticated.[/red]")
+                sys.exit(1)
+            client = GmailClient(creds)
+            count = client.count_messages(query)
+            msg = (
+                f"Query '{query}' matches ~{count} message(s). "
+                f"Add --yes to execute: desk mail {operation} --query '{query}' --yes"
+            )
+            if as_json:
+                print(json.dumps(structured_error(
+                    ErrorCode.INVALID_INPUT,
+                    msg,
+                    suggestions=[f"Add --yes flag: desk mail {operation} --query '{query}' --yes"],
+                ), indent=2))
+            else:
+                console.print(f"[yellow]{msg}[/yellow]")
+            sys.exit(1)
+        return None, query
+
+    ids = _collect_ids(message_ids, stdin)
+    return ids, None
 
 
 @click.group()
@@ -1159,19 +1334,15 @@ def create_label(name: str, color: str | None, quiet: bool, as_json: bool) -> No
 @mail.command("delete-label")
 @click.argument("name")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-@click.option(
-    "--timeout", "-t", type=int, default=None,
-    help="Timeout in seconds (default: 60). Use higher values for labels with many messages."
-)
-def delete_label(name: str, yes: bool, quiet: bool, as_json: bool, timeout: int | None) -> None:
+def delete_label(name: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Delete a label.
 
-    This removes the label from all messages that have it. Messages are not deleted.
-
-    Note: Labels with many messages may take a long time to delete. Use --timeout
-    to extend the timeout for large labels (e.g., --timeout 300 for 5 minutes).
+    This removes the label from all messages that have it, then deletes the
+    label itself. For labels with many messages, this batch-removes the label
+    first to avoid Gmail API timeouts.
 
     Examples:
 
@@ -1179,58 +1350,94 @@ def delete_label(name: str, yes: bool, quiet: bool, as_json: bool, timeout: int 
 
         desk mail delete-label "Temp" --yes
 
-        desk mail delete-label "Github" --yes --timeout 300
+        desk mail delete-label "Github" --yes
     """
     client = _get_client(as_json)
+
+    # Check label exists and get message count
+    label_query = f"label:{name.replace(' ', '-')}"
+    msg_count = client.count_messages(label_query)
+
+    if dry_run:
+        if as_json:
+            preview = dry_run_preview(
+                operation="delete-label",
+                targets=[{"label": name, "estimated_messages": msg_count}],
+                reversible=False,
+                undo_command=None,
+            )
+            print(json.dumps(preview, indent=2))
+        elif not quiet:
+            console.print(f"[yellow]Would delete label '{name}' (~{msg_count} messages)[/yellow]")
+            if msg_count > 0:
+                console.print("[dim]Label will be batch-removed from messages first, then deleted[/dim]")
+        return
 
     # Confirm unless --yes flag provided
     if not yes:
         if not sys.stdin.isatty():
+            msg = (
+                f"Label '{name}' has ~{msg_count} message(s). "
+                f"Non-interactive mode requires --yes flag"
+            )
             if as_json:
                 error = structured_error(
                     ErrorCode.INVALID_INPUT,
-                    "Non-interactive mode requires --yes flag",
-                    suggestions=["Add --yes flag to skip confirmation"],
+                    msg,
+                    suggestions=[f"Add --yes flag: desk mail delete-label '{name}' --yes"],
                 )
                 output_result(error, as_json, quiet)
             else:
-                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+                console.print(f"[red]Error: {msg}[/red]")
             sys.exit(1)
-        if not click.confirm(f"Delete label '{name}'? This removes it from all messages."):
+        if not click.confirm(f"Delete label '{name}'? (~{msg_count} messages will be unlabeled)"):
             console.print("[yellow]Cancelled[/yellow]")
             return
 
+    # For labels with messages, batch-remove first to avoid API timeout
+    start_time = time.monotonic()
+    messages_cleaned = 0
+
+    if msg_count > 0:
+        try:
+            label_id = client._get_label_id(name)
+            if not label_id:
+                raise ValueError(f"Label not found: {name}")
+
+            # Fetch all message IDs with this label
+            all_ids = client.search_all_ids(label_query)
+
+            # Batch-remove label in chunks
+            for i in range(0, len(all_ids), _BATCH_MODIFY_CHUNK):
+                chunk = all_ids[i : i + _BATCH_MODIFY_CHUNK]
+                client.batch_modify(chunk, remove_labels=[label_id])
+                messages_cleaned += len(chunk)
+
+                if as_json:
+                    print(json.dumps({
+                        "phase": "removing-label",
+                        "processed": len(chunk),
+                        "total_so_far": messages_cleaned,
+                    }, indent=2), flush=True)
+
+        except ValueError as e:
+            error = structured_error(ErrorCode.LABEL_NOT_FOUND, str(e))
+            output_result(error, as_json, quiet)
+            sys.exit(1)
+        except RuntimeError as e:
+            _handle_api_error(e, as_json, {"operation": "delete-label", "phase": "removing-label", "name": name})
+
+    # Now delete the empty (or near-empty) label
     try:
-        client.delete_label(name, timeout=timeout)
+        client.delete_label(name)
     except ValueError as e:
-        error = structured_error(
-            ErrorCode.LABEL_NOT_FOUND,
-            str(e),
-        )
+        error = structured_error(ErrorCode.LABEL_NOT_FOUND, str(e))
         output_result(error, as_json, quiet)
         sys.exit(1)
-    except TimeoutError as e:
-        error = structured_error(
-            ErrorCode.TIMEOUT,
-            f"Delete label timed out: {e}",
-            suggestions=[
-                "Labels with many messages take longer to delete",
-                "Try --timeout 300 (5 min) or --timeout 600 (10 min) for large labels",
-                "The operation may still complete on the server",
-                "Check `desk mail labels` to verify, or delete manually in Gmail settings",
-            ],
-            retryable=True,
-        )
-        output_result(error, as_json, quiet)
-        sys.exit(1)
-    except RuntimeError as e:
+    except (TimeoutError, RuntimeError) as e:
         error_str = str(e)
-        # Check for scope errors
         if "insufficient" in error_str.lower() and "scope" in error_str.lower():
-            error = structured_error(
-                ErrorCode.INSUFFICIENT_SCOPES,
-                parse_api_error(error_str),
-            )
+            error = structured_error(ErrorCode.INSUFFICIENT_SCOPES, parse_api_error(error_str))
         else:
             error = structured_error(
                 ErrorCode.OPERATION_FAILED,
@@ -1240,15 +1447,21 @@ def delete_label(name: str, yes: bool, quiet: bool, as_json: bool, timeout: int 
         output_result(error, as_json, quiet)
         sys.exit(1)
 
+    elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
     if as_json:
         receipt = operation_receipt(
             "delete-label",
-            {"name": name},
-            undo_command=None,  # Can't undo label deletion
+            {"name": name, "messages_cleaned": messages_cleaned, "elapsed_ms": elapsed_ms},
+            undo_command=None,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
-        console.print(f"[green]Deleted label '{name}'[/green]")
+        msg = f"[green]Deleted label '{name}'"
+        if messages_cleaned > 0:
+            msg += f" (removed from {messages_cleaned} messages)"
+        msg += "[/green]"
+        console.print(msg)
 
 
 @mail.command("rename-label")
@@ -1283,19 +1496,36 @@ def rename_label(old_name: str, new_name: str, quiet: bool, as_json: bool) -> No
 @click.argument("label_name")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Add a label to messages.
 
     Examples:
 
         desk mail label Work ID1 ID2 ID3
 
-        desk mail search "from:boss" --json | jq -r '.[].id' | desk mail label Important --stdin
+        desk mail label Important --query 'from:ceo@company.com' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "label", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        label_id = client._get_label_id(label_name)
+        if not label_id:
+            label_id = client._resolve_label(label_name)
+        _query_bulk_operate(
+            client, resolved_query, "label",
+            add_labels=[label_id],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1340,10 +1570,12 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: b
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Archive messages (remove from inbox).
 
     Examples:
@@ -1351,8 +1583,22 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: boo
         desk mail archive ID1 ID2 ID3
 
         desk mail search "from:bot" --json | jq -r '.[].id' | desk mail archive --stdin
+
+        desk mail archive --query 'label:Github is:unread' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "archive", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "archive",
+            remove_labels=["INBOX"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1406,17 +1652,33 @@ def archive(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: boo
 @mail.command("mark-read")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def mark_read(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as read.
 
     Examples:
 
         desk mail mark-read ID1 ID2 ID3
+
+        desk mail mark-read --query 'label:Github is:unread' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "mark-read", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "mark-read",
+            remove_labels=["UNREAD"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1457,17 +1719,33 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: b
 @mail.command("mark-unread")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def mark_unread(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as unread.
 
     Examples:
 
         desk mail mark-unread ID1 ID2 ID3
+
+        desk mail mark-unread --query 'from:bot' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "mark-unread", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "mark-unread",
+            add_labels=["UNREAD"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1508,17 +1786,33 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet:
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def trash(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def trash(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Move messages to trash.
 
     Examples:
 
         desk mail trash ID1 ID2 ID3
+
+        desk mail trash --query 'older_than:1y label:Promotions' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "trash", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "trash",
+            add_labels=["TRASH"], remove_labels=["INBOX"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1621,17 +1915,33 @@ def unread(max_results: int, limit: int | None, page_token: str | None, as_json:
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def star(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Star messages.
 
     Examples:
 
         desk mail star ID1 ID2 ID3
+
+        desk mail star --query 'from:ceo@company.com' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "star", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "star",
+            add_labels=["STARRED"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1672,17 +1982,33 @@ def star(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, 
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def unstar(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove star from messages.
 
     Examples:
 
         desk mail unstar ID1 ID2 ID3
+
+        desk mail unstar --query 'is:starred older_than:6m' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "unstar", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "unstar",
+            remove_labels=["STARRED"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1723,10 +2049,12 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def spam(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Report messages as spam.
 
     Moves messages to spam folder.
@@ -1735,9 +2063,21 @@ def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, 
 
         desk mail spam ID1 ID2 ID3
 
-        desk mail search "from:suspicious" --json | jq -r '.[].id' | desk mail spam --stdin
+        desk mail spam --query 'from:suspicious@domain.com' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "spam", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "spam",
+            add_labels=["SPAM"], remove_labels=["INBOX"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1761,10 +2101,12 @@ def spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, 
 @mail.command("not-spam")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def not_spam(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as not spam.
 
     Moves messages from spam folder to inbox.
@@ -1772,8 +2114,22 @@ def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bo
     Examples:
 
         desk mail not-spam ID1 ID2 ID3
+
+        desk mail not-spam --query 'in:spam from:trusted@domain.com' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "not-spam", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "not-spam",
+            add_labels=["INBOX"], remove_labels=["SPAM"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1797,17 +2153,33 @@ def not_spam(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bo
 @mail.command()
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def important(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Mark messages as important.
 
     Examples:
 
         desk mail important ID1 ID2 ID3
+
+        desk mail important --query 'from:ceo@company.com' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "important", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "important",
+            add_labels=["IMPORTANT"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1831,17 +2203,33 @@ def important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: b
 @mail.command("not-important")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def not_important(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove important marker from messages.
 
     Examples:
 
         desk mail not-important ID1 ID2 ID3
+
+        desk mail not-important --query 'is:important older_than:1y' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "not-important", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "not-important",
+            remove_labels=["IMPORTANT"],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -1866,17 +2254,36 @@ def not_important(message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quie
 @click.argument("label_name")
 @click.argument("message_ids", nargs=-1)
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Remove a label from messages.
 
     Examples:
 
         desk mail remove-label Work ID1 ID2 ID3
+
+        desk mail remove-label Github --query 'label:Github' --yes
     """
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "remove-label", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        label_id = client._get_label_id(label_name)
+        if not label_id:
+            label_id = client._resolve_label(label_name)
+        _query_bulk_operate(
+            client, resolved_query, "remove-label",
+            remove_labels=[label_id],
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return
@@ -2253,6 +2660,8 @@ def vacation(
     "--remove-label", "-r", "remove_labels", multiple=True, help="Label to remove (repeatable)"
 )
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
+@click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
+@click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -2261,6 +2670,8 @@ def modify(
     add_labels: tuple[str],
     remove_labels: tuple[str],
     stdin: bool,
+    query: str | None,
+    yes: bool,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -2275,12 +2686,27 @@ def modify(
         desk mail modify ID --remove-label INBOX --remove-label UNREAD
 
         desk mail modify ID1 ID2 --add-label Work --remove-label INBOX
+
+        desk mail modify --query 'label:OldProject' --add-label Archive --remove-label INBOX --yes
     """
     if not add_labels and not remove_labels:
         console.print("[yellow]Nothing to do. Use --add-label or --remove-label.[/yellow]")
         return
 
-    ids = _collect_ids(message_ids, stdin)
+    ids, resolved_query = _resolve_query_or_ids(
+        message_ids, stdin, query, yes or dry_run, "modify", as_json,
+    )
+
+    if resolved_query:
+        client = _get_client(as_json)
+        _query_bulk_operate(
+            client, resolved_query, "modify",
+            add_labels=list(add_labels) if add_labels else None,
+            remove_labels=list(remove_labels) if remove_labels else None,
+            dry_run=dry_run, quiet=quiet, as_json=as_json,
+        )
+        return
+
     if not ids:
         console.print("[yellow]No message IDs provided.[/yellow]")
         return

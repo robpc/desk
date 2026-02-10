@@ -79,6 +79,69 @@ class GmailClient:
 
         return results
 
+    def search_all_ids(self, query: str) -> list[str]:
+        """Paginate through all messages matching query and return their IDs.
+
+        Uses messages.list with only IDs (no metadata fetch) for efficiency.
+        Pages through all results using 500 per page (Gmail max).
+
+        Args:
+            query: Gmail search query (same syntax as Gmail search box)
+
+        Returns:
+            List of all matching message IDs
+        """
+        all_ids: list[str] = []
+        page_token = None
+
+        try:
+            while True:
+                request_kwargs = {
+                    "userId": self.user_id,
+                    "q": query,
+                    "maxResults": 500,
+                }
+                if page_token:
+                    request_kwargs["pageToken"] = page_token
+
+                results = (
+                    self.service.users().messages().list(**request_kwargs).execute()
+                )
+
+                for msg in results.get("messages", []):
+                    all_ids.append(msg["id"])
+
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+
+            return all_ids
+
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def count_messages(self, query: str) -> int:
+        """Get approximate count of messages matching a query.
+
+        Uses a single API call with maxResults=1 to get resultSizeEstimate.
+
+        Args:
+            query: Gmail search query
+
+        Returns:
+            Estimated count of matching messages
+        """
+        try:
+            results = (
+                self.service.users()
+                .messages()
+                .list(userId=self.user_id, q=query, maxResults=1)
+                .execute()
+            )
+            return results.get("resultSizeEstimate", 0)
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
     def search(
         self, query: str, max_results: int = 20, page_token: str | None = None
     ) -> dict:
