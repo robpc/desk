@@ -1,7 +1,7 @@
 ---
 id: 037
 title: Surface Linked Docs and URLs in Email Output
-status: idea
+status: planned
 effort: M
 value: Agents can't follow links or access linked Google Docs from emails — key context is invisible
 created: 2026-02-10

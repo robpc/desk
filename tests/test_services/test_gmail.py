@@ -914,3 +914,155 @@ class TestTimeoutServiceCache:
             assert svc1 is not svc2
             # build() called once for __init__, once for 300, once for 600
             assert mock_build.call_count == 3
+
+
+class TestExtractBodyParts:
+    """Tests for GmailClient._extract_body_parts method."""
+
+    def test_returns_plain_and_html(self, mock_credentials):
+        """Should return both plain text and HTML from multipart message."""
+        plain_text = "Hello plain"
+        html_text = "<p>Hello html</p>"
+        encoded_plain = base64.urlsafe_b64encode(plain_text.encode()).decode()
+        encoded_html = base64.urlsafe_b64encode(html_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            payload = {
+                "mimeType": "multipart/alternative",
+                "parts": [
+                    {"mimeType": "text/plain", "body": {"data": encoded_plain}},
+                    {"mimeType": "text/html", "body": {"data": encoded_html}},
+                ],
+            }
+            plain, html = client._extract_body_parts(payload)
+
+            assert plain == plain_text
+            assert html == html_text
+
+    def test_plain_only(self, mock_credentials):
+        """Should return plain text and empty HTML when only plain is present."""
+        plain_text = "Just plain"
+        encoded = base64.urlsafe_b64encode(plain_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            payload = {
+                "mimeType": "text/plain",
+                "body": {"data": encoded},
+            }
+            plain, html = client._extract_body_parts(payload)
+
+            assert plain == plain_text
+            assert html == ""
+
+    def test_html_only_direct(self, mock_credentials):
+        """Should return HTML when mimeType is text/html directly."""
+        html_text = "<p>HTML only</p>"
+        encoded = base64.urlsafe_b64encode(html_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            payload = {
+                "mimeType": "text/html",
+                "body": {"data": encoded},
+            }
+            plain, html = client._extract_body_parts(payload)
+
+            assert plain == ""
+            assert html == html_text
+
+    def test_nested_multipart(self, mock_credentials):
+        """Should recurse into nested multipart structures."""
+        plain_text = "Nested plain"
+        html_text = "<p>Nested html</p>"
+        encoded_plain = base64.urlsafe_b64encode(plain_text.encode()).decode()
+        encoded_html = base64.urlsafe_b64encode(html_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            payload = {
+                "mimeType": "multipart/mixed",
+                "parts": [
+                    {
+                        "mimeType": "multipart/alternative",
+                        "parts": [
+                            {"mimeType": "text/plain", "body": {"data": encoded_plain}},
+                            {"mimeType": "text/html", "body": {"data": encoded_html}},
+                        ],
+                    },
+                ],
+            }
+            plain, html = client._extract_body_parts(payload)
+
+            assert plain == plain_text
+            assert html == html_text
+
+
+class TestParseFullMessageLinks:
+    """Tests for links in _parse_full_message."""
+
+    def test_includes_links_from_html(self, mock_credentials):
+        """Should include links array extracted from HTML body."""
+        plain_text = "Check this doc"
+        html_text = '<p>Check <a href="https://docs.google.com/document/d/1abc/edit">this doc</a></p>'
+        encoded_plain = base64.urlsafe_b64encode(plain_text.encode()).decode()
+        encoded_html = base64.urlsafe_b64encode(html_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            msg = {
+                "id": "msg1",
+                "threadId": "t1",
+                "payload": {
+                    "headers": [{"name": "From", "value": "test@example.com"}],
+                    "parts": [
+                        {"mimeType": "text/plain", "body": {"data": encoded_plain}},
+                        {"mimeType": "text/html", "body": {"data": encoded_html}},
+                    ],
+                },
+            }
+            result = client._parse_full_message(msg)
+
+            assert "links" in result
+            assert len(result["links"]) == 1
+            assert result["links"][0]["type"] == "google-doc"
+            assert result["links"][0]["readable_via"] == "desk docs read 1abc"
+
+    def test_empty_links_when_no_html(self, mock_credentials):
+        """Should return empty links when no HTML part."""
+        plain_text = "Just plain text"
+        encoded = base64.urlsafe_b64encode(plain_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            msg = {
+                "id": "msg1",
+                "threadId": "t1",
+                "payload": {
+                    "headers": [{"name": "From", "value": "test@example.com"}],
+                    "mimeType": "text/plain",
+                    "body": {"data": encoded},
+                },
+            }
+            result = client._parse_full_message(msg)
+
+            assert result["links"] == []

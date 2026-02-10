@@ -21,6 +21,7 @@ from desk.agent import (
 )
 from desk.auth import get_credentials, get_last_auth_failure
 from desk.idempotency import check_idempotency, record_idempotency
+from desk.links import filter_links_not_in_text
 from desk.services.gmail import GmailClient
 
 console = Console()
@@ -158,6 +159,31 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
                 console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
+
+
+def _print_links_section(message: dict) -> None:
+    """Print a Links section for URLs hidden from the plain text body.
+
+    Only prints links whose URL doesn't already appear in the plain text,
+    so users/agents aren't shown redundant information.
+    """
+    all_links = message.get("links", [])
+    if not all_links:
+        return
+
+    hidden = filter_links_not_in_text(all_links, message.get("body", ""))
+    if not hidden:
+        return
+
+    console.print()
+    console.print("[bold]Links:[/bold]")
+    for link in hidden:
+        text = link.get("text", "")
+        if text:
+            console.print(f"  {text}")
+        console.print(f"    {link['url']}")
+        if link.get("readable_via"):
+            console.print(f"    [dim]→ {link['readable_via']}[/dim]")
 
 
 def _query_bulk_operate(
@@ -481,6 +507,7 @@ def thread(thread_id: str, as_json: bool) -> None:
         console.print(f"[bold]Subject:[/bold] {msg.get('subject', '')}")
         console.print()
         console.print(msg.get("body", "(no body)"))
+        _print_links_section(msg)
         console.print()
 
 
@@ -589,6 +616,7 @@ def read(message_id: str, as_json: bool) -> None:
     console.print(f"[bold]Date:[/bold] {message['date']}")
     console.print()
     console.print(message.get("body", "(no body)"))
+    _print_links_section(message)
 
 
 @mail.command()
@@ -1032,6 +1060,7 @@ def draft_read(draft_id: str, as_json: bool) -> None:
     console.print(f"[bold]Subject:[/bold] {d.get('subject', '')}")
     console.print()
     console.print(d.get("body", "(no body)"))
+    _print_links_section(d)
 
 
 @draft.command("send")

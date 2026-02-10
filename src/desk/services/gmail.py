@@ -1201,32 +1201,67 @@ class GmailClient:
         }
 
     def _parse_full_message(self, msg: dict) -> dict:
-        """Parse full message including body."""
+        """Parse full message including body and links."""
+        from desk.links import extract_links_from_html
+
         metadata = self._parse_message_metadata(msg)
-        metadata["body"] = self._extract_body(msg.get("payload", {}))
+        plain, html = self._extract_body_parts(msg.get("payload", {}))
+        metadata["body"] = plain
+
+        # Extract links from HTML body
+        if html:
+            metadata["links"] = extract_links_from_html(html)
+        else:
+            metadata["links"] = []
+
         return metadata
 
-    def _extract_body(self, payload: dict) -> str:
-        """Extract message body from payload."""
-        import base64
+    def _extract_body_parts(self, payload: dict) -> tuple[str, str]:
+        """Extract both plain text and HTML body from payload.
 
-        # Simple case: body directly in payload
+        Returns:
+            Tuple of (plain_text, html). Either may be empty string.
+        """
+        plain = ""
+        html = ""
+
+        # Simple case: body directly in payload (check mimeType)
         if "body" in payload and payload["body"].get("data"):
-            return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
+            decoded = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
+            mime = payload.get("mimeType", "")
+            if mime == "text/html":
+                html = decoded
+            else:
+                plain = decoded
+            return plain, html
 
-        # Multipart: find text/plain part
+        # Multipart: collect text/plain and text/html parts
         if "parts" in payload:
             for part in payload["parts"]:
-                if part.get("mimeType") == "text/plain":
+                mime = part.get("mimeType", "")
+                if mime == "text/plain" and not plain:
                     if part.get("body", {}).get("data"):
-                        return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                        plain = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                elif mime == "text/html" and not html:
+                    if part.get("body", {}).get("data"):
+                        html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
                 # Recurse into nested parts
                 if "parts" in part:
-                    body = self._extract_body(part)
-                    if body:
-                        return body
+                    sub_plain, sub_html = self._extract_body_parts(part)
+                    if sub_plain and not plain:
+                        plain = sub_plain
+                    if sub_html and not html:
+                        html = sub_html
 
-        return ""
+        return plain, html
+
+    def _extract_body(self, payload: dict) -> str:
+        """Extract plain text body from payload.
+
+        Convenience wrapper around _extract_body_parts.
+        """
+        plain, _ = self._extract_body_parts(payload)
+        return plain
 
     # -------------------------------------------------------------------------
     # Filters (Gmail Settings)

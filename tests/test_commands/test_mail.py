@@ -178,6 +178,121 @@ class TestMailLabels:
         assert isinstance(output, list)
 
 
+class TestMailReadLinks:
+    """Tests for links display in desk mail read command."""
+
+    def test_read_shows_links_section_for_hidden_urls(self, runner, mock_get_credentials, mock_gmail_client_class):
+        """Should show Links section when URLs are hidden from plain text."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "msg123",
+            "from": "sender@example.com",
+            "subject": "Meeting Notes",
+            "date": "2026-02-10",
+            "body": "Here are the meeting notes.",
+            "links": [
+                {
+                    "url": "https://docs.google.com/document/d/1abc/edit",
+                    "text": "Meeting Notes Doc",
+                    "type": "google-doc",
+                    "readable_via": "desk docs read 1abc",
+                },
+            ],
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["read", "msg123"])
+
+        assert result.exit_code == 0
+        assert "Links:" in result.output
+        assert "Meeting Notes Doc" in result.output
+        assert "https://docs.google.com/document/d/1abc/edit" in result.output
+        assert "desk docs read 1abc" in result.output
+
+    def test_read_omits_links_section_when_all_visible(self, runner, mock_get_credentials, mock_gmail_client_class):
+        """Should not show Links section when all URLs are already in body."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "msg123",
+            "from": "sender@example.com",
+            "subject": "Test",
+            "date": "2026-02-10",
+            "body": "Visit https://example.com for details.",
+            "links": [
+                {
+                    "url": "https://example.com",
+                    "text": "Example",
+                    "type": "external",
+                    "readable_via": None,
+                },
+            ],
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["read", "msg123"])
+
+        assert result.exit_code == 0
+        assert "Links:" not in result.output
+
+    def test_read_omits_links_section_when_no_links(self, runner, mock_get_credentials, mock_gmail_client_class):
+        """Should not show Links section when message has no links."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "msg123",
+            "from": "sender@example.com",
+            "subject": "Test",
+            "date": "2026-02-10",
+            "body": "Plain text email.",
+            "links": [],
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["read", "msg123"])
+
+        assert result.exit_code == 0
+        assert "Links:" not in result.output
+
+    def test_read_json_includes_all_links(self, runner, mock_get_credentials, mock_gmail_client_class):
+        """JSON output should include all links regardless of visibility in body."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "msg123",
+            "from": "sender@example.com",
+            "subject": "Test",
+            "date": "2026-02-10",
+            "body": "Visit https://example.com",
+            "links": [
+                {
+                    "url": "https://example.com",
+                    "text": "Example",
+                    "type": "external",
+                    "readable_via": None,
+                },
+                {
+                    "url": "https://docs.google.com/document/d/1abc/edit",
+                    "text": "Doc",
+                    "type": "google-doc",
+                    "readable_via": "desk docs read 1abc",
+                },
+            ],
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["read", "msg123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output["links"]) == 2
+
+
 class TestMailCreateLabel:
     """Tests for desk mail create-label command."""
 
