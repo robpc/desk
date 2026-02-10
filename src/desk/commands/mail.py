@@ -424,6 +424,7 @@ def read(message_id: str, as_json: bool) -> None:
 @click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
 @click.option("--idempotency-key", "idempotency_key", default=None, help="Key for safe retries (prevents duplicate sends)")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
@@ -436,6 +437,7 @@ def send(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    is_html: bool,
     idempotency_key: str | None,
     dry_run: bool,
     quiet: bool,
@@ -541,6 +543,7 @@ def send(
         body=body,
         cc=list(cc_addrs) if cc_addrs else None,
         bcc=list(bcc_addrs) if bcc_addrs else None,
+        html=is_html,
     )
 
     receipt = operation_receipt(
@@ -611,6 +614,7 @@ def _get_body(
 @click.option("--body", "-b", "body_text", default=None, help="Reply body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -620,6 +624,7 @@ def reply(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    is_html: bool,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -652,7 +657,7 @@ def reply(
         return
 
     client = _get_client()
-    result = client.reply(message_id, body=body, reply_all=reply_all)
+    result = client.reply(message_id, body=body, reply_all=reply_all, html=is_html)
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -668,6 +673,7 @@ def reply(
 @click.option("--body", "-b", "body_text", default=None, help="Additional message (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read additional message from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read additional message from stdin")
+@click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -677,6 +683,7 @@ def forward(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    is_html: bool,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -708,7 +715,7 @@ def forward(
         return
 
     client = _get_client()
-    result = client.forward(message_id, to=list(to_addrs), body=body)
+    result = client.forward(message_id, to=list(to_addrs), body=body, html=is_html)
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -784,6 +791,7 @@ def draft() -> None:
 @click.option("--body", "-b", "body_text", default=None, help="Email body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
+@click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def create(
@@ -794,6 +802,7 @@ def create(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    is_html: bool,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -814,6 +823,7 @@ def create(
         body=body,
         cc=list(cc_addrs) if cc_addrs else None,
         bcc=list(bcc_addrs) if bcc_addrs else None,
+        html=is_html,
     )
 
     if as_json:
@@ -899,6 +909,7 @@ def draft_delete(draft_id: str, quiet: bool, as_json: bool) -> None:
 @click.option("--body", "-b", "body_text", default=None, help="New body (plain text)")
 @click.option("--body-file", "-f", "body_file", default=None, help="Read new body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read new body from stdin")
+@click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
@@ -910,6 +921,7 @@ def update(
     body_text: str | None,
     body_file: str | None,
     from_stdin: bool,
+    is_html: bool,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -936,6 +948,7 @@ def update(
         body=body,
         cc=list(cc_addrs) if cc_addrs else None,
         bcc=list(bcc_addrs) if bcc_addrs else None,
+        html=is_html,
     )
 
     if as_json:

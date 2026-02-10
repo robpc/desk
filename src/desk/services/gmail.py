@@ -1,7 +1,9 @@
 """Gmail API wrapper."""
 
 import base64
+import re
 import socket
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import google_auth_httplib2
@@ -478,6 +480,29 @@ class GmailClient:
         """Remove star from a message."""
         self.modify(message_id, remove_labels=["STARRED"])
 
+    @staticmethod
+    def _build_mime_message(body: str, html: bool = False) -> MIMEText | MIMEMultipart:
+        """Build a MIME message from body text.
+
+        Args:
+            body: The message body
+            html: If True, body is HTML. Builds multipart/alternative
+                  with a plain-text fallback.
+
+        Returns:
+            A MIMEText (plain) or MIMEMultipart (html) message.
+        """
+        if not html:
+            return MIMEText(body)
+
+        # Build multipart/alternative with plain text fallback
+        msg = MIMEMultipart("alternative")
+        # Strip HTML tags for plain text version
+        plain = re.sub(r"<[^>]+>", "", body)
+        msg.attach(MIMEText(plain, "plain"))
+        msg.attach(MIMEText(body, "html"))
+        return msg
+
     def send(
         self,
         to: list[str],
@@ -485,21 +510,23 @@ class GmailClient:
         body: str,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        html: bool = False,
     ) -> dict:
         """Send an email.
 
         Args:
             to: List of recipient email addresses
             subject: Email subject
-            body: Plain text body
+            body: Email body (plain text, or HTML if html=True)
             cc: List of CC recipients
             bcc: List of BCC recipients
+            html: If True, body is HTML with plain-text fallback
 
         Returns:
             The sent message metadata (id, threadId, labelIds)
         """
         # Build MIME message
-        message = MIMEText(body)
+        message = self._build_mime_message(body, html=html)
         message["to"] = ", ".join(to)
         message["subject"] = subject
 
@@ -527,13 +554,15 @@ class GmailClient:
         message_id: str,
         body: str,
         reply_all: bool = False,
+        html: bool = False,
     ) -> dict:
         """Reply to an email.
 
         Args:
             message_id: The message ID to reply to
-            body: Plain text reply body
+            body: Reply body (plain text, or HTML if html=True)
             reply_all: If True, reply to all recipients (To + CC)
+            html: If True, body is HTML with plain-text fallback
 
         Returns:
             The sent message metadata
@@ -560,7 +589,7 @@ class GmailClient:
             subject = f"Re: {subject}"
 
         # Build MIME message with threading headers
-        message = MIMEText(body)
+        message = self._build_mime_message(body, html=html)
         message["to"] = ", ".join(to_addrs)
         message["subject"] = subject
 
@@ -597,6 +626,7 @@ class GmailClient:
         message_id: str,
         to: list[str],
         body: str = "",
+        html: bool = False,
     ) -> dict:
         """Forward an email.
 
@@ -604,6 +634,7 @@ class GmailClient:
             message_id: The message ID to forward
             to: List of recipient email addresses
             body: Optional additional message to include before forwarded content
+            html: If True, body is HTML with plain-text fallback
 
         Returns:
             The sent message metadata
@@ -631,7 +662,7 @@ class GmailClient:
         forward_body += f"\n{original_body}"
 
         # Build MIME message
-        message = MIMEText(forward_body)
+        message = self._build_mime_message(forward_body, html=html)
         message["to"] = ", ".join(to)
         message["subject"] = subject
 
@@ -728,20 +759,22 @@ class GmailClient:
         body: str,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        html: bool = False,
     ) -> dict:
         """Create a draft email.
 
         Args:
             to: List of recipient email addresses
             subject: Email subject
-            body: Plain text body
+            body: Email body (plain text, or HTML if html=True)
             cc: List of CC recipients
             bcc: List of BCC recipients
+            html: If True, body is HTML with plain-text fallback
 
         Returns:
             The created draft with id
         """
-        message = MIMEText(body)
+        message = self._build_mime_message(body, html=html)
         message["to"] = ", ".join(to)
         message["subject"] = subject
 
@@ -824,6 +857,7 @@ class GmailClient:
         body: str | None = None,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        html: bool = False,
     ) -> dict:
         """Update a draft.
 
@@ -834,6 +868,7 @@ class GmailClient:
             body: New body (if provided)
             cc: New CC recipients (if provided)
             bcc: New BCC recipients (if provided)
+            html: If True, body is HTML with plain-text fallback
 
         Returns:
             The updated draft
@@ -851,7 +886,7 @@ class GmailClient:
         final_bcc = bcc  # BCC not stored in existing, so only use if provided
 
         # Build new message
-        message = MIMEText(final_body)
+        message = self._build_mime_message(final_body, html=html)
         message["to"] = ", ".join(final_to) if final_to else ""
         message["subject"] = final_subject
 

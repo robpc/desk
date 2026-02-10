@@ -38,7 +38,7 @@ desk mail send --to "user@example.com" --subject "Files" --attach report.pdf
 ## Open Questions
 
 - [ ] How to handle multi-line body from CLI? (heredoc? file? stdin?)
-- [ ] Support HTML body or plain text only?
+- [x] Support HTML body or plain text only? → `--html` flag added (PR #4)
 - [ ] Attachments in scope or separate idea?
 - [ ] `--dry-run` to preview without sending?
 - [ ] Confirmation prompt before sending? (see Idea 013)
@@ -80,7 +80,7 @@ desk mail send --to "user@example.com" --subject "Test" --body "Hi" --json
 ```
 
 **Decisions made:**
-- Plain text only (no HTML) - keeps it simple, HTML can be added later if needed
+- ~~Plain text only (no HTML)~~ — `--html` flag added in PR #4; builds `multipart/alternative` with plain-text fallback
 - No attachments - separate idea (008)
 - No confirmation prompt - can add via idea 013 (safety confirmations)
 - No dry-run - can add via idea 011
