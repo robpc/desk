@@ -5,8 +5,9 @@ Google Workspace from the command line — Gmail, Drive, Sheets, Docs, Calendar.
 ## Quick Start
 
 ```bash
-# Install
-pip install -e .
+# Install (from a git checkout)
+pipx install -e .          # Recommended: isolated install, adds `desk` to PATH
+# or: pip install -e .     # If you manage your own virtualenv
 
 # Setup (choose one)
 desk setup --gcloud                    # Easiest: use gcloud credentials
@@ -18,6 +19,12 @@ desk mail read <message-id>
 desk drive recent
 desk cal today
 ```
+
+> **macOS (Homebrew Python) users**: If `pip install -e .` fails with `externally-managed-environment`, use `pipx` instead:
+> ```bash
+> brew install pipx
+> pipx install -e .
+> ```
 
 ## Setup
 
@@ -247,7 +254,8 @@ If you previously used `gmail`, Desk will auto-migrate your config from `~/.gmai
 ## Development
 
 ```bash
-# Install in dev mode
+# Install in dev mode (use a virtualenv)
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Run tests
