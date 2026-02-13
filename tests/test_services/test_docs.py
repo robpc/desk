@@ -109,6 +109,186 @@ class TestDocsRead:
                 client.read("nonexistent_id")
 
 
+class TestDocsReadTables:
+    """Tests for table extraction in DocsClient.read."""
+
+    def _make_paragraph(self, text):
+        return {"paragraph": {"elements": [{"textRun": {"content": text}}]}}
+
+    def _make_table(self, rows):
+        """Build a Google Docs API table structure from a list of lists of strings."""
+        return {
+            "table": {
+                "tableRows": [
+                    {
+                        "tableCells": [
+                            {"content": [self._make_paragraph(cell)]}
+                            for cell in row
+                        ]
+                    }
+                    for row in rows
+                ]
+            }
+        }
+
+    def test_read_table_only_doc(self, mock_credentials):
+        """Should extract table content from a doc with only tables."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Table Doc",
+                "body": {
+                    "content": [
+                        self._make_table([
+                            ["Name", "Status"],
+                            ["Alice", "Active"],
+                            ["Bob", "Inactive"],
+                        ])
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert "Name" in result["body"]
+            assert "Alice" in result["body"]
+            assert "| Name | Status |" in result["body"]
+            assert "| --- | --- |" in result["body"]
+            assert "| Alice | Active |" in result["body"]
+
+    def test_read_mixed_paragraphs_and_tables(self, mock_credentials):
+        """Should preserve both paragraphs and tables."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Mixed Doc",
+                "body": {
+                    "content": [
+                        self._make_paragraph("Introduction\n"),
+                        self._make_table([["Col A", "Col B"], ["1", "2"]]),
+                        self._make_paragraph("Conclusion\n"),
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            body = result["body"]
+            assert "Introduction" in body
+            assert "| Col A | Col B |" in body
+            assert "Conclusion" in body
+            # Paragraph before table before paragraph
+            assert body.index("Introduction") < body.index("Col A")
+            assert body.index("Col A") < body.index("Conclusion")
+
+    def test_read_empty_table(self, mock_credentials):
+        """Should handle table with no rows gracefully."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Empty Table",
+                "body": {
+                    "content": [{"table": {"tableRows": []}}]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+            assert result["body"] == ""
+
+    def test_read_table_with_pipe_in_cell(self, mock_credentials):
+        """Should escape pipe characters in cell text."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Pipe Doc",
+                "body": {
+                    "content": [
+                        self._make_table([
+                            ["Command", "Example"],
+                            ["grep", "grep foo|bar"],
+                        ])
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert "grep foo\\|bar" in result["body"]
+
+    def test_read_table_with_uneven_rows(self, mock_credentials):
+        """Should pad shorter rows to match column count."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Uneven Doc",
+                "body": {
+                    "content": [
+                        {
+                            "table": {
+                                "tableRows": [
+                                    {
+                                        "tableCells": [
+                                            {"content": [self._make_paragraph("A")]},
+                                            {"content": [self._make_paragraph("B")]},
+                                            {"content": [self._make_paragraph("C")]},
+                                        ]
+                                    },
+                                    {
+                                        "tableCells": [
+                                            {"content": [self._make_paragraph("1")]},
+                                        ]
+                                    },
+                                ]
+                            }
+                        }
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            lines = result["body"].strip().split("\n")
+            # Header should have 3 columns
+            assert lines[0].count("|") == 4  # | A | B | C |
+            # Data row should also have 3 columns (padded)
+            assert lines[2].count("|") == 4  # | 1 |  |  |
+
+
 class TestDocsCreate:
     """Tests for DocsClient.create method."""
 
