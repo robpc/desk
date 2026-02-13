@@ -21,7 +21,7 @@ Skip this and you will ship incomplete work. The documentation is part of the de
 
 ```bash
 # Setup (one-time)
-pip install -e .
+pip install -e ".[dev]"
 desk auth login
 
 # Usage
