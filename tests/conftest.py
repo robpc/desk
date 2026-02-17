@@ -160,3 +160,21 @@ def mock_docs_service():
     documents.batchUpdate.return_value.execute.return_value = {}
 
     return service
+
+
+@pytest.fixture
+def mock_forms_service():
+    """Pre-configured mock Forms service."""
+    service = MagicMock()
+
+    # Forms endpoints
+    forms = service.forms.return_value
+    forms.create.return_value.execute.return_value = {}
+    forms.get.return_value.execute.return_value = {"info": {}, "items": []}
+    forms.batchUpdate.return_value.execute.return_value = {}
+
+    # Responses endpoints
+    responses = forms.responses.return_value
+    responses.list.return_value.execute.return_value = {"responses": []}
+
+    return service
