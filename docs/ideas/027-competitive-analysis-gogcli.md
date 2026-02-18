@@ -1,6 +1,6 @@
 # Idea 027: Competitive Analysis — gogcli
 
-**Status**: adr-created
+**Status**: implemented
 **Created**: 2025-02-07
 **Tags**: strategy, competitive-analysis
 
