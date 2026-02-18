@@ -587,6 +587,142 @@ class TestDocsInsertTable:
             assert "endOfSegmentLocation" in req
 
 
+class TestDocsUpdateParagraphStyle:
+    """Tests for DocsClient.update_paragraph_style method."""
+
+    def test_heading_style(self, mock_credentials):
+        """Should send updateParagraphStyle with heading."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_paragraph_style("doc123", 1, 20, heading=2)
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["updateParagraphStyle"]
+            assert req["paragraphStyle"]["namedStyleType"] == "HEADING_2"
+            assert "namedStyleType" in req["fields"]
+
+    def test_normal_text_heading_zero(self, mock_credentials):
+        """Should set NORMAL_TEXT when heading=0."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_paragraph_style("doc123", 1, 20, heading=0)
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["updateParagraphStyle"]
+            assert req["paragraphStyle"]["namedStyleType"] == "NORMAL_TEXT"
+
+    def test_alignment_style(self, mock_credentials):
+        """Should send updateParagraphStyle with alignment."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_paragraph_style("doc123", 1, 50, alignment="CENTER")
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["updateParagraphStyle"]
+            assert req["paragraphStyle"]["alignment"] == "CENTER"
+
+    def test_no_styles_specified(self, mock_credentials):
+        """Should return without API call when no styles given."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_paragraph_style("doc123", 1, 10)
+
+            assert result["note"] == "no styles specified"
+            documents_mock.batchUpdate.assert_not_called()
+
+
+class TestDocsInsertImage:
+    """Tests for DocsClient.insert_image method."""
+
+    def test_insert_image_at_end(self, mock_credentials):
+        """Should insert image with EndOfSegmentLocation."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.insert_image("doc123", "https://example.com/img.png")
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["insertInlineImage"]
+            assert req["uri"] == "https://example.com/img.png"
+            assert "endOfSegmentLocation" in req
+
+    def test_insert_image_at_index_with_size(self, mock_credentials):
+        """Should insert image at index with width/height."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.insert_image(
+                "doc123", "https://example.com/img.png",
+                index=5, width=200.0, height=100.0,
+            )
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["insertInlineImage"]
+            assert req["location"]["index"] == 5
+            assert req["objectSize"]["width"]["magnitude"] == 200.0
+            assert req["objectSize"]["height"]["magnitude"] == 100.0
+
+    def test_insert_image_api_error(self, mock_credentials):
+        """Should raise RuntimeError on API error."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            http_error = HttpError(
+                resp=MagicMock(status=400),
+                content=b'{"error": {"message": "Invalid URI"}}',
+            )
+            documents_mock.batchUpdate.return_value.execute.side_effect = http_error
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            with pytest.raises(RuntimeError, match="Docs API error"):
+                client.insert_image("doc123", "not-a-url")
+
+
 class TestDocsInspect:
     """Tests for DocsClient.inspect method."""
 

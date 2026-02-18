@@ -127,14 +127,6 @@ class TestMarkdownToRequests:
         requests = markdown_to_requests("", base_index=1)
         assert requests == []
 
-    def test_end_of_segment_no_styles(self):
-        from desk.services.markdown_to_docs import markdown_to_requests
-
-        # When base_index is None (append), should return just insert
-        requests = markdown_to_requests("**bold**", base_index=None)
-        assert len(requests) == 1
-        assert "endOfSegmentLocation" in requests[0]["insertText"]
-
     def test_base_index_offsets_styles(self):
         from desk.services.markdown_to_docs import markdown_to_requests
 

@@ -146,7 +146,7 @@ class TestMarkdownToRequests:
     """Tests for the markdown_to_requests top-level function."""
 
     def test_empty_markdown_returns_empty(self):
-        result = markdown_to_requests("")
+        result = markdown_to_requests("", base_index=1)
         assert result == []
 
     def test_plain_text_with_base_index(self):
@@ -156,19 +156,6 @@ class TestMarkdownToRequests:
         assert "insertText" in insert
         assert insert["insertText"]["location"]["index"] == 1
         assert insert["insertText"]["text"] == "Hello\n"
-
-    def test_plain_text_without_base_index(self):
-        result = markdown_to_requests("Hello")
-        assert len(result) == 1
-        insert = result[0]
-        assert "insertText" in insert
-        assert "endOfSegmentLocation" in insert["insertText"]
-
-    def test_no_styles_without_base_index(self):
-        result = markdown_to_requests("**bold**")
-        # Without base_index, only the insertText is returned (no style requests)
-        assert len(result) == 1
-        assert "insertText" in result[0]
 
     def test_bold_request_with_base_index(self):
         result = markdown_to_requests("**bold**", base_index=1)

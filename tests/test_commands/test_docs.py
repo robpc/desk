@@ -212,6 +212,28 @@ class TestDocsStyle:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["success"] is True
+        assert output["changes"]["bold"] is True
+
+    def test_style_receipt_includes_applied_styles(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """Receipt should include which styles were applied."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_text_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs,
+            ["style", "doc123", "--start", "1", "--end", "10", "--bold", "--italic", "--font-size", "14", "--json"],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["bold"] is True
+        assert output["changes"]["italic"] is True
+        assert output["changes"]["font_size"] == 14.0
 
 
 class TestDocsInspect:
@@ -280,3 +302,179 @@ class TestDocsInsertTable:
         output = json.loads(result.output)
         assert output["success"] is True
         mock_client.insert_table.assert_called_once_with("doc123", 3, 4, index=None)
+
+    def test_insert_table_invalid_rows(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error when rows < 1."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["insert-table", "doc123", "--rows", "0", "--cols", "2", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+    def test_insert_table_invalid_cols(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error when cols < 1."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["insert-table", "doc123", "--rows", "2", "--cols", "-1", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+
+
+class TestDocsParagraphStyle:
+    """Tests for desk docs paragraph-style command."""
+
+    def test_heading_style(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should apply heading style."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_paragraph_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["paragraph-style", "doc123", "--start", "1", "--end", "20", "--heading", "2", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["changes"]["heading"] == 2
+        mock_client.update_paragraph_style.assert_called_once_with(
+            "doc123", 1, 20, heading=2, alignment=None
+        )
+
+    def test_alignment_style(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should apply alignment."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_paragraph_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["paragraph-style", "doc123", "--start", "1", "--end", "50", "--alignment", "CENTER", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["alignment"] == "CENTER"
+
+    def test_heading_out_of_range(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error when heading > 6."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["paragraph-style", "doc123", "--start", "1", "--end", "20", "--heading", "99", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+    def test_heading_negative(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error when heading < 0."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["paragraph-style", "doc123", "--start", "1", "--end", "20", "--heading", "-1", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+
+
+class TestDocsInsertImage:
+    """Tests for desk docs insert-image command."""
+
+    def test_insert_image_at_end(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should insert image at end of document."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.insert_image.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["insert-image", "doc123", "--uri", "https://example.com/img.png", "--at", "end", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "insert_image"
+        assert output["changes"]["uri"] == "https://example.com/img.png"
+        mock_client.insert_image.assert_called_once_with(
+            "doc123", "https://example.com/img.png", index=None, width=None, height=None
+        )
+
+    def test_insert_image_at_index_with_size(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should insert image at specific index with dimensions."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.insert_image.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs,
+            ["insert-image", "doc123", "--uri", "https://example.com/img.png",
+             "--at", "5", "--width", "200", "--height", "100", "--json"],
+        )
+
+        assert result.exit_code == 0
+        mock_client.insert_image.assert_called_once_with(
+            "doc123", "https://example.com/img.png", index=5, width=200.0, height=100.0
+        )
+
+
+class TestParseAt:
+    """Tests for _parse_at edge cases."""
+
+    def test_parse_at_invalid_string(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error with structured JSON for non-integer --at."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["insert", "doc123", "Hello", "--at", "abc", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+    def test_parse_at_zero(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error when --at is 0 (indices are 1-based)."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["insert", "doc123", "Hello", "--at", "0", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert output["error"]["code"] == "INDEX_OUT_OF_RANGE"
+
+    def test_parse_at_negative(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should error when --at is negative."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["insert", "doc123", "Hello", "--at", "-5", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False

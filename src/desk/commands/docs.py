@@ -310,16 +310,31 @@ def _read_content(text: str | None, file: str | None, stdin: bool) -> str:
     raise click.UsageError("Provide text, --file, or --stdin")
 
 
-def _parse_at(at: str) -> int | None:
-    """Parse --at value: 'end' returns None, otherwise integer index >= 1."""
+def _parse_at(at: str, as_json: bool = False) -> int | None:
+    """Parse --at value: 'end' returns None, otherwise integer index >= 1.
+
+    Exits with structured error on invalid input.
+    """
     if at.lower() == "end":
         return None
     try:
         val = int(at)
     except ValueError:
-        raise click.BadParameter(f"--at must be an integer or 'end', got '{at}'")
+        msg = f"--at must be an integer or 'end', got '{at}'"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
     if val < 1:
-        raise click.BadParameter("--at index must be >= 1 (Google Docs indices are 1-based)")
+        msg = "--at index must be >= 1 (Google Docs indices are 1-based)"
+        if as_json:
+            error = structured_error(ErrorCode.INDEX_OUT_OF_RANGE, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
     return val
 
 
@@ -360,7 +375,7 @@ def insert_cmd(
             console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    index = _parse_at(at)
+    index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
         client.insert_at(document_id, content, index=index)
@@ -475,10 +490,28 @@ def style_cmd(
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
 
+    applied_styles = {"start": start, "end": end}
+    if bold is not None:
+        applied_styles["bold"] = bold
+    if italic is not None:
+        applied_styles["italic"] = italic
+    if underline is not None:
+        applied_styles["underline"] = underline
+    if strikethrough is not None:
+        applied_styles["strikethrough"] = strikethrough
+    if code:
+        applied_styles["code"] = True
+    if link is not None:
+        applied_styles["link"] = link
+    if font_size is not None:
+        applied_styles["font_size"] = font_size
+    if font is not None:
+        applied_styles["font"] = font
+
     receipt = operation_receipt(
         operation="style",
         target={"id": document_id},
-        changes={"start": start, "end": end},
+        changes=applied_styles,
     )
     output_result(receipt, as_json, quiet)
 
@@ -513,6 +546,15 @@ def paragraph_style_cmd(
 
         desk docs paragraph-style <id> --start 1 --end 50 --alignment CENTER
     """
+    if heading is not None and (heading < 0 or heading > 6):
+        msg = f"Invalid heading level: {heading}. Must be 0 (normal) or 1-6."
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
     client = _get_client(as_json)
     try:
         client.update_paragraph_style(
@@ -523,10 +565,16 @@ def paragraph_style_cmd(
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
 
+    applied_styles = {"start": start, "end": end}
+    if heading is not None:
+        applied_styles["heading"] = heading
+    if alignment is not None:
+        applied_styles["alignment"] = alignment
+
     receipt = operation_receipt(
         operation="paragraph_style",
         target={"id": document_id},
-        changes={"start": start, "end": end},
+        changes=applied_styles,
     )
     output_result(receipt, as_json, quiet)
 
@@ -573,7 +621,7 @@ def write_markdown_cmd(
             console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    index = _parse_at(at) if not replace else None
+    index = _parse_at(at, as_json) if not replace else None
     client = _get_client(as_json)
     try:
         client.write_markdown(document_id, content, index=index, replace=replace)
@@ -608,7 +656,16 @@ def insert_table_cmd(
 
         desk docs insert-table <id> --rows 2 --cols 2 --at 5
     """
-    index = _parse_at(at)
+    if rows < 1 or cols < 1:
+        msg = f"Invalid table dimensions: rows={rows}, cols={cols}. Both must be >= 1."
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
         client.insert_table(document_id, rows, cols, index=index)
@@ -652,7 +709,7 @@ def insert_image_cmd(
 
         desk docs insert-image <id> --uri "https://example.com/logo.png" --at 5 --width 200
     """
-    index = _parse_at(at)
+    index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
         client.insert_image(document_id, uri, index=index, width=width, height=height)
@@ -669,8 +726,9 @@ def insert_image_cmd(
 
 @docs.command("inspect")
 @click.argument("document_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def inspect_cmd(document_id: str, as_json: bool) -> None:
+def inspect_cmd(document_id: str, quiet: bool, as_json: bool) -> None:
     """Inspect document structure with indices.
 
     Shows each element's type, start/end indices, and preview text.
@@ -690,6 +748,9 @@ def inspect_cmd(document_id: str, as_json: bool) -> None:
 
     if as_json:
         print(json.dumps(result, indent=2))
+        return
+
+    if quiet:
         return
 
     console.print(f"[bold]{result['title']}[/bold]")

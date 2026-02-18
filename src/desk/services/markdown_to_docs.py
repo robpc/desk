@@ -120,11 +120,11 @@ class MarkdownConverter:
             "list_item_open",
             "list_item_close",
         ):
-            # Lists are handled by their inline content
+            # Lists: all items rendered as bullet points. Ordered list numbering
+            # is not supported — Google Docs API list formatting would require
+            # CreateNamedRange + list presets which is deferred scope.
             if token.type == "list_item_open":
-                self._add_text(
-                    "  - " if not hasattr(token, "markup") or token.markup != "." else "  1. "
-                )
+                self._add_text("  - ")
 
     def _process_inline_token(self, token) -> None:
         """Process an inline token (child of an inline token)."""
@@ -214,14 +214,15 @@ class MarkdownConverter:
 
 def markdown_to_requests(
     markdown: str,
-    base_index: int | None = None,
+    base_index: int,
 ) -> list[dict]:
     """Convert markdown to Google Docs batchUpdate requests.
 
     Args:
         markdown: Markdown source text
         base_index: Document index where text will be inserted.
-                   None means end of document (EndOfSegmentLocation).
+                   Callers must resolve the concrete index before calling
+                   (e.g. by fetching the document length for appends).
 
     Returns:
         List of batchUpdate request dicts ready for the API.
@@ -236,37 +237,17 @@ def markdown_to_requests(
     requests: list[dict] = []
 
     # First request: insert the plain text
-    if base_index is None:
-        requests.append(
-            {
-                "insertText": {
-                    "endOfSegmentLocation": {},
-                    "text": plain_text,
-                }
+    requests.append(
+        {
+            "insertText": {
+                "location": {"index": base_index},
+                "text": plain_text,
             }
-        )
-    else:
-        requests.append(
-            {
-                "insertText": {
-                    "location": {"index": base_index},
-                    "text": plain_text,
-                }
-            }
-        )
+        }
+    )
 
-    # Calculate the actual base for style offsets
-    # If inserting at end, we don't know the exact index yet, so we
-    # need to use a two-pass approach. For now, when base_index is None,
-    # we can't apply styles (they need absolute indices).
-    # When base_index is provided, offset all annotations by it.
-    if base_index is not None:
-        offset = base_index
-    else:
-        # When appending, styles can't be applied without knowing the
-        # document length. Return just the insert for now.
-        # TODO: Support styled append by fetching doc length first
-        return requests
+    # Offset all style annotations by base_index
+    offset = base_index
 
     # Apply formatting annotations
     for ann in annotations:
