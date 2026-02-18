@@ -1,7 +1,7 @@
 ---
 id: 043
 title: Forms — Publish and Close Responses
-status: idea
+status: implemented
 effort: S
 value: Agents can open/close forms and control whether they accept responses
 created: 2026-02-18

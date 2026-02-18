@@ -700,3 +700,56 @@ class TestFormsDeleteItem:
         assert result.exit_code != 0
         output = json.loads(result.output)
         assert output["error"]["code"] == "INVALID_INPUT"
+
+
+class TestFormsPublish:
+    """Tests for desk forms publish command."""
+
+    def test_publish_default(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call publish with accepting_responses=True by default."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.publish.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["publish", "form_123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "publish"
+        mock_client.publish.assert_called_once_with("form_123", accepting_responses=True)
+
+    def test_publish_no_accepting(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should pass accepting_responses=False when --no-accepting used."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.publish.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["publish", "form_123", "--no-accepting", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.publish.assert_called_once_with("form_123", accepting_responses=False)
+
+
+class TestFormsUnpublish:
+    """Tests for desk forms unpublish command."""
+
+    def test_unpublish(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call unpublish on client."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.unpublish.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["unpublish", "form_123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "unpublish"
+        mock_client.unpublish.assert_called_once_with("form_123")

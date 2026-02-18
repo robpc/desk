@@ -108,13 +108,15 @@ def create(title: str, description: str, quiet: bool, as_json: bool) -> None:
     except Exception as e:
         _handle_api_error(e, as_json, {"title": title})
 
+    form_id = result.get("formId")
     receipt = operation_receipt(
         operation="create",
         target={
-            "id": result.get("formId"),
+            "id": form_id,
             "title": result.get("title"),
             "link": result.get("responderUri"),
             "editLink": result.get("editUri"),
+            "next": f"desk forms publish {form_id}",
         },
     )
     output_result(receipt, as_json, quiet)
@@ -143,6 +145,18 @@ def read(form_id: str, as_json: bool) -> None:
     console.print(f"[bold]{result['title']}[/bold]")
     if result.get("description"):
         console.print(result["description"])
+    if "isPublished" in result:
+        pub = (
+            "[green]published[/green]"
+            if result["isPublished"]
+            else "[yellow]unpublished[/yellow]"
+        )
+        acc = (
+            "[green]accepting responses[/green]"
+            if result.get("isAcceptingResponses")
+            else "[yellow]not accepting responses[/yellow]"
+        )
+        console.print(f"  {pub} · {acc}")
     console.print()
     for i, item in enumerate(result.get("items", []), 1):
         item_type = item.get("type", "unknown")
@@ -582,5 +596,65 @@ def delete_item(form_id: str, item_id: str, yes: bool, quiet: bool, as_json: boo
     receipt = operation_receipt(
         operation="delete-item",
         target={"id": form_id, "itemId": item_id},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@forms.command("publish")
+@click.argument("form_id")
+@click.option(
+    "--accepting/--no-accepting",
+    default=True,
+    help="Whether the form accepts new responses (default: accepting)",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def publish(
+    form_id: str, accepting: bool, quiet: bool, as_json: bool
+) -> None:
+    """Publish a form so it can accept responses.
+
+    Use --no-accepting to keep the form published but stop accepting
+    new responses (respondents see a closed message).
+
+    Examples:
+
+        desk forms publish <form-id>
+
+        desk forms publish <form-id> --no-accepting
+    """
+    client = _get_client(as_json)
+    try:
+        client.publish(form_id, accepting_responses=accepting)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"form_id": form_id})
+
+    receipt = operation_receipt(
+        operation="publish",
+        target={"id": form_id, "acceptingResponses": accepting},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@forms.command("unpublish")
+@click.argument("form_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def unpublish(form_id: str, quiet: bool, as_json: bool) -> None:
+    """Unpublish a form (stops accepting responses automatically).
+
+    Examples:
+
+        desk forms unpublish <form-id>
+    """
+    client = _get_client(as_json)
+    try:
+        client.unpublish(form_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"form_id": form_id})
+
+    receipt = operation_receipt(
+        operation="unpublish",
+        target={"id": form_id},
     )
     output_result(receipt, as_json, quiet)

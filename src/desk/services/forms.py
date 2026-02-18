@@ -62,17 +62,28 @@ class FormsClient:
             form_id: The form ID
 
         Returns:
-            Dict with formId, title, description, and items
+            Dict with formId, title, description, items, and publish state
         """
         try:
             form = self.service.forms().get(formId=form_id).execute()
-            return {
+            result: dict = {
                 "formId": form_id,
                 "title": form.get("info", {}).get("title", ""),
                 "description": form.get("info", {}).get("description", ""),
                 "responderUri": form.get("responderUri", ""),
                 "items": self._simplify_items(form.get("items", [])),
             }
+            publish_state = (
+                form.get("publishSettings", {}).get("publishState")
+            )
+            if publish_state is not None:
+                result["isPublished"] = publish_state.get(
+                    "isPublished", False
+                )
+                result["isAcceptingResponses"] = publish_state.get(
+                    "isAcceptingResponses", False
+                )
+            return result
         except HttpError as error:
             raise RuntimeError(f"Forms API error: {error}")
 
@@ -301,6 +312,58 @@ class FormsClient:
                 },
             ).execute()
 
+            return {"formId": form_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Forms API error: {error}")
+
+    def publish(
+        self, form_id: str, accepting_responses: bool = True
+    ) -> dict:
+        """Publish a form so it can accept responses.
+
+        Args:
+            form_id: The form ID
+            accepting_responses: Whether the form accepts new submissions
+
+        Returns:
+            Dict with formId and status
+        """
+        try:
+            self.service.forms().setPublishSettings(
+                formId=form_id,
+                body={
+                    "publishSettings": {
+                        "publishState": {
+                            "isPublished": True,
+                            "isAcceptingResponses": accepting_responses,
+                        }
+                    }
+                },
+            ).execute()
+            return {"formId": form_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Forms API error: {error}")
+
+    def unpublish(self, form_id: str) -> dict:
+        """Unpublish a form (stops accepting responses automatically).
+
+        Args:
+            form_id: The form ID
+
+        Returns:
+            Dict with formId and status
+        """
+        try:
+            self.service.forms().setPublishSettings(
+                formId=form_id,
+                body={
+                    "publishSettings": {
+                        "publishState": {
+                            "isPublished": False,
+                        }
+                    }
+                },
+            ).execute()
             return {"formId": form_id, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Forms API error: {error}")

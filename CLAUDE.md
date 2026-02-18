@@ -115,7 +115,9 @@ desk (CLI entry point)
 │   ├── update         → Update form title/description
 │   ├── update-question → Update a question's text, options, or required flag
 │   ├── update-section → Update a section's title or description
-│   └── delete-item    → Delete a question or section
+│   ├── delete-item    → Delete a question or section
+│   ├── publish        → Publish form and accept responses
+│   └── unpublish      → Unpublish form (stops accepting)
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events

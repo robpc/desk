@@ -165,6 +165,56 @@ class TestFormsRead:
             assert result["items"][0]["required"] is True
             assert result["items"][1]["type"] == "section"
 
+    def test_read_includes_publish_state(self, mock_credentials):
+        """Should include isPublished and isAcceptingResponses when present."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = {
+                "formId": "form_123",
+                "info": {"title": "Survey"},
+                "responderUri": "https://forms.google.com",
+                "items": [],
+                "publishSettings": {
+                    "publishState": {
+                        "isPublished": True,
+                        "isAcceptingResponses": False,
+                    }
+                },
+            }
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.read("form_123")
+
+            assert result["isPublished"] is True
+            assert result["isAcceptingResponses"] is False
+
+    def test_read_omits_publish_state_when_absent(self, mock_credentials):
+        """Should not include publish fields when API doesn't return them."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = {
+                "formId": "form_123",
+                "info": {"title": "Survey"},
+                "responderUri": "https://forms.google.com",
+                "items": [],
+            }
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.read("form_123")
+
+            assert "isPublished" not in result
+            assert "isAcceptingResponses" not in result
+
 
 class TestFormsResponses:
     """Tests for FormsClient.responses method."""
@@ -994,3 +1044,70 @@ class TestDeleteItem:
             client = FormsClient(mock_credentials)
             with pytest.raises(ValueError, match="not found"):
                 client.delete_item("form_123", "nonexistent")
+
+
+class TestPublish:
+    """Tests for FormsClient.publish method."""
+
+    def test_publish_with_accepting(self, mock_credentials):
+        """Should call setPublishSettings with isPublished and isAcceptingResponses."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.setPublishSettings.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.publish("form_123")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.setPublishSettings.call_args[1]["body"]
+            state = call_body["publishSettings"]["publishState"]
+            assert state["isPublished"] is True
+            assert state["isAcceptingResponses"] is True
+
+    def test_publish_without_accepting(self, mock_credentials):
+        """Should set isAcceptingResponses to False when specified."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.setPublishSettings.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.publish("form_123", accepting_responses=False)
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.setPublishSettings.call_args[1]["body"]
+            state = call_body["publishSettings"]["publishState"]
+            assert state["isPublished"] is True
+            assert state["isAcceptingResponses"] is False
+
+
+class TestUnpublish:
+    """Tests for FormsClient.unpublish method."""
+
+    def test_unpublish(self, mock_credentials):
+        """Should call setPublishSettings with isPublished=False."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.setPublishSettings.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.unpublish("form_123")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.setPublishSettings.call_args[1]["body"]
+            state = call_body["publishSettings"]["publishState"]
+            assert state["isPublished"] is False
