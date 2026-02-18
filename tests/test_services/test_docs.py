@@ -459,3 +459,172 @@ class TestDocsUpdate:
             result = client.update("doc123", text="New content", mode="replace")
 
             documents_mock.batchUpdate.assert_called_once()
+
+
+class TestDocsInsertAt:
+    """Tests for DocsClient.insert_at method."""
+
+    def test_insert_at_index(self, mock_credentials):
+        """Should insert text at a specific index."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.insert_at("doc123", "Hello", index=5)
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]
+            assert req["insertText"]["location"]["index"] == 5
+            assert req["insertText"]["text"] == "Hello"
+
+    def test_insert_at_end(self, mock_credentials):
+        """Should use EndOfSegmentLocation when index is None."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.insert_at("doc123", "Hello", index=None)
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]
+            assert "endOfSegmentLocation" in req["insertText"]
+
+
+class TestDocsDeleteRange:
+    """Tests for DocsClient.delete_range method."""
+
+    def test_delete_range(self, mock_credentials):
+        """Should send deleteContentRange request."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.delete_range("doc123", 5, 20)
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]
+            assert req["deleteContentRange"]["range"]["startIndex"] == 5
+            assert req["deleteContentRange"]["range"]["endIndex"] == 20
+
+
+class TestDocsUpdateTextStyle:
+    """Tests for DocsClient.update_text_style method."""
+
+    def test_bold_style(self, mock_credentials):
+        """Should send updateTextStyle with bold."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_text_style("doc123", 1, 10, bold=True)
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["updateTextStyle"]
+            assert req["textStyle"]["bold"] is True
+            assert "bold" in req["fields"]
+
+    def test_no_styles_specified(self, mock_credentials):
+        """Should return without API call when no styles given."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_text_style("doc123", 1, 10)
+
+            assert result["note"] == "no styles specified"
+            documents_mock.batchUpdate.assert_not_called()
+
+
+class TestDocsInsertTable:
+    """Tests for DocsClient.insert_table method."""
+
+    def test_insert_table_at_end(self, mock_credentials):
+        """Should insert table with EndOfSegmentLocation."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.insert_table("doc123", 3, 4)
+
+            assert result["status"] == "ok"
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["insertTable"]
+            assert req["rows"] == 3
+            assert req["columns"] == 4
+            assert "endOfSegmentLocation" in req
+
+
+class TestDocsInspect:
+    """Tests for DocsClient.inspect method."""
+
+    def test_inspect_returns_elements(self, mock_credentials):
+        """Should return document structure with indices."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test Doc",
+                "body": {
+                    "content": [
+                        {
+                            "startIndex": 0,
+                            "endIndex": 1,
+                            "sectionBreak": {},
+                        },
+                        {
+                            "startIndex": 1,
+                            "endIndex": 15,
+                            "paragraph": {
+                                "paragraphStyle": {"namedStyleType": "HEADING_1"},
+                                "elements": [{"textRun": {"content": "Hello World\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.inspect("doc123")
+
+            assert result["title"] == "Test Doc"
+            assert len(result["elements"]) == 2
+            assert result["elements"][1]["type"] == "paragraph"
+            assert result["elements"][1]["style"] == "HEADING_1"
+            assert result["elements"][1]["startIndex"] == 1
