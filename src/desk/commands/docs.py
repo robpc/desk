@@ -1,4 +1,4 @@
-"""Docs commands — read and update Google Docs."""
+"""Docs commands — read, update, and edit Google Docs."""
 
 import json
 import sys
@@ -295,3 +295,485 @@ def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) ->
         },
     )
     output_result(receipt, as_json, quiet)
+
+
+def _read_content(text: str | None, file: str | None, stdin: bool) -> str:
+    """Read content from text argument, file, or stdin."""
+    if stdin:
+        return sys.stdin.read()
+    if file:
+        from pathlib import Path
+
+        return Path(file).read_text(encoding="utf-8")
+    if text:
+        return text
+    raise click.UsageError("Provide text, --file, or --stdin")
+
+
+def _parse_at(at: str, as_json: bool = False) -> int | None:
+    """Parse --at value: 'end' returns None, otherwise integer index >= 1.
+
+    Exits with structured error on invalid input.
+    """
+    if at.lower() == "end":
+        return None
+    try:
+        val = int(at)
+    except ValueError:
+        msg = f"--at must be an integer or 'end', got '{at}'"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+    if val < 1:
+        msg = "--at index must be >= 1 (Google Docs indices are 1-based)"
+        if as_json:
+            error = structured_error(ErrorCode.INDEX_OUT_OF_RANGE, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+    return val
+
+
+@docs.command("insert")
+@click.argument("document_id")
+@click.argument("text", required=False)
+@click.option("--at", default="end", help="Index to insert at (integer or 'end')")
+@click.option("--file", "-f", "file_path", help="Read content from file")
+@click.option("--stdin", is_flag=True, help="Read content from stdin")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def insert_cmd(
+    document_id: str,
+    text: str | None,
+    at: str,
+    file_path: str | None,
+    stdin: bool,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Insert text at a specific position in a document.
+
+    Examples:
+
+        desk docs insert <id> "New text" --at end
+
+        desk docs insert <id> "Text at position 5" --at 5
+
+        desk docs insert <id> --file notes.txt --at end
+    """
+    try:
+        content = _read_content(text, file_path, stdin)
+    except (click.UsageError, OSError) as e:
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, str(e))
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    index = _parse_at(at, as_json)
+    client = _get_client(as_json)
+    try:
+        client.insert_at(document_id, content, index=index)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "at": at})
+
+    receipt = operation_receipt(
+        operation="insert",
+        target={"id": document_id},
+        changes={"at": at, "text_length": len(content)},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("delete-range")
+@click.argument("document_id")
+@click.option("--start", required=True, type=int, help="Start index (inclusive)")
+@click.option("--end", required=True, type=int, help="End index (exclusive)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def delete_range_cmd(
+    document_id: str, start: int, end: int, quiet: bool, as_json: bool
+) -> None:
+    """Delete content between two indices.
+
+    Examples:
+
+        desk docs delete-range <id> --start 5 --end 20
+    """
+    if start < 1 or end < 1 or start >= end:
+        msg = (
+            f"Invalid range: start={start}, end={end}. "
+            "Both must be >= 1 and start must be less than end."
+        )
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_RANGE,
+                msg,
+                suggestions=["Use desk docs inspect <id> to see document indices"],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+    try:
+        client.delete_range(document_id, start, end)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
+
+    receipt = operation_receipt(
+        operation="delete_range",
+        target={"id": document_id},
+        changes={"start": start, "end": end, "chars_deleted": end - start},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("style")
+@click.argument("document_id")
+@click.option("--start", required=True, type=int, help="Start index")
+@click.option("--end", required=True, type=int, help="End index")
+@click.option("--bold/--no-bold", default=None, help="Set bold")
+@click.option("--italic/--no-italic", default=None, help="Set italic")
+@click.option("--underline/--no-underline", default=None, help="Set underline")
+@click.option("--strikethrough/--no-strikethrough", default=None, help="Set strikethrough")
+@click.option("--code", is_flag=True, default=False, help="Set monospace font")
+@click.option("--link", default=None, help="Set hyperlink URL")
+@click.option("--font-size", type=float, default=None, help="Font size in points")
+@click.option("--font", default=None, help="Font family name")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def style_cmd(
+    document_id: str,
+    start: int,
+    end: int,
+    bold: bool | None,
+    italic: bool | None,
+    underline: bool | None,
+    strikethrough: bool | None,
+    code: bool,
+    link: str | None,
+    font_size: float | None,
+    font: str | None,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Apply text styling to a range.
+
+    Examples:
+
+        desk docs style <id> --start 1 --end 10 --bold
+
+        desk docs style <id> --start 5 --end 15 --italic --link "https://example.com"
+
+        desk docs style <id> --start 1 --end 50 --code
+    """
+    client = _get_client(as_json)
+    try:
+        client.update_text_style(
+            document_id, start, end,
+            bold=bold,
+            italic=italic,
+            code=code or None,
+            link_url=link,
+            font_size=font_size,
+            underline=underline,
+            strikethrough=strikethrough,
+            font_family=font,
+        )
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
+
+    applied_styles = {"start": start, "end": end}
+    if bold is not None:
+        applied_styles["bold"] = bold
+    if italic is not None:
+        applied_styles["italic"] = italic
+    if underline is not None:
+        applied_styles["underline"] = underline
+    if strikethrough is not None:
+        applied_styles["strikethrough"] = strikethrough
+    if code:
+        applied_styles["code"] = True
+    if link is not None:
+        applied_styles["link"] = link
+    if font_size is not None:
+        applied_styles["font_size"] = font_size
+    if font is not None:
+        applied_styles["font"] = font
+
+    receipt = operation_receipt(
+        operation="style",
+        target={"id": document_id},
+        changes=applied_styles,
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("paragraph-style")
+@click.argument("document_id")
+@click.option("--start", required=True, type=int, help="Start index")
+@click.option("--end", required=True, type=int, help="End index")
+@click.option("--heading", type=int, default=None, help="Heading level 1-6, or 0 for normal")
+@click.option(
+    "--alignment",
+    type=click.Choice(["START", "CENTER", "END", "JUSTIFIED"]),
+    default=None,
+    help="Text alignment",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def paragraph_style_cmd(
+    document_id: str,
+    start: int,
+    end: int,
+    heading: int | None,
+    alignment: str | None,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Apply paragraph styling to a range.
+
+    Examples:
+
+        desk docs paragraph-style <id> --start 1 --end 20 --heading 1
+
+        desk docs paragraph-style <id> --start 1 --end 50 --alignment CENTER
+    """
+    if heading is not None and (heading < 0 or heading > 6):
+        msg = f"Invalid heading level: {heading}. Must be 0 (normal) or 1-6."
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+    try:
+        client.update_paragraph_style(
+            document_id, start, end,
+            heading=heading,
+            alignment=alignment,
+        )
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
+
+    applied_styles = {"start": start, "end": end}
+    if heading is not None:
+        applied_styles["heading"] = heading
+    if alignment is not None:
+        applied_styles["alignment"] = alignment
+
+    receipt = operation_receipt(
+        operation="paragraph_style",
+        target={"id": document_id},
+        changes=applied_styles,
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("write-markdown")
+@click.argument("document_id")
+@click.option("--body", "-b", default=None, help="Markdown content inline")
+@click.option("--file", "-f", "file_path", help="Read markdown from file")
+@click.option("--stdin", is_flag=True, help="Read markdown from stdin")
+@click.option("--at", default="end", help="Index to insert at (integer or 'end')")
+@click.option("--replace", is_flag=True, help="Replace entire document content")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def write_markdown_cmd(
+    document_id: str,
+    body: str | None,
+    file_path: str | None,
+    stdin: bool,
+    at: str,
+    replace: bool,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Write markdown content with native Google Docs formatting.
+
+    Converts markdown headings, bold, italic, code, and links to native
+    Google Docs styles.
+
+    Examples:
+
+        desk docs write-markdown <id> --body "# New Section\\n\\nSome **bold** text"
+
+        desk docs write-markdown <id> --file appendix.md --at end
+
+        desk docs write-markdown <id> --file report.md --replace
+    """
+    try:
+        content = _read_content(body, file_path, stdin)
+    except (click.UsageError, OSError) as e:
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, str(e))
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    index = _parse_at(at, as_json) if not replace else None
+    client = _get_client(as_json)
+    try:
+        client.write_markdown(document_id, content, index=index, replace=replace)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"document_id": document_id, "replace": replace, "at": at}
+        )
+
+    receipt = operation_receipt(
+        operation="write_markdown",
+        target={"id": document_id},
+        changes={"replace": replace, "at": at, "text_length": len(content)},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("insert-table")
+@click.argument("document_id")
+@click.option("--rows", required=True, type=int, help="Number of rows")
+@click.option("--cols", required=True, type=int, help="Number of columns")
+@click.option("--at", default="end", help="Index to insert at (integer or 'end')")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def insert_table_cmd(
+    document_id: str, rows: int, cols: int, at: str, quiet: bool, as_json: bool
+) -> None:
+    """Insert a table into a document.
+
+    Examples:
+
+        desk docs insert-table <id> --rows 3 --cols 4 --at end
+
+        desk docs insert-table <id> --rows 2 --cols 2 --at 5
+    """
+    if rows < 1 or cols < 1:
+        msg = f"Invalid table dimensions: rows={rows}, cols={cols}. Both must be >= 1."
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    index = _parse_at(at, as_json)
+    client = _get_client(as_json)
+    try:
+        client.insert_table(document_id, rows, cols, index=index)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"document_id": document_id, "rows": rows, "cols": cols, "at": at}
+        )
+
+    receipt = operation_receipt(
+        operation="insert_table",
+        target={"id": document_id},
+        changes={"rows": rows, "cols": cols, "at": at},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("insert-image")
+@click.argument("document_id")
+@click.option("--uri", required=True, help="Public URL of the image")
+@click.option("--at", default="end", help="Index to insert at (integer or 'end')")
+@click.option("--width", type=float, default=None, help="Image width in points")
+@click.option("--height", type=float, default=None, help="Image height in points")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def insert_image_cmd(
+    document_id: str,
+    uri: str,
+    at: str,
+    width: float | None,
+    height: float | None,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Insert an inline image into a document.
+
+    The image URI must be publicly accessible.
+
+    Examples:
+
+        desk docs insert-image <id> --uri "https://example.com/image.png" --at end
+
+        desk docs insert-image <id> --uri "https://example.com/logo.png" --at 5 --width 200
+    """
+    index = _parse_at(at, as_json)
+    client = _get_client(as_json)
+    try:
+        client.insert_image(document_id, uri, index=index, width=width, height=height)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "uri": uri, "at": at})
+
+    receipt = operation_receipt(
+        operation="insert_image",
+        target={"id": document_id},
+        changes={"uri": uri, "at": at},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("inspect")
+@click.argument("document_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def inspect_cmd(document_id: str, quiet: bool, as_json: bool) -> None:
+    """Inspect document structure with indices.
+
+    Shows each element's type, start/end indices, and preview text.
+    Use this to plan index-based edits.
+
+    Examples:
+
+        desk docs inspect <id>
+
+        desk docs inspect <id> --json
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.inspect(document_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id})
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+
+    if quiet:
+        return
+
+    console.print(f"[bold]{result['title']}[/bold]")
+    console.print(f"[dim]Document end index: {result['endIndex']}[/dim]")
+    console.print()
+
+    for elem in result["elements"]:
+        etype = elem["type"]
+        start = elem["startIndex"]
+        end = elem["endIndex"]
+
+        if etype == "paragraph":
+            style = elem.get("style", "NORMAL_TEXT")
+            text_preview = elem.get("text", "")
+            if text_preview:
+                console.print(
+                    f"  [{start}:{end}] [cyan]{style}[/cyan] {escape(text_preview[:80])}"
+                )
+            else:
+                console.print(f"  [{start}:{end}] [cyan]{style}[/cyan] [dim](empty)[/dim]")
+        elif etype == "table":
+            rows = elem.get("rows", 0)
+            cols = elem.get("columns", 0)
+            console.print(f"  [{start}:{end}] [yellow]TABLE[/yellow] {rows}x{cols}")
+        elif etype == "sectionBreak":
+            console.print(f"  [{start}:{end}] [dim]SECTION_BREAK[/dim]")

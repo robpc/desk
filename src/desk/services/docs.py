@@ -175,6 +175,391 @@ class DocsClient:
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
+    def insert_at(self, document_id: str, text: str, index: int | None = None) -> dict:
+        """Insert text at a specific index or end of document.
+
+        Args:
+            document_id: The document ID
+            text: Text to insert
+            index: 1-based character index, or None for end of document
+
+        Returns:
+            Dict with documentId and status
+        """
+        from desk.services.docs_editing import normalize_text
+
+        text = normalize_text(text)
+        try:
+            if index is None:
+                request = {"insertText": {
+                    "endOfSegmentLocation": {},
+                    "text": text,
+                }}
+            else:
+                request = {"insertText": {
+                    "location": {"index": index},
+                    "text": text,
+                }}
+
+            self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [request]},
+            ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def delete_range(self, document_id: str, start_index: int, end_index: int) -> dict:
+        """Delete content between start and end indices.
+
+        Args:
+            document_id: The document ID
+            start_index: Start index (1-based, inclusive)
+            end_index: End index (exclusive)
+
+        Returns:
+            Dict with documentId and status
+        """
+        try:
+            self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{
+                    "deleteContentRange": {
+                        "range": {"startIndex": start_index, "endIndex": end_index}
+                    }
+                }]},
+            ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def update_text_style(
+        self,
+        document_id: str,
+        start_index: int,
+        end_index: int,
+        bold: bool | None = None,
+        italic: bool | None = None,
+        code: bool | None = None,
+        link_url: str | None = None,
+        font_size: float | None = None,
+        underline: bool | None = None,
+        strikethrough: bool | None = None,
+        font_family: str | None = None,
+    ) -> dict:
+        """Apply text styling to a range.
+
+        Args:
+            document_id: The document ID
+            start_index: Start of range
+            end_index: End of range
+            bold: Set bold
+            italic: Set italic
+            code: Set monospace font (Courier New)
+            link_url: Set hyperlink
+            font_size: Set font size in points
+            underline: Set underline
+            strikethrough: Set strikethrough
+            font_family: Set font family name
+
+        Returns:
+            Dict with documentId and status
+        """
+        style: dict = {}
+        fields_list: list[str] = []
+
+        if bold is not None:
+            style["bold"] = bold
+            fields_list.append("bold")
+        if italic is not None:
+            style["italic"] = italic
+            fields_list.append("italic")
+        if underline is not None:
+            style["underline"] = underline
+            fields_list.append("underline")
+        if strikethrough is not None:
+            style["strikethrough"] = strikethrough
+            fields_list.append("strikethrough")
+        if code is not None and code:
+            style["weightedFontFamily"] = {"fontFamily": "Courier New"}
+            fields_list.append("weightedFontFamily")
+        elif font_family is not None:
+            style["weightedFontFamily"] = {"fontFamily": font_family}
+            fields_list.append("weightedFontFamily")
+        if link_url is not None:
+            style["link"] = {"url": link_url}
+            fields_list.append("link")
+        if font_size is not None:
+            style["fontSize"] = {"magnitude": font_size, "unit": "PT"}
+            fields_list.append("fontSize")
+
+        if not fields_list:
+            return {"documentId": document_id, "status": "ok", "note": "no styles specified"}
+
+        try:
+            self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{
+                    "updateTextStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "textStyle": style,
+                        "fields": ",".join(fields_list),
+                    }
+                }]},
+            ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def update_paragraph_style(
+        self,
+        document_id: str,
+        start_index: int,
+        end_index: int,
+        heading: int | None = None,
+        alignment: str | None = None,
+    ) -> dict:
+        """Apply paragraph styling to a range.
+
+        Args:
+            document_id: The document ID
+            start_index: Start of range
+            end_index: End of range
+            heading: Heading level 1-6, or 0 for normal text
+            alignment: "START", "CENTER", "END", "JUSTIFIED"
+
+        Returns:
+            Dict with documentId and status
+        """
+        style: dict = {}
+        fields_list: list[str] = []
+
+        if heading is not None:
+            if heading == 0:
+                style["namedStyleType"] = "NORMAL_TEXT"
+            else:
+                style["namedStyleType"] = f"HEADING_{heading}"
+            fields_list.append("namedStyleType")
+        if alignment is not None:
+            style["alignment"] = alignment
+            fields_list.append("alignment")
+
+        if not fields_list:
+            return {"documentId": document_id, "status": "ok", "note": "no styles specified"}
+
+        try:
+            self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "paragraphStyle": style,
+                        "fields": ",".join(fields_list),
+                    }
+                }]},
+            ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def insert_table(
+        self, document_id: str, rows: int, columns: int, index: int | None = None
+    ) -> dict:
+        """Insert a table at a specific index or end of document.
+
+        Args:
+            document_id: The document ID
+            rows: Number of rows
+            columns: Number of columns
+            index: 1-based index, or None for end of document
+
+        Returns:
+            Dict with documentId and status
+        """
+        try:
+            if index is None:
+                location = {"endOfSegmentLocation": {}}
+            else:
+                location = {"location": {"index": index}}
+
+            self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{
+                    "insertTable": {**location, "rows": rows, "columns": columns}
+                }]},
+            ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def insert_image(
+        self,
+        document_id: str,
+        uri: str,
+        index: int | None = None,
+        width: float | None = None,
+        height: float | None = None,
+    ) -> dict:
+        """Insert an inline image.
+
+        Args:
+            document_id: The document ID
+            uri: Public URL of the image
+            index: 1-based index, or None for end of document
+            width: Image width in points
+            height: Image height in points
+
+        Returns:
+            Dict with documentId and status
+        """
+        try:
+            if index is None:
+                location = {"endOfSegmentLocation": {}}
+            else:
+                location = {"location": {"index": index}}
+
+            request: dict = {**location, "uri": uri}
+            if width is not None or height is not None:
+                size: dict = {}
+                if width is not None:
+                    size["width"] = {"magnitude": width, "unit": "PT"}
+                if height is not None:
+                    size["height"] = {"magnitude": height, "unit": "PT"}
+                request["objectSize"] = size
+
+            self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{"insertInlineImage": request}]},
+            ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def write_markdown(
+        self, document_id: str, markdown: str, index: int | None = None, replace: bool = False
+    ) -> dict:
+        """Write markdown content with native Docs formatting.
+
+        Args:
+            document_id: The document ID
+            markdown: Markdown source text
+            index: Insert at this index, or None for end of document
+            replace: If True, replace entire document content
+
+        Returns:
+            Dict with documentId and status
+        """
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        try:
+            if replace:
+                # Fetch doc to get end index for deletion
+                doc = self.service.documents().get(documentId=document_id).execute()
+                body = doc.get("body", {})
+                content = body.get("content", [])
+                end_index = content[-1]["endIndex"] if content else 1
+
+                requests: list[dict] = []
+                if end_index > 2:
+                    requests.append({
+                        "deleteContentRange": {
+                            "range": {"startIndex": 1, "endIndex": end_index - 1}
+                        }
+                    })
+                # After deletion, insert at index 1
+                requests.extend(markdown_to_requests(markdown, base_index=1))
+            elif index is not None:
+                requests = markdown_to_requests(markdown, base_index=index)
+            else:
+                # Append: need doc length for style offsets
+                doc = self.service.documents().get(documentId=document_id).execute()
+                body = doc.get("body", {})
+                content = body.get("content", [])
+                end_index = content[-1]["endIndex"] if content else 1
+                insert_index = max(1, end_index - 1)
+                requests = markdown_to_requests(markdown, base_index=insert_index)
+
+            if requests:
+                self.service.documents().batchUpdate(
+                    documentId=document_id,
+                    body={"requests": requests},
+                ).execute()
+
+            return {"documentId": document_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
+    def inspect(self, document_id: str) -> dict:
+        """Inspect document structure with indices.
+
+        Returns document elements with their start/end indices so agents
+        can plan index-based edits.
+
+        Args:
+            document_id: The document ID
+
+        Returns:
+            Dict with documentId, title, and elements list
+        """
+        try:
+            doc = self.service.documents().get(documentId=document_id).execute()
+            title = doc.get("title", "")
+            body = doc.get("body", {})
+            elements = []
+
+            for element in body.get("content", []):
+                start = element.get("startIndex", 0)
+                end = element.get("endIndex", 0)
+
+                if "paragraph" in element:
+                    para = element["paragraph"]
+                    style = para.get("paragraphStyle", {})
+                    named_style = style.get("namedStyleType", "NORMAL_TEXT")
+                    text = self._extract_paragraph_text(para).rstrip("\n")
+                    elements.append({
+                        "type": "paragraph",
+                        "startIndex": start,
+                        "endIndex": end,
+                        "style": named_style,
+                        "text": text[:200],  # Truncate for readability
+                    })
+                elif "table" in element:
+                    table = element["table"]
+                    rows = len(table.get("tableRows", []))
+                    cols = 0
+                    if rows > 0:
+                        cols = len(table["tableRows"][0].get("tableCells", []))
+                    elements.append({
+                        "type": "table",
+                        "startIndex": start,
+                        "endIndex": end,
+                        "rows": rows,
+                        "columns": cols,
+                    })
+                elif "sectionBreak" in element:
+                    elements.append({
+                        "type": "sectionBreak",
+                        "startIndex": start,
+                        "endIndex": end,
+                    })
+
+            return {
+                "documentId": document_id,
+                "title": title,
+                "endIndex": body.get("content", [{}])[-1].get("endIndex", 1)
+                if body.get("content")
+                else 1,
+                "elements": elements,
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
     def export(self, document_id: str, fmt: str = "pdf") -> bytes:
         """Export a document to a different format.
 

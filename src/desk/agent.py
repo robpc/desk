@@ -58,6 +58,11 @@ class ErrorCode(str, Enum):
     LOCAL_FILE_READ_ERROR = "LOCAL_FILE_READ_ERROR"
     LOCAL_FILE_WRITE_ERROR = "LOCAL_FILE_WRITE_ERROR"
 
+    # Docs editing errors
+    INDEX_OUT_OF_RANGE = "INDEX_OUT_OF_RANGE"
+    INVALID_RANGE = "INVALID_RANGE"
+    MARKDOWN_PARSE_ERROR = "MARKDOWN_PARSE_ERROR"
+
     # Update errors
     UPDATE_FAILED = "UPDATE_FAILED"
     UPDATE_NO_GIT = "UPDATE_NO_GIT"
@@ -138,6 +143,20 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "This can happen with large datasets (e.g., labels with many messages)",
         "The operation may still complete - check the result before retrying",
         "For very large labels, consider deleting manually in Gmail settings",
+    ],
+    ErrorCode.INDEX_OUT_OF_RANGE: [
+        "Run `desk docs inspect <id>` to see document element indices",
+        "Index 1 is the start of the document body",
+        "Use --at end to insert at the end of the document",
+    ],
+    ErrorCode.INVALID_RANGE: [
+        "Start index must be less than end index",
+        "Both indices must be >= 1",
+        "Run `desk docs inspect <id>` to see document element indices",
+    ],
+    ErrorCode.MARKDOWN_PARSE_ERROR: [
+        "Check that the markdown content is valid",
+        "Ensure the file is UTF-8 encoded",
     ],
     ErrorCode.INSUFFICIENT_SCOPES: [
         "Your credentials don't include the required permissions",

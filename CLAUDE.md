@@ -96,7 +96,15 @@ desk (CLI entry point)
 ├── docs               → Google Docs operations
 │   ├── create         → Create a new document
 │   ├── read           → Read document content
-│   ├── update         → Insert/replace text
+│   ├── update         → Insert/replace text (includes find-and-replace)
+│   ├── inspect        → Show document structure with indices
+│   ├── insert         → Insert text at a specific index
+│   ├── delete-range   → Delete content between indices
+│   ├── style          → Apply text styling (bold, italic, code, etc.)
+│   ├── paragraph-style → Apply paragraph styling (headings, alignment)
+│   ├── write-markdown → Write markdown with native Docs formatting
+│   ├── insert-table   → Insert a table
+│   ├── insert-image   → Insert an inline image
 │   └── export         → Export as PDF/TXT/DOCX/HTML
 ├── forms              → Google Forms operations
 │   ├── create         → Create a new form
