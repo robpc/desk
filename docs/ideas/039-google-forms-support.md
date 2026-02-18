@@ -1,7 +1,7 @@
 ---
 id: 039
 title: Google Forms Support
-status: adr-created
+status: implemented
 effort: M
 value: Agents can create surveys, collect responses, and build multi-path forms
 created: 2026-02-17
