@@ -99,25 +99,36 @@ def _get_oauth_credentials() -> Credentials | None:
             return creds
         except RefreshError as e:
             _logger.debug(f"Token refresh failed: {e}")
-            _last_auth_failure["reason"] = "Token expired or revoked"
+            _last_auth_failure["reason"] = (
+                "Token expired or revoked. Run `desk auth login` to re-authenticate."
+            )
             _last_auth_failure["error_code"] = "AUTH_EXPIRED"
             return None
         except TransportError as e:
             _logger.debug(f"Token refresh network error: {e}")
-            _last_auth_failure["reason"] = f"Network error during token refresh: {e}"
+            _last_auth_failure["reason"] = (
+                f"Network error during token refresh: {e}."
+                " Check your internet connection and try again."
+            )
             _last_auth_failure["error_code"] = "AUTH_EXPIRED"
             return None
         except Exception as e:
             _logger.debug(f"Unexpected error refreshing token: {type(e).__name__}: {e}")
-            _last_auth_failure["reason"] = f"Token refresh failed: {type(e).__name__}: {e}"
+            _last_auth_failure["reason"] = (
+                f"Token refresh failed: {type(e).__name__}: {e}."
+                " Run `desk auth login` to re-authenticate."
+            )
             _last_auth_failure["error_code"] = "AUTH_EXPIRED"
             return None
 
     if not creds.refresh_token:
-        _last_auth_failure["reason"] = "Token expired and no refresh token"
+        _last_auth_failure["reason"] = (
+            "Token expired and no refresh token."
+            " Run `desk auth login` to re-authenticate."
+        )
         _last_auth_failure["error_code"] = "AUTH_EXPIRED"
     else:
-        _last_auth_failure["reason"] = "Token invalid"
+        _last_auth_failure["reason"] = "Token invalid. Run `desk auth login` to re-authenticate."
         _last_auth_failure["error_code"] = "AUTH_INVALID"
 
     return None
@@ -137,12 +148,22 @@ def _get_adc_credentials() -> Credentials | None:
         return creds
     except DefaultCredentialsError:
         _logger.debug("No Application Default Credentials found")
+        _last_auth_failure["reason"] = "No credentials found. Run `desk setup` to authenticate."
+        _last_auth_failure["error_code"] = "AUTH_REQUIRED"
         return None
     except (RefreshError, TransportError) as e:
         _logger.debug(f"ADC refresh failed: {e}")
+        _last_auth_failure["reason"] = (
+            f"Credential refresh failed: {e}. Run `desk auth login --gcloud` to re-authenticate."
+        )
+        _last_auth_failure["error_code"] = "AUTH_EXPIRED"
         return None
     except Exception as e:
         _logger.debug(f"Unexpected error with ADC: {type(e).__name__}: {e}")
+        _last_auth_failure["reason"] = (
+            f"Unexpected auth error: {type(e).__name__}: {e}. Run `desk setup` to re-authenticate."
+        )
+        _last_auth_failure["error_code"] = "AUTH_INVALID"
         return None
 
 

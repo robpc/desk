@@ -1,7 +1,7 @@
 ---
 id: 036
 title: Calendar Date Flag
-status: planned
+status: implemented
 effort: S
 value: Agents can query any day's events without over-fetching from `cal next`
 created: 2026-02-08

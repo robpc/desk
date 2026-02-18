@@ -154,9 +154,18 @@ def read(document_id: str, as_json: bool) -> None:
     default="append",
     help="Where to insert: append (end), prepend (beginning), replace (all)",
 )
+@click.option(
+    "--find", "-f", default=None,
+    help="Find and replace: TEXT replaces all occurrences of FIND",
+)
+@click.option("--ignore-case", is_flag=True, help="Case-insensitive find (use with --find)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def update(document_id: str, text: str, mode: str, quiet: bool, as_json: bool) -> None:
+def update(
+    document_id: str, text: str, mode: str,
+    find: str | None, ignore_case: bool,
+    quiet: bool, as_json: bool,
+) -> None:
     """Insert or replace text in a document.
 
     Examples:
@@ -166,8 +175,49 @@ def update(document_id: str, text: str, mode: str, quiet: bool, as_json: bool) -
         desk docs update <id> "Text at start" --mode prepend
 
         desk docs update <id> "Replace everything" --mode replace
+
+        desk docs update <id> "New Title" --find "Template Title"
+
+        desk docs update <id> "new" --find "old" --ignore-case
     """
+    if find and mode != "append":
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_INPUT,
+                "--find and --mode cannot be used together",
+                suggestions=[
+                    "Use --find alone for find-and-replace",
+                    "Use --mode alone for insert/replace",
+                ],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Error: --find and --mode cannot be used together[/red]")
+        sys.exit(1)
+
     client = _get_client(as_json)
+
+    if find:
+        try:
+            result = client.find_and_replace(
+                document_id, find_text=find, replace_text=text, match_case=not ignore_case
+            )
+        except Exception as e:
+            _handle_api_error(e, as_json, {"document_id": document_id, "find": find})
+
+        receipt = operation_receipt(
+            operation="find_and_replace",
+            target={"id": document_id},
+            changes={
+                "find": find,
+                "replace": text,
+                "ignore_case": ignore_case,
+                "occurrences_changed": result["occurrences_changed"],
+            },
+        )
+        output_result(receipt, as_json, quiet)
+        return
+
     try:
         result = client.update(document_id, text, mode=mode)
     except Exception as e:

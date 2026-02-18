@@ -1,7 +1,7 @@
 ---
 id: 035
 title: Auth Token Refresh Logging
-status: planned
+status: implemented
 effort: S
 value: Agents and users see "Not authenticated" with no explanation when token refresh fails silently
 created: 2026-02-08

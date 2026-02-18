@@ -336,6 +336,80 @@ class TestDocsCreate:
             assert mock_build.call_count == 2
 
 
+class TestDocsFindAndReplace:
+    """Tests for DocsClient.find_and_replace method."""
+
+    def test_find_and_replace_basic(self, mock_credentials):
+        """Should send replaceAllText request and return occurrences changed."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {
+                "replies": [{"replaceAllText": {"occurrencesChanged": 3}}],
+                "documentId": "doc123",
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.find_and_replace("doc123", "old", "new")
+
+            assert result["documentId"] == "doc123"
+            assert result["occurrences_changed"] == 3
+            assert result["status"] == "ok"
+
+            # Verify the API call structure
+            call_kwargs = documents_mock.batchUpdate.call_args
+            requests = call_kwargs[1]["body"]["requests"]
+            assert len(requests) == 1
+            req = requests[0]["replaceAllText"]
+            assert req["containsText"]["text"] == "old"
+            assert req["containsText"]["matchCase"] is True
+            assert req["replaceText"] == "new"
+
+    def test_find_and_replace_case_insensitive(self, mock_credentials):
+        """Should pass matchCase=False when match_case is False."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {
+                "replies": [{"replaceAllText": {"occurrencesChanged": 1}}],
+                "documentId": "doc123",
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.find_and_replace("doc123", "OLD", "new", match_case=False)
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["replaceAllText"]
+            assert req["containsText"]["matchCase"] is False
+
+    def test_find_and_replace_api_error(self, mock_credentials):
+        """Should raise RuntimeError on API error."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            http_error = HttpError(
+                resp=MagicMock(status=404),
+                content=b'{"error": {"message": "Document not found"}}',
+            )
+            documents_mock.batchUpdate.return_value.execute.side_effect = http_error
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            with pytest.raises(RuntimeError, match="Docs API error"):
+                client.find_and_replace("bad_id", "old", "new")
+
+
 class TestDocsUpdate:
     """Tests for DocsClient.update method."""
 

@@ -1,5 +1,5 @@
 ---
-id: 035
+id: 041
 title: Performance Optimization - Batch Fetch
 status: implemented
 effort: M
@@ -9,7 +9,7 @@ updated: 2026-02-09
 adr: null
 ---
 
-# Idea 035: Performance Optimization - Batch Fetch
+# Idea 041: Performance Optimization - Batch Fetch
 
 ## Problem
 

@@ -125,6 +125,56 @@ class DocsClient:
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
+    def find_and_replace(
+        self, document_id: str, find_text: str, replace_text: str, match_case: bool = True
+    ) -> dict:
+        """Find and replace all occurrences of text in a document.
+
+        Uses the Google Docs API's ReplaceAllTextRequest, which preserves formatting.
+
+        Args:
+            document_id: The document ID
+            find_text: Text to search for
+            replace_text: Replacement text
+            match_case: Whether the search is case-sensitive (default True)
+
+        Returns:
+            Dict with documentId, occurrences_changed, and status
+        """
+        try:
+            result = self.service.documents().batchUpdate(
+                documentId=document_id,
+                body={
+                    "requests": [
+                        {
+                            "replaceAllText": {
+                                "containsText": {
+                                    "text": find_text,
+                                    "matchCase": match_case,
+                                },
+                                "replaceText": replace_text,
+                            }
+                        }
+                    ]
+                },
+            ).execute()
+
+            # Extract occurrences changed from the reply
+            replies = result.get("replies", [{}])
+            occurrences = 0
+            if replies:
+                occurrences = replies[0].get("replaceAllText", {}).get(
+                    "occurrencesChanged", 0
+                )
+
+            return {
+                "documentId": document_id,
+                "occurrences_changed": occurrences,
+                "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Docs API error: {error}")
+
     def export(self, document_id: str, fmt: str = "pdf") -> bytes:
         """Export a document to a different format.
 
