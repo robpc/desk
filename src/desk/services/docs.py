@@ -151,12 +151,57 @@ class DocsClient:
             raise RuntimeError(f"Docs API error: {error}")
 
     def _extract_text(self, doc: dict) -> str:
-        """Extract plain text from a Google Docs document structure."""
-        text_parts = []
+        """Extract text from a Google Docs document structure.
+
+        Handles paragraphs and tables. Tables are formatted as markdown tables.
+        """
+        parts = []
         body = doc.get("body", {})
         for element in body.get("content", []):
             if "paragraph" in element:
-                for pe in element["paragraph"].get("elements", []):
-                    if "textRun" in pe:
-                        text_parts.append(pe["textRun"].get("content", ""))
-        return "".join(text_parts)
+                parts.append(self._extract_paragraph_text(element["paragraph"]))
+            elif "table" in element:
+                parts.append(self._extract_table_text(element["table"]))
+        return "".join(parts)
+
+    def _extract_paragraph_text(self, paragraph: dict) -> str:
+        """Extract text from a paragraph element."""
+        parts = []
+        for pe in paragraph.get("elements", []):
+            if "textRun" in pe:
+                parts.append(pe["textRun"].get("content", ""))
+        return "".join(parts)
+
+    def _extract_table_text(self, table: dict) -> str:
+        """Extract text from a table element, formatted as a markdown table."""
+        rows = []
+        for row in table.get("tableRows", []):
+            cells = []
+            for cell in row.get("tableCells", []):
+                cell_parts = []
+                for content in cell.get("content", []):
+                    if "paragraph" in content:
+                        cell_parts.append(
+                            self._extract_paragraph_text(content["paragraph"])
+                        )
+                    elif "table" in content:
+                        cell_parts.append(self._extract_table_text(content["table"]))
+                text = " ".join(cell_parts).replace("\n", " ").strip()
+                cells.append(text.replace("|", "\\|"))
+            rows.append(cells)
+
+        if not rows:
+            return ""
+
+        # Determine column count from widest row
+        col_count = max(len(r) for r in rows)
+
+        lines = []
+        for i, row in enumerate(rows):
+            # Pad row to match column count
+            while len(row) < col_count:
+                row.append("")
+            lines.append("| " + " | ".join(row) + " |")
+            if i == 0:
+                lines.append("| " + " | ".join("---" for _ in range(col_count)) + " |")
+        return "\n".join(lines) + "\n"
