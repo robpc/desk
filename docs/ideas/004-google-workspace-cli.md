@@ -1,7 +1,7 @@
 ---
 id: 004
 title: Google Workspace CLI Expansion
-status: adr-created
+status: implemented
 effort: L
 value: Leverage shared auth/patterns for Docs, Drive, and other Google APIs
 created: 2025-02-06
