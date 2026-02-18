@@ -109,9 +109,13 @@ desk (CLI entry point)
 ├── forms              → Google Forms operations
 │   ├── create         → Create a new form
 │   ├── read           → Read form structure and questions
-│   ├── responses      → List form responses
+│   ├── responses      → List form responses (with pagination)
 │   ├── add-question   → Add a question to a form
-│   └── add-section    → Add a section break to a form
+│   ├── add-section    → Add a section break to a form
+│   ├── update         → Update form title/description
+│   ├── update-question → Update a question's text, options, or required flag
+│   ├── update-section → Update a section's title or description
+│   └── delete-item    → Delete a question or section
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events

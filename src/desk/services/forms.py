@@ -76,27 +76,31 @@ class FormsClient:
         except HttpError as error:
             raise RuntimeError(f"Forms API error: {error}")
 
-    def responses(self, form_id: str, limit: int = 100) -> dict:
+    def responses(self, form_id: str, limit: int = 100, page_token: str | None = None) -> dict:
         """List form responses.
-
-        Note: Returns up to `limit` responses from a single page. Does not
-        follow nextPageToken for multi-page result sets.
 
         Args:
             form_id: The form ID
             limit: Maximum number of responses to return
+            page_token: Token for fetching next page of results
 
         Returns:
-            Dict with formId, responseCount, and responses list
+            Dict with formId, responseCount, responses list, and optional nextPageToken
         """
         try:
-            result = self.service.forms().responses().list(formId=form_id, pageSize=limit).execute()
+            kwargs: dict = {"formId": form_id, "pageSize": limit}
+            if page_token:
+                kwargs["pageToken"] = page_token
+            result = self.service.forms().responses().list(**kwargs).execute()
             raw_responses = result.get("responses", [])
-            return {
+            response: dict = {
                 "formId": form_id,
                 "responseCount": len(raw_responses),
                 "responses": raw_responses,
             }
+            if result.get("nextPageToken"):
+                response["nextPageToken"] = result["nextPageToken"]
+            return response
         except HttpError as error:
             raise RuntimeError(f"Forms API error: {error}")
 
@@ -232,6 +236,197 @@ class FormsClient:
             ).execute()
 
             return {"formId": form_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Forms API error: {error}")
+
+    def _find_item_index(self, form_id: str, item_id: str) -> tuple[int, dict]:
+        """Read form and find an item by its ID.
+
+        Args:
+            form_id: The form ID
+            item_id: The item ID to find
+
+        Returns:
+            Tuple of (positional index, item data)
+
+        Raises:
+            ValueError: If the item ID is not found in the form
+        """
+        form = self.service.forms().get(formId=form_id).execute()
+        for i, item in enumerate(form.get("items", [])):
+            if item.get("itemId") == item_id:
+                return i, item
+        raise ValueError(f"Item '{item_id}' not found in form '{form_id}'")
+
+    def update_form(
+        self, form_id: str, title: str | None = None, description: str | None = None
+    ) -> dict:
+        """Update form metadata (title and/or description).
+
+        Args:
+            form_id: The form ID
+            title: New form title (None to leave unchanged)
+            description: New form description (None to leave unchanged)
+
+        Returns:
+            Dict with formId and status
+
+        Raises:
+            ValueError: If neither title nor description is provided
+        """
+        if title is None and description is None:
+            raise ValueError("At least one of --title or --description is required")
+
+        try:
+            info: dict = {}
+            mask_fields = []
+            if title is not None:
+                info["title"] = title
+                mask_fields.append("title")
+            if description is not None:
+                info["description"] = description
+                mask_fields.append("description")
+
+            self.service.forms().batchUpdate(
+                formId=form_id,
+                body={
+                    "requests": [
+                        {
+                            "updateFormInfo": {
+                                "info": info,
+                                "updateMask": ",".join(mask_fields),
+                            }
+                        }
+                    ]
+                },
+            ).execute()
+
+            return {"formId": form_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Forms API error: {error}")
+
+    def update_item(
+        self,
+        form_id: str,
+        item_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        required: bool | None = None,
+        choices: list[str] | None = None,
+        goto: dict[str, str] | None = None,
+    ) -> dict:
+        """Update an existing item (question or section) in a form.
+
+        Args:
+            form_id: The form ID
+            item_id: The item ID to update
+            title: New item title (None to leave unchanged)
+            description: New item description (None to leave unchanged)
+            required: New required flag for questions (None to leave unchanged)
+            choices: Replacement options for choice/checkbox/dropdown (None to leave unchanged)
+            goto: Map of choice text -> section ID or action for branching
+                  (None to leave unchanged)
+
+        Returns:
+            Dict with formId and status
+        """
+        _GOTO_ACTIONS = {"SUBMIT_FORM", "NEXT_SECTION", "RESTART_FORM"}
+
+        try:
+            index, existing_item = self._find_item_index(form_id, item_id)
+
+            item: dict = {}
+            mask_fields: list[str] = []
+
+            if title is not None:
+                item["title"] = title
+                mask_fields.append("title")
+            if description is not None:
+                item["description"] = description
+                mask_fields.append("description")
+
+            # Handle question-specific fields
+            if "questionItem" in existing_item:
+                question_updates: dict = {}
+                existing_q = existing_item["questionItem"]["question"]
+
+                if required is not None:
+                    question_updates["required"] = required
+                    mask_fields.append("questionItem.question.required")
+
+                if choices is not None:
+                    # Determine question type from existing item
+                    if "choiceQuestion" in existing_q:
+                        existing_type = existing_q["choiceQuestion"].get("type", "RADIO")
+                        options = []
+                        for c in choices:
+                            opt: dict = {"value": c}
+                            if goto and c in goto:
+                                target = goto[c]
+                                if target in _GOTO_ACTIONS:
+                                    opt["goToAction"] = target
+                                else:
+                                    opt["goToSectionId"] = target
+                            options.append(opt)
+                        question_updates["choiceQuestion"] = {
+                            "type": existing_type,
+                            "options": options,
+                        }
+                        mask_fields.append("questionItem.question.choiceQuestion")
+                    else:
+                        raise ValueError(
+                            "--choices can only be used on choice/checkbox/dropdown questions"
+                        )
+                elif goto is not None:
+                    raise ValueError("--goto requires --choices (options are replaced as a set)")
+
+                if question_updates:
+                    item["questionItem"] = {"question": question_updates}
+
+            update_request: dict = {
+                "updateItem": {
+                    "item": {"itemId": item_id, **item},
+                    "location": {"index": index},
+                    "updateMask": ",".join(mask_fields),
+                }
+            }
+
+            self.service.forms().batchUpdate(
+                formId=form_id,
+                body={"requests": [update_request]},
+            ).execute()
+
+            return {"formId": form_id, "status": "ok"}
+        except ValueError:
+            raise
+        except HttpError as error:
+            raise RuntimeError(f"Forms API error: {error}")
+
+    def delete_item(self, form_id: str, item_id: str) -> dict:
+        """Delete an item (question or section) from a form.
+
+        Args:
+            form_id: The form ID
+            item_id: The item ID to delete
+
+        Returns:
+            Dict with formId and status
+        """
+        try:
+            index, _ = self._find_item_index(form_id, item_id)
+
+            self.service.forms().batchUpdate(
+                formId=form_id,
+                body={
+                    "requests": [
+                        {"deleteItem": {"location": {"index": index}}}
+                    ]
+                },
+            ).execute()
+
+            return {"formId": form_id, "status": "ok"}
+        except ValueError:
+            raise
         except HttpError as error:
             raise RuntimeError(f"Forms API error: {error}")
 

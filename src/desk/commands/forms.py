@@ -171,8 +171,9 @@ def read(form_id: str, as_json: bool) -> None:
 @forms.command()
 @click.argument("form_id")
 @click.option("--limit", "-n", default=100, help="Maximum responses to return")
+@click.option("--page-token", default=None, help="Token for next page of results")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def responses(form_id: str, limit: int, as_json: bool) -> None:
+def responses(form_id: str, limit: int, page_token: str | None, as_json: bool) -> None:
     """List form responses.
 
     Examples:
@@ -180,10 +181,12 @@ def responses(form_id: str, limit: int, as_json: bool) -> None:
         desk forms responses <form-id>
 
         desk forms responses <form-id> --limit 10
+
+        desk forms responses <form-id> --page-token <token>
     """
     client = _get_client(as_json)
     try:
-        result = client.responses(form_id, limit=limit)
+        result = client.responses(form_id, limit=limit, page_token=page_token)
     except Exception as e:
         _handle_api_error(e, as_json, {"form_id": form_id})
 
@@ -200,6 +203,10 @@ def responses(form_id: str, limit: int, as_json: bool) -> None:
             text_answers = answer.get("textAnswers", {}).get("answers", [])
             values = [a.get("value", "") for a in text_answers]
             console.print(f"    {', '.join(values)}")
+
+    next_token = result.get("nextPageToken")
+    if next_token:
+        console.print(f"\n[dim](more results available, use --page-token {next_token})[/dim]")
 
 
 @forms.command("add-question")
@@ -336,5 +343,244 @@ def add_section(
     receipt = operation_receipt(
         operation="add-section",
         target={"id": form_id, "section": title},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+def _parse_goto(goto: tuple[str, ...], as_json: bool) -> dict[str, str] | None:
+    """Parse --goto flag pairs into a dict. Exits on invalid input."""
+    if not goto:
+        return None
+    goto_map: dict[str, str] = {}
+    for pair in goto:
+        if "=" not in pair:
+            msg = f"Invalid --goto format: '{pair}' (expected CHOICE=SECTION_ID)"
+            if as_json:
+                error = structured_error(ErrorCode.INVALID_INPUT, msg)
+                print(json.dumps(error, indent=2))
+            else:
+                console.print(f"[red]Error: {msg}[/red]")
+            sys.exit(1)
+        key, value = pair.split("=", 1)
+        key, value = key.strip(), value.strip()
+        if not key or not value:
+            msg = f"Invalid --goto format: '{pair}' (choice and section ID must not be empty)"
+            if as_json:
+                error = structured_error(ErrorCode.INVALID_INPUT, msg)
+                print(json.dumps(error, indent=2))
+            else:
+                console.print(f"[red]Error: {msg}[/red]")
+            sys.exit(1)
+        goto_map[key] = value
+    return goto_map
+
+
+@forms.command("update")
+@click.argument("form_id")
+@click.option("--title", default=None, help="New form title")
+@click.option("--description", "-d", default=None, help="New form description")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def update(
+    form_id: str, title: str | None, description: str | None, quiet: bool, as_json: bool
+) -> None:
+    """Update form metadata (title and/or description).
+
+    Examples:
+
+        desk forms update <form-id> --title "New Title"
+
+        desk forms update <form-id> --description "Updated description"
+
+        desk forms update <form-id> --title "New" --description "Both changed"
+    """
+    if title is None and description is None:
+        msg = "At least one of --title or --description is required"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+    try:
+        client.update_form(form_id, title=title, description=description)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"form_id": form_id})
+
+    changes: dict = {}
+    if title is not None:
+        changes["title"] = title
+    if description is not None:
+        changes["description"] = description
+
+    receipt = operation_receipt(
+        operation="update",
+        target={"id": form_id},
+        changes=changes,
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@forms.command("update-question")
+@click.argument("form_id")
+@click.argument("item_id")
+@click.option("--title", default=None, help="New question text")
+@click.option("--required/--no-required", default=None, help="Set required flag")
+@click.option("--choices", "-c", multiple=True, help="Replace options (choice/checkbox/dropdown)")
+@click.option(
+    "--goto",
+    "-g",
+    multiple=True,
+    help="Branch: CHOICE=SECTION_ID (e.g., 'Yes=voice_section')",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def update_question(
+    form_id: str,
+    item_id: str,
+    title: str | None,
+    required: bool | None,
+    choices: tuple[str, ...],
+    goto: tuple[str, ...],
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Update a question in a form.
+
+    Does not support changing question type. Delete and re-add instead.
+
+    Examples:
+
+        desk forms update-question <form-id> <item-id> --title "Fixed typo?"
+
+        desk forms update-question <form-id> <item-id> --required
+
+        desk forms update-question <form-id> <item-id> -c Red -c Blue -c Green
+    """
+    goto_map = _parse_goto(goto, as_json)
+
+    client = _get_client(as_json)
+    try:
+        client.update_item(
+            form_id,
+            item_id,
+            title=title,
+            required=required,
+            choices=list(choices) if choices else None,
+            goto=goto_map,
+        )
+    except ValueError as e:
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, str(e))
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"form_id": form_id, "item_id": item_id})
+
+    receipt = operation_receipt(
+        operation="update-question",
+        target={"id": form_id, "itemId": item_id},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@forms.command("update-section")
+@click.argument("form_id")
+@click.argument("item_id")
+@click.option("--title", default=None, help="New section title")
+@click.option("--description", "-d", default=None, help="New section description")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def update_section(
+    form_id: str,
+    item_id: str,
+    title: str | None,
+    description: str | None,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Update a section in a form.
+
+    Examples:
+
+        desk forms update-section <form-id> <item-id> --title "New Section Title"
+
+        desk forms update-section <form-id> <item-id> --description "Updated description"
+    """
+    if title is None and description is None:
+        msg = "At least one of --title or --description is required"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+    try:
+        client.update_item(form_id, item_id, title=title, description=description)
+    except ValueError as e:
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, str(e))
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"form_id": form_id, "item_id": item_id})
+
+    receipt = operation_receipt(
+        operation="update-section",
+        target={"id": form_id, "itemId": item_id},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@forms.command("delete-item")
+@click.argument("form_id")
+@click.argument("item_id")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def delete_item(form_id: str, item_id: str, yes: bool, quiet: bool, as_json: bool) -> None:
+    """Delete an item (question or section) from a form.
+
+    Examples:
+
+        desk forms delete-item <form-id> <item-id> --yes
+
+        desk forms delete-item <form-id> <item-id> --yes --json
+    """
+    if not yes:
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_INPUT,
+                "Confirmation required: pass --yes to confirm deletion",
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Error: Confirmation required: pass --yes to confirm deletion[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+    try:
+        client.delete_item(form_id, item_id)
+    except ValueError as e:
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, str(e))
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"form_id": form_id, "item_id": item_id})
+
+    receipt = operation_receipt(
+        operation="delete-item",
+        target={"id": form_id, "itemId": item_id},
     )
     output_result(receipt, as_json, quiet)

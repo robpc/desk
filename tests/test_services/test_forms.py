@@ -192,6 +192,65 @@ class TestFormsResponses:
             assert result["formId"] == "form_123"
             assert result["responseCount"] == 2
 
+    def test_responses_with_page_token(self, mock_credentials):
+        """Should pass page_token to API."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            responses_mock = forms_mock.responses.return_value
+            responses_mock.list.return_value.execute.return_value = {
+                "responses": [{"responseId": "r3", "answers": {}}],
+            }
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            client.responses("form_123", page_token="token_abc")
+
+            call_kwargs = responses_mock.list.call_args[1]
+            assert call_kwargs["pageToken"] == "token_abc"
+
+    def test_responses_returns_next_page_token(self, mock_credentials):
+        """Should include nextPageToken when present in API response."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            responses_mock = forms_mock.responses.return_value
+            responses_mock.list.return_value.execute.return_value = {
+                "responses": [{"responseId": "r1", "answers": {}}],
+                "nextPageToken": "next_token_xyz",
+            }
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.responses("form_123")
+
+            assert result["nextPageToken"] == "next_token_xyz"
+
+    def test_responses_omits_next_page_token_when_absent(self, mock_credentials):
+        """Should not include nextPageToken when not in API response."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            responses_mock = forms_mock.responses.return_value
+            responses_mock.list.return_value.execute.return_value = {
+                "responses": [],
+            }
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.responses("form_123")
+
+            assert "nextPageToken" not in result
+
 
 class TestFormsAddQuestion:
     """Tests for FormsClient.add_question method."""
@@ -538,3 +597,400 @@ class TestSimplifyItems:
             assert options[0] == {"value": "A", "goToSectionId": "section_a"}
             assert isinstance(options[1], dict)
             assert options[1] == {"value": "B"}
+
+
+# --- Helper for building a form with items (used by mutation tests) ---
+
+def _form_with_items(*items):
+    """Build a mock form response with given items."""
+    return {"info": {"title": "Test"}, "items": list(items)}
+
+
+def _text_question_item(item_id, title="Q?"):
+    return {
+        "itemId": item_id,
+        "title": title,
+        "questionItem": {
+            "question": {"required": False, "textQuestion": {"paragraph": False}}
+        },
+    }
+
+
+def _choice_question_item(item_id, title="Pick?", choices=None):
+    options = [{"value": c} for c in (choices or ["A", "B"])]
+    return {
+        "itemId": item_id,
+        "title": title,
+        "questionItem": {
+            "question": {
+                "required": False,
+                "choiceQuestion": {"type": "RADIO", "options": options},
+            }
+        },
+    }
+
+
+def _section_item(item_id, title="Section"):
+    return {"itemId": item_id, "title": title, "pageBreakItem": {}}
+
+
+class TestFindItemIndex:
+    """Tests for FormsClient._find_item_index method."""
+
+    def test_finds_item_by_id(self, mock_credentials):
+        """Should return correct index and item data."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+                _section_item("sec1"),
+                _text_question_item("q2"),
+            )
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            index, item = client._find_item_index("form_123", "sec1")
+
+            assert index == 1
+            assert item["itemId"] == "sec1"
+
+    def test_raises_on_missing_item(self, mock_credentials):
+        """Should raise ValueError when item ID is not found."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+            )
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            with pytest.raises(ValueError, match="not found"):
+                client._find_item_index("form_123", "nonexistent")
+
+
+class TestUpdateForm:
+    """Tests for FormsClient.update_form method."""
+
+    def test_update_title_only(self, mock_credentials):
+        """Should send updateFormInfo with title mask."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_form("form_123", title="New Title")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateFormInfo"]
+            assert req["info"]["title"] == "New Title"
+            assert req["updateMask"] == "title"
+
+    def test_update_description_only(self, mock_credentials):
+        """Should send updateFormInfo with description mask."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_form("form_123", description="New desc")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateFormInfo"]
+            assert req["info"]["description"] == "New desc"
+            assert req["updateMask"] == "description"
+
+    def test_update_both_title_and_description(self, mock_credentials):
+        """Should send updateFormInfo with both masks."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_form("form_123", title="T", description="D")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateFormInfo"]
+            assert req["info"] == {"title": "T", "description": "D"}
+            assert "title" in req["updateMask"]
+            assert "description" in req["updateMask"]
+
+    def test_update_neither_raises_valueerror(self, mock_credentials):
+        """Should raise ValueError when no fields provided."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_build.return_value = MagicMock()
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            with pytest.raises(ValueError, match="At least one"):
+                client.update_form("form_123")
+
+
+class TestUpdateItem:
+    """Tests for FormsClient.update_item method."""
+
+    def test_update_question_title(self, mock_credentials):
+        """Should update question title via updateItem."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1", "Old title"),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_item("form_123", "q1", title="New title")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateItem"]
+            assert req["item"]["title"] == "New title"
+            assert req["item"]["itemId"] == "q1"
+            assert req["location"]["index"] == 0
+            assert "title" in req["updateMask"]
+
+    def test_update_question_required(self, mock_credentials):
+        """Should update required flag."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_item("form_123", "q1", required=True)
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateItem"]
+            assert req["item"]["questionItem"]["question"]["required"] is True
+            assert "questionItem.question.required" in req["updateMask"]
+
+    def test_update_choice_options(self, mock_credentials):
+        """Should replace all options on a choice question."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _choice_question_item("q1", choices=["Old1", "Old2"]),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_item("form_123", "q1", choices=["New1", "New2", "New3"])
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateItem"]
+            cq = req["item"]["questionItem"]["question"]["choiceQuestion"]
+            assert cq["type"] == "RADIO"
+            assert len(cq["options"]) == 3
+            assert cq["options"][0] == {"value": "New1"}
+
+    def test_update_choice_with_goto(self, mock_credentials):
+        """Should apply branching to replaced options."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _choice_question_item("q1"),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_item(
+                "form_123", "q1",
+                choices=["Yes", "No"],
+                goto={"Yes": "sec1", "No": "SUBMIT_FORM"},
+            )
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            options = call_body["requests"][0]["updateItem"]["item"]["questionItem"]["question"]["choiceQuestion"]["options"]
+            assert options[0] == {"value": "Yes", "goToSectionId": "sec1"}
+            assert options[1] == {"value": "No", "goToAction": "SUBMIT_FORM"}
+
+    def test_choices_on_non_choice_raises_valueerror(self, mock_credentials):
+        """Should raise ValueError when --choices used on text question."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+            )
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            with pytest.raises(ValueError, match="only be used on choice"):
+                client.update_item("form_123", "q1", choices=["A", "B"])
+
+    def test_goto_without_choices_raises_valueerror(self, mock_credentials):
+        """Should raise ValueError when --goto used without --choices."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _choice_question_item("q1"),
+            )
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            with pytest.raises(ValueError, match="requires --choices"):
+                client.update_item("form_123", "q1", goto={"A": "sec1"})
+
+    def test_update_section_title(self, mock_credentials):
+        """Should update section title."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+                _section_item("sec1", "Old Title"),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.update_item("form_123", "sec1", title="New Title")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["updateItem"]
+            assert req["item"]["title"] == "New Title"
+            assert req["location"]["index"] == 1
+
+    def test_update_item_not_found_raises_valueerror(self, mock_credentials):
+        """Should raise ValueError when item ID not found."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+            )
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            with pytest.raises(ValueError, match="not found"):
+                client.update_item("form_123", "nonexistent", title="X")
+
+
+class TestDeleteItem:
+    """Tests for FormsClient.delete_item method."""
+
+    def test_delete_question(self, mock_credentials):
+        """Should delete a question by its item ID."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _text_question_item("q1"),
+                _text_question_item("q2"),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.delete_item("form_123", "q2")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["deleteItem"]
+            assert req["location"]["index"] == 1
+
+    def test_delete_section(self, mock_credentials):
+        """Should delete a section by its item ID."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items(
+                _section_item("sec1"),
+                _text_question_item("q1"),
+            )
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.delete_item("form_123", "sec1")
+
+            assert result["status"] == "ok"
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            req = call_body["requests"][0]["deleteItem"]
+            assert req["location"]["index"] == 0
+
+    def test_delete_nonexistent_raises_valueerror(self, mock_credentials):
+        """Should raise ValueError when item ID not found."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = _form_with_items()
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            with pytest.raises(ValueError, match="not found"):
+                client.delete_item("form_123", "nonexistent")

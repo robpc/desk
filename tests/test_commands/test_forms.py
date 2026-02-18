@@ -121,6 +121,60 @@ class TestFormsResponses:
         output = json.loads(result.output)
         assert output["responseCount"] == 2
 
+    def test_responses_passes_page_token(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should pass page_token to client."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.responses.return_value = {
+            "formId": "form_123",
+            "responseCount": 1,
+            "responses": [{"responseId": "r3", "answers": {}}],
+        }
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["responses", "form_123", "--page-token", "tok123", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.responses.assert_called_once_with("form_123", limit=100, page_token="tok123")
+
+    def test_responses_shows_next_page_hint(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should show pagination hint in human output when nextPageToken present."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.responses.return_value = {
+            "formId": "form_123",
+            "responseCount": 1,
+            "responses": [],
+            "nextPageToken": "next_abc",
+        }
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["responses", "form_123"])
+
+        assert result.exit_code == 0
+        assert "--page-token next_abc" in result.output
+
+    def test_responses_json_includes_next_page_token(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should include nextPageToken in JSON output."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.responses.return_value = {
+            "formId": "form_123",
+            "responseCount": 0,
+            "responses": [],
+            "nextPageToken": "next_abc",
+        }
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["responses", "form_123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["nextPageToken"] == "next_abc"
+
 
 class TestFormsAddQuestion:
     """Tests for desk forms add-question command."""
@@ -385,3 +439,264 @@ class TestFormsAddSection:
             description="",
             section_id=None,
         )
+
+
+class TestFormsUpdate:
+    """Tests for desk forms update command."""
+
+    def test_update_title(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call update_form with title."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_form.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["update", "form_123", "--title", "New Title", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "update"
+        assert output["changes"]["title"] == "New Title"
+        mock_client.update_form.assert_called_once_with("form_123", title="New Title", description=None)
+
+    def test_update_description(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call update_form with description."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_form.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(forms, ["update", "form_123", "-d", "New desc", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.update_form.assert_called_once_with("form_123", title=None, description="New desc")
+
+    def test_update_no_flags_errors(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should error when neither --title nor --description provided."""
+        from desk.commands.forms import forms
+
+        result = runner.invoke(forms, ["update", "form_123", "--json"])
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+
+class TestFormsUpdateQuestion:
+    """Tests for desk forms update-question command."""
+
+    def test_update_question_title(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call update_item with title."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-question", "form_123", "q1", "--title", "Fixed?", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "update-question"
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "q1", title="Fixed?", required=None, choices=None, goto=None,
+        )
+
+    def test_update_question_required(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should pass required=True when --required used."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-question", "form_123", "q1", "--required", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "q1", title=None, required=True, choices=None, goto=None,
+        )
+
+    def test_update_question_no_required(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should pass required=False when --no-required used."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-question", "form_123", "q1", "--no-required", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "q1", title=None, required=False, choices=None, goto=None,
+        )
+
+    def test_update_question_choices(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should pass choices to update_item."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-question", "form_123", "q1", "-c", "X", "-c", "Y", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "q1", title=None, required=None, choices=["X", "Y"], goto=None,
+        )
+
+    def test_update_question_with_goto(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should parse --goto and pass to update_item."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms,
+            [
+                "update-question", "form_123", "q1",
+                "-c", "Yes", "-c", "No",
+                "--goto", "Yes=sec1", "--goto", "No=SUBMIT_FORM",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "q1",
+            title=None, required=None,
+            choices=["Yes", "No"],
+            goto={"Yes": "sec1", "No": "SUBMIT_FORM"},
+        )
+
+    def test_update_question_valueerror(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should handle ValueError from service."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.side_effect = ValueError("Item 'q1' not found in form 'form_123'")
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-question", "form_123", "q1", "--title", "X", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+
+class TestFormsUpdateSection:
+    """Tests for desk forms update-section command."""
+
+    def test_update_section_title(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call update_item with title."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-section", "form_123", "sec1", "--title", "New Section", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "update-section"
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "sec1", title="New Section", description=None,
+        )
+
+    def test_update_section_description(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call update_item with description."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.update_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["update-section", "form_123", "sec1", "-d", "New desc", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.update_item.assert_called_once_with(
+            "form_123", "sec1", title=None, description="New desc",
+        )
+
+    def test_update_section_no_flags_errors(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should error when neither --title nor --description provided."""
+        from desk.commands.forms import forms
+
+        result = runner.invoke(forms, ["update-section", "form_123", "sec1", "--json"])
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+
+class TestFormsDeleteItem:
+    """Tests for desk forms delete-item command."""
+
+    def test_delete_item_with_yes(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should call delete_item when --yes provided."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.delete_item.return_value = {"formId": "form_123", "status": "ok"}
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["delete-item", "form_123", "q1", "--yes", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "delete-item"
+        mock_client.delete_item.assert_called_once_with("form_123", "q1")
+
+    def test_delete_item_without_yes_errors(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should error when --yes not provided."""
+        from desk.commands.forms import forms
+
+        result = runner.invoke(forms, ["delete-item", "form_123", "q1", "--json"])
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+        assert "Confirmation required" in output["error"]["message"]
+
+    def test_delete_item_not_found(self, runner, mock_get_credentials, mock_forms_client_class):
+        """Should handle ValueError for missing item."""
+        from desk.commands.forms import forms
+
+        mock_client = MagicMock()
+        mock_client.delete_item.side_effect = ValueError("Item 'q99' not found in form 'form_123'")
+        mock_forms_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            forms, ["delete-item", "form_123", "q99", "--yes", "--json"]
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
