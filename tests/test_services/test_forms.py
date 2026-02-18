@@ -48,8 +48,8 @@ class TestFormsCreate:
             assert result["editUri"]
             forms_mock.create.assert_called_once()
 
-    def test_create_with_description(self, mock_credentials):
-        """Should include description in create request."""
+    def test_create_with_description_uses_batch_update(self, mock_credentials):
+        """Should set description via batchUpdate (create ignores it)."""
         with patch("desk.services.forms.build") as mock_build:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
@@ -57,17 +57,50 @@ class TestFormsCreate:
             forms_mock = mock_service.forms.return_value
             forms_mock.create.return_value.execute.return_value = {
                 "formId": "form_123",
-                "info": {"title": "Survey", "description": "A description"},
+                "info": {"title": "Survey"},
                 "responderUri": "https://forms.google.com",
             }
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
 
             from desk.services.forms import FormsClient
 
             client = FormsClient(mock_credentials)
             result = client.create("Survey", description="A description")
 
-            call_body = forms_mock.create.call_args[1]["body"]
-            assert call_body["info"]["description"] == "A description"
+            # Create should NOT include description
+            create_body = forms_mock.create.call_args[1]["body"]
+            assert "description" not in create_body.get("info", {})
+
+            # Description set via batchUpdate
+            forms_mock.batchUpdate.assert_called_once()
+            batch_body = forms_mock.batchUpdate.call_args[1]["body"]
+            update_req = batch_body["requests"][0]["updateFormInfo"]
+            assert update_req["info"]["description"] == "A description"
+            assert update_req["updateMask"] == "description"
+
+            assert result["description"] == "A description"
+
+    def test_create_without_description_skips_batch_update(self, mock_credentials):
+        """Should not call batchUpdate when no description provided."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.create.return_value.execute.return_value = {
+                "formId": "form_123",
+                "info": {"title": "Survey"},
+                "responderUri": "https://forms.google.com",
+            }
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.create("Survey")
+
+            forms_mock.create.assert_called_once()
+            forms_mock.batchUpdate.assert_not_called()
+            assert result["description"] == ""
 
     def test_create_not_found_raises_error(self, mock_credentials):
         """Should raise error on API failure."""

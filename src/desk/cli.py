@@ -136,11 +136,26 @@ def _get_capabilities() -> dict:
             "forms": {
                 "description": "Google Forms operations",
                 "commands": {
-                    "create": {"description": "Create form", "batch": False, "destructive": False},
-                    "read": {"description": "Read form structure", "batch": False, "destructive": False},
-                    "responses": {"description": "List form responses", "batch": False, "destructive": False},
-                    "add-question": {"description": "Add question to form", "batch": False, "destructive": False},
-                    "add-section": {"description": "Add section break", "batch": False, "destructive": False},
+                    "create": {
+                        "description": "Create form",
+                        "batch": False, "destructive": False,
+                    },
+                    "read": {
+                        "description": "Read form structure",
+                        "batch": False, "destructive": False,
+                    },
+                    "responses": {
+                        "description": "List form responses",
+                        "batch": False, "destructive": False,
+                    },
+                    "add-question": {
+                        "description": "Add question to form",
+                        "batch": False, "destructive": False,
+                    },
+                    "add-section": {
+                        "description": "Add section break",
+                        "batch": False, "destructive": False,
+                    },
                 },
             },
         },

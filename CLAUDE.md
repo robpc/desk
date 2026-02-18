@@ -15,7 +15,7 @@ Skip this and you will ship incomplete work. The documentation is part of the de
 
 ## Project Overview
 
-**Desk** (`desk`) is a command-line tool for Google Workspace — Gmail, Drive, Sheets, Docs, and Calendar. Unix philosophy: simple commands that compose with pipes. Each user brings their own Google Cloud OAuth credentials.
+**Desk** (`desk`) is a command-line tool for Google Workspace — Gmail, Drive, Sheets, Docs, Calendar, and Forms. Unix philosophy: simple commands that compose with pipes. Each user brings their own Google Cloud OAuth credentials.
 
 ## Quick Start
 
@@ -98,6 +98,12 @@ desk (CLI entry point)
 │   ├── read           → Read document content
 │   ├── update         → Insert/replace text
 │   └── export         → Export as PDF/TXT/DOCX/HTML
+├── forms              → Google Forms operations
+│   ├── create         → Create a new form
+│   ├── read           → Read form structure and questions
+│   ├── responses      → List form responses
+│   ├── add-question   → Add a question to a form
+│   └── add-section    → Add a section break to a form
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events
@@ -124,11 +130,13 @@ Config/Tokens: ~/.desk/
 - `src/desk/commands/sheets.py` - Sheets commands
 - `src/desk/commands/docs.py` - Docs commands
 - `src/desk/commands/cal.py` - Calendar commands
+- `src/desk/commands/forms.py` - Forms commands
 - `src/desk/services/gmail.py` - GmailClient API wrapper
 - `src/desk/services/drive.py` - DriveClient API wrapper
 - `src/desk/services/sheets.py` - SheetsClient API wrapper
 - `src/desk/services/docs.py` - DocsClient API wrapper
 - `src/desk/services/calendar.py` - CalendarClient API wrapper
+- `src/desk/services/forms.py` - FormsClient API wrapper
 
 ## Adding a New Service
 

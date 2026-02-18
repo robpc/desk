@@ -15,6 +15,9 @@ class FormsClient:
     def create(self, title: str, description: str = "") -> dict:
         """Create a new Google Form.
 
+        The Forms API ignores description in the create request, so we use a
+        two-step flow: create the form, then set description via batchUpdate.
+
         Args:
             title: Form title
             description: Optional form description
@@ -24,15 +27,28 @@ class FormsClient:
         """
         try:
             form_data: dict = {"info": {"title": title}}
-            if description:
-                form_data["info"]["description"] = description
-
             result = self.service.forms().create(body=form_data).execute()
             form_id = result.get("formId", "")
+
+            if description:
+                self.service.forms().batchUpdate(
+                    formId=form_id,
+                    body={
+                        "requests": [
+                            {
+                                "updateFormInfo": {
+                                    "info": {"description": description},
+                                    "updateMask": "description",
+                                }
+                            }
+                        ]
+                    },
+                ).execute()
 
             return {
                 "formId": form_id,
                 "title": result.get("info", {}).get("title", title),
+                "description": description,
                 "responderUri": result.get("responderUri", ""),
                 "editUri": f"https://docs.google.com/forms/d/{form_id}/edit",
             }
@@ -62,6 +78,9 @@ class FormsClient:
 
     def responses(self, form_id: str, limit: int = 100) -> dict:
         """List form responses.
+
+        Note: Returns up to `limit` responses from a single page. Does not
+        follow nextPageToken for multi-page result sets.
 
         Args:
             form_id: The form ID
