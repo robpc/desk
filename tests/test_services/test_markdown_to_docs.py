@@ -113,8 +113,32 @@ class TestMarkdownConverterAnnotations:
 
     def test_horizontal_rule(self):
         converter = MarkdownConverter()
-        text, _ = converter.convert("---")
-        assert "---\n" in text
+        text, annotations = converter.convert("---")
+        assert "---" not in text
+        hr = [a for a in annotations if a.style_type == "hr"]
+        assert len(hr) == 1
+
+    def test_heading_followed_by_paragraph(self):
+        converter = MarkdownConverter()
+        text, _ = converter.convert("# Title\n\nContent here")
+        assert text == "Title\nContent here\n"
+
+    def test_bullet_list_native(self):
+        converter = MarkdownConverter()
+        text, annotations = converter.convert("- item one\n- item two")
+        assert "  - " not in text
+        assert "item one" in text
+        assert "item two" in text
+        bullets = [a for a in annotations if a.style_type == "bullet_list"]
+        assert len(bullets) == 1
+
+    def test_ordered_list_native(self):
+        converter = MarkdownConverter()
+        text, annotations = converter.convert("1. first\n2. second")
+        assert "first" in text
+        assert "second" in text
+        numbered = [a for a in annotations if a.style_type == "ordered_list"]
+        assert len(numbered) == 1
 
 
 class TestMarkdownConverterUTF16:
@@ -210,6 +234,27 @@ class TestMarkdownToRequests:
         italic = [r for r in text_styles if r["updateTextStyle"]["textStyle"].get("italic")]
         assert len(bold) == 1
         assert len(italic) == 1
+
+    def test_hr_request_produces_border(self):
+        result = markdown_to_requests("---", base_index=1)
+        para_reqs = [r for r in result if "updateParagraphStyle" in r]
+        assert len(para_reqs) == 1
+        ps = para_reqs[0]["updateParagraphStyle"]["paragraphStyle"]
+        assert "borderBottom" in ps
+
+    def test_bullet_list_request(self):
+        result = markdown_to_requests("- one\n- two", base_index=1)
+        bullet_reqs = [r for r in result if "createParagraphBullets" in r]
+        assert len(bullet_reqs) == 1
+        preset = bullet_reqs[0]["createParagraphBullets"]["bulletPreset"]
+        assert preset == "BULLET_DISC_CIRCLE_SQUARE"
+
+    def test_ordered_list_request(self):
+        result = markdown_to_requests("1. one\n2. two", base_index=1)
+        bullet_reqs = [r for r in result if "createParagraphBullets" in r]
+        assert len(bullet_reqs) == 1
+        preset = bullet_reqs[0]["createParagraphBullets"]["bulletPreset"]
+        assert preset == "NUMBERED_DECIMAL_ALPHA_ROMAN"
 
     def test_crlf_normalized(self):
         result = markdown_to_requests("Hello\r\nWorld", base_index=1)

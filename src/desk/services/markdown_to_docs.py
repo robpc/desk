@@ -66,6 +66,7 @@ class MarkdownConverter:
                 }
             )
         elif token.type == "heading_close":
+            self._add_text("\n")
             if self._style_stack and self._style_stack[-1]["type"].startswith("heading_"):
                 info = self._style_stack.pop()
                 self.annotations.append(
@@ -111,20 +112,45 @@ class MarkdownConverter:
                 )
             )
         elif token.type == "hr":
-            self._add_text("---\n")
-        elif token.type in (
-            "bullet_list_open",
-            "bullet_list_close",
-            "ordered_list_open",
-            "ordered_list_close",
-            "list_item_open",
-            "list_item_close",
-        ):
-            # Lists: all items rendered as bullet points. Ordered list numbering
-            # is not supported — Google Docs API list formatting would require
-            # CreateNamedRange + list presets which is deferred scope.
-            if token.type == "list_item_open":
-                self._add_text("  - ")
+            start = self._current_utf16_offset
+            self._add_text("\n")
+            self.annotations.append(
+                StyleAnnotation(
+                    start=start,
+                    end=self._current_utf16_offset,
+                    style_type="hr",
+                )
+            )
+        elif token.type == "bullet_list_open":
+            self._style_stack.append(
+                {"type": "bullet_list", "start": self._current_utf16_offset}
+            )
+        elif token.type == "bullet_list_close":
+            if self._style_stack and self._style_stack[-1]["type"] == "bullet_list":
+                info = self._style_stack.pop()
+                self.annotations.append(
+                    StyleAnnotation(
+                        start=info["start"],
+                        end=self._current_utf16_offset,
+                        style_type="bullet_list",
+                    )
+                )
+        elif token.type == "ordered_list_open":
+            self._style_stack.append(
+                {"type": "ordered_list", "start": self._current_utf16_offset}
+            )
+        elif token.type == "ordered_list_close":
+            if self._style_stack and self._style_stack[-1]["type"] == "ordered_list":
+                info = self._style_stack.pop()
+                self.annotations.append(
+                    StyleAnnotation(
+                        start=info["start"],
+                        end=self._current_utf16_offset,
+                        style_type="ordered_list",
+                    )
+                )
+        elif token.type in ("list_item_open", "list_item_close"):
+            pass
 
     def _process_inline_token(self, token) -> None:
         """Process an inline token (child of an inline token)."""
@@ -304,6 +330,49 @@ def markdown_to_requests(
                         "range": {"startIndex": start, "endIndex": end},
                         "paragraphStyle": {"namedStyleType": f"HEADING_{level}"},
                         "fields": "namedStyleType",
+                    }
+                }
+            )
+        elif ann.style_type == "hr":
+            requests.append(
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start, "endIndex": end},
+                        "paragraphStyle": {
+                            "borderBottom": {
+                                "color": {
+                                    "color": {
+                                        "rgbColor": {
+                                            "red": 0.8,
+                                            "green": 0.8,
+                                            "blue": 0.8,
+                                        }
+                                    }
+                                },
+                                "width": {"magnitude": 1, "unit": "PT"},
+                                "padding": {"magnitude": 6, "unit": "PT"},
+                                "dashStyle": "SOLID",
+                            }
+                        },
+                        "fields": "borderBottom",
+                    }
+                }
+            )
+        elif ann.style_type == "bullet_list":
+            requests.append(
+                {
+                    "createParagraphBullets": {
+                        "range": {"startIndex": start, "endIndex": end},
+                        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+                    }
+                }
+            )
+        elif ann.style_type == "ordered_list":
+            requests.append(
+                {
+                    "createParagraphBullets": {
+                        "range": {"startIndex": start, "endIndex": end},
+                        "bulletPreset": "NUMBERED_DECIMAL_ALPHA_ROMAN",
                     }
                 }
             )
