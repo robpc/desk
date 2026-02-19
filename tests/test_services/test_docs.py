@@ -1096,3 +1096,135 @@ class TestDocsTabIdOnExistingMethods:
             call_kwargs = documents_mock.batchUpdate.call_args
             req = call_kwargs[1]["body"]["requests"][0]["insertTable"]
             assert req["location"]["tabId"] == "t.1"
+
+    def test_update_paragraph_style_with_tab_id(self, mock_credentials):
+        """Should include tabId in range when tab_id is provided."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.update_paragraph_style("doc123", 1, 20, heading=2, tab_id="t.1")
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["updateParagraphStyle"]
+            assert req["range"]["tabId"] == "t.1"
+
+    def test_update_append_with_tab_id(self, mock_credentials):
+        """Should include tabId in location when appending with tab_id."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            # Mock get for tab-aware body read
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "tabs": [{
+                    "tabProperties": {"tabId": "t.1"},
+                    "documentTab": {"body": {"content": [{"endIndex": 10}]}},
+                    "childTabs": [],
+                }],
+            }
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.update("doc123", "New text", mode="append", tab_id="t.1")
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["insertText"]
+            assert req["location"]["tabId"] == "t.1"
+
+    def test_update_replace_with_tab_id(self, mock_credentials):
+        """Should include tabId in range and location when replacing with tab_id."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "tabs": [{
+                    "tabProperties": {"tabId": "t.1"},
+                    "documentTab": {"body": {"content": [{"endIndex": 50}]}},
+                    "childTabs": [],
+                }],
+            }
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.update("doc123", "New content", mode="replace", tab_id="t.1")
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            requests = call_kwargs[1]["body"]["requests"]
+            # First request: delete range with tabId
+            assert requests[0]["deleteContentRange"]["range"]["tabId"] == "t.1"
+            # Second request: insert text with tabId
+            assert requests[1]["insertText"]["location"]["tabId"] == "t.1"
+
+    def test_update_prepend_with_tab_id(self, mock_credentials):
+        """Should include tabId in location when prepending with tab_id."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.update("doc123", "Start text", mode="prepend", tab_id="t.1")
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["insertText"]
+            assert req["location"]["tabId"] == "t.1"
+
+    def test_find_and_replace_with_tab_id(self, mock_credentials):
+        """Should include tabsCriteria when tab_id is provided."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {
+                "replies": [{"replaceAllText": {"occurrencesChanged": 1}}],
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.find_and_replace("doc123", "old", "new", tab_id="t.1")
+
+            call_kwargs = documents_mock.batchUpdate.call_args
+            req = call_kwargs[1]["body"]["requests"][0]["replaceAllText"]
+            assert req["tabsCriteria"]["tabIds"] == ["t.1"]
+
+    def test_write_markdown_with_tab_id(self, mock_credentials):
+        """Should pass tab_id through to markdown_to_requests."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            # Mock for _get_body with tab
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "tabs": [{
+                    "tabProperties": {"tabId": "t.1"},
+                    "documentTab": {"body": {"content": [{"endIndex": 10}]}},
+                    "childTabs": [],
+                }],
+            }
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            with patch("desk.services.markdown_to_docs.markdown_to_requests") as mock_m2r:
+                mock_m2r.return_value = [{"insertText": {"location": {"index": 9, "tabId": "t.1"}, "text": "hello"}}]
+                client.write_markdown("doc123", "hello", tab_id="t.1")
+                mock_m2r.assert_called_once_with("hello", base_index=9, tab_id="t.1")

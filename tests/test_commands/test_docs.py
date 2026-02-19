@@ -198,6 +198,36 @@ class TestDocsCreate:
         assert result.exit_code == 0
         mock_client.create.assert_called_once_with("Empty", body="", markdown=True)
 
+    def test_create_empty_body_creates_empty_doc(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should create empty doc when --body is empty string."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.create.return_value = {
+            "documentId": "doc_id",
+            "title": "Empty",
+            "webViewLink": "https://docs.google.com/document/d/doc_id",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["create", "Empty", "--body", "", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.create.assert_called_once_with("Empty", body="", markdown=True)
+
+    def test_create_body_and_file_conflict(self, runner, mock_get_credentials, mock_docs_client_class, tmp_path):
+        """Should error when both --body and --file are provided."""
+        from desk.commands.docs import docs
+
+        md_file = tmp_path / "test.md"
+        md_file.write_text("# From File")
+
+        result = runner.invoke(
+            docs, ["create", "Title", "--body", "inline", "--file", str(md_file), "--json"]
+        )
+
+        assert result.exit_code != 0
+
 
 class TestDocsInsert:
     """Tests for desk docs insert command."""
@@ -590,7 +620,9 @@ class TestDocsAddTab:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["success"] is True
-        assert output["operation"] == "add_tab"
+        assert output["operation"] == "add-tab"
+        assert output["undo"]["available"] is True
+        assert "delete-tab" in output["undo"]["command"]
         mock_client.add_tab.assert_called_once_with("doc123", "Notes", index=None, parent_tab_id=None)
 
     def test_add_tab_with_index_and_parent(self, runner, mock_get_credentials, mock_docs_client_class):
@@ -625,7 +657,7 @@ class TestDocsDeleteTab:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["success"] is True
-        assert output["operation"] == "delete_tab"
+        assert output["operation"] == "delete-tab"
         mock_client.delete_tab.assert_called_once_with("doc123", "t.1")
 
 
@@ -647,7 +679,7 @@ class TestDocsRenameTab:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["success"] is True
-        assert output["operation"] == "rename_tab"
+        assert output["operation"] == "rename-tab"
         mock_client.rename_tab.assert_called_once_with("doc123", "t.0", "Renamed")
 
 
@@ -701,4 +733,99 @@ class TestDocsTabOption:
         assert result.exit_code == 0
         mock_client.write_markdown.assert_called_once_with(
             "doc123", "# Hello", index=None, replace=False, tab_id="t.1"
+        )
+
+    def test_update_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to update."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update.return_value = {"documentId": "doc123", "mode": "append", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["update", "doc123", "New text", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.update.assert_called_once_with("doc123", "New text", mode="append", tab_id="t.1")
+
+    def test_delete_range_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to delete_range."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.delete_range.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["delete-range", "doc123", "--start", "5", "--end", "20", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.delete_range.assert_called_once_with("doc123", 5, 20, tab_id="t.1")
+
+    def test_style_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to update_text_style."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_text_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["style", "doc123", "--start", "1", "--end", "10", "--bold", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_client.update_text_style.call_args
+        assert call_kwargs[1]["tab_id"] == "t.1"
+
+    def test_paragraph_style_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to update_paragraph_style."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_paragraph_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["paragraph-style", "doc123", "--start", "1", "--end", "20", "--heading", "2", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.update_paragraph_style.assert_called_once_with(
+            "doc123", 1, 20, heading=2, alignment=None, tab_id="t.1"
+        )
+
+    def test_insert_table_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to insert_table."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.insert_table.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["insert-table", "doc123", "--rows", "3", "--cols", "4", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.insert_table.assert_called_once_with("doc123", 3, 4, index=None, tab_id="t.1")
+
+    def test_insert_image_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to insert_image."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.insert_image.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["insert-image", "doc123", "--uri", "https://example.com/img.png", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.insert_image.assert_called_once_with(
+            "doc123", "https://example.com/img.png", index=None, width=None, height=None, tab_id="t.1"
         )

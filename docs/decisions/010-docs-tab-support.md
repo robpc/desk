@@ -15,7 +15,7 @@ tags: [docs, tabs, api, agent-first]
 Google Docs added document tabs in late 2024 — similar to sheet tabs in spreadsheets, a single document can have multiple tabs with independent content. The API supports this via:
 
 - `includeTabsContent` parameter on `documents.get`
-- `addDocumentTab` request in `batchUpdate`
+- `createTab` request in `batchUpdate`
 - `deleteTab` request in `batchUpdate`
 - `updateDocumentTabProperties` request in `batchUpdate`
 - `tabId` field in location/range objects for content operations
@@ -45,7 +45,7 @@ When `--tab` is omitted, behavior is identical to today (first/default tab).
 
 ### Implementation approach
 
-**Service layer**: New `list_tabs()`, `add_tab()`, `delete_tab()`, `rename_tab()` methods. Existing content methods gain `tab_id: str | None = None` parameter. Helper methods `_get_tab_body()` for tab-aware reads and `_location()` / `_range()` for tab-aware location objects.
+**Service layer**: New `list_tabs()`, `add_tab()`, `delete_tab()`, `rename_tab()` methods. Existing content methods gain `tab_id: str | None = None` parameter. Helper methods `_get_body()` for tab-aware reads and `_location()` / `_range()` for tab-aware location objects.
 
 **Markdown converter**: `markdown_to_requests()` gains `tab_id` parameter, injecting `tabId` into all generated location and range objects.
 
@@ -108,5 +108,5 @@ When `--tab` is omitted, behavior is identical to today (first/default tab).
 ## References
 
 - [Google Docs API tabs documentation](https://developers.google.com/docs/api/concepts/tabs)
-- [batchUpdate addDocumentTab](https://developers.google.com/docs/api/reference/rest/v1/documents/batchUpdate)
+- [batchUpdate createTab](https://developers.google.com/docs/api/reference/rest/v1/documents/batchUpdate)
 - ADR-008: Expanded Docs Editing (established subcommand pattern)

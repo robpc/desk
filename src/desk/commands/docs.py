@@ -84,14 +84,20 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
 
 
 def _read_content(text: str | None, file: str | None, stdin: bool) -> str:
-    """Read content from text argument, file, or stdin."""
+    """Read content from text argument, file, or stdin.
+
+    Priority: stdin > file > text. Only one source should be provided.
+    """
+    sources = sum([stdin, file is not None, text is not None])
+    if sources > 1:
+        raise click.UsageError("Provide only one of text, --file, or --stdin")
     if stdin:
         return sys.stdin.read()
     if file:
         from pathlib import Path
 
         return Path(file).read_text(encoding="utf-8")
-    if text:
+    if text is not None:
         return text
     raise click.UsageError("Provide text, --file, or --stdin")
 
@@ -165,7 +171,7 @@ def create(
         desk docs create "Plain" --body "no formatting" --plain
     """
     content = ""
-    if body is not None or file_path or stdin:
+    if (body is not None and body != "") or file_path or stdin:
         try:
             content = _read_content(body, file_path, stdin)
         except (click.UsageError, OSError) as e:
@@ -918,12 +924,13 @@ def add_tab(
         _handle_api_error(e, as_json, {"document_id": document_id, "title": title})
 
     receipt = operation_receipt(
-        operation="add_tab",
+        operation="add-tab",
         target={
             "document_id": document_id,
             "tab_id": result.get("tabId"),
             "title": result.get("title"),
         },
+        undo_command=f"desk docs delete-tab {document_id} --tab {result.get('tabId')} --yes",
     )
     output_result(receipt, as_json, quiet)
 
@@ -959,8 +966,7 @@ def delete_tab(
             else:
                 console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
-        import click as click_module
-        if not click_module.confirm(f"Delete tab {tab_id}? This cannot be undone."):
+        if not click.confirm(f"Delete tab {tab_id}? This cannot be undone."):
             console.print("[yellow]Cancelled[/yellow]")
             return
 
@@ -970,7 +976,7 @@ def delete_tab(
         _handle_api_error(e, as_json, {"document_id": document_id, "tab_id": tab_id})
 
     receipt = operation_receipt(
-        operation="delete_tab",
+        operation="delete-tab",
         target={
             "document_id": document_id,
             "tab_id": tab_id,
@@ -1003,7 +1009,7 @@ def rename_tab(
         )
 
     receipt = operation_receipt(
-        operation="rename_tab",
+        operation="rename-tab",
         target={
             "document_id": document_id,
             "tab_id": result.get("tabId"),
