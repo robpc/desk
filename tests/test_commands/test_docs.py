@@ -89,7 +89,7 @@ class TestDocsUpdate:
 
         assert result.exit_code == 0
         mock_client.find_and_replace.assert_called_once_with(
-            "doc123", find_text="OLD", replace_text="new", match_case=False
+            "doc123", find_text="OLD", replace_text="new", match_case=False, tab_id=None
         )
 
     def test_find_and_mode_conflict(self, runner, mock_get_credentials, mock_docs_client_class):
@@ -127,6 +127,77 @@ class TestDocsCreate:
         assert output["success"] is True
         assert output["operation"] == "create"
 
+    def test_create_with_body_uses_markdown_by_default(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass markdown=True by default when body is provided."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.create.return_value = {
+            "documentId": "doc_id",
+            "title": "Title",
+            "webViewLink": "https://docs.google.com/document/d/doc_id",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["create", "Title", "--body", "# Hello", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.create.assert_called_once_with("Title", body="# Hello", markdown=True)
+
+    def test_create_with_plain_flag(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass markdown=False when --plain is used."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.create.return_value = {
+            "documentId": "doc_id",
+            "title": "Title",
+            "webViewLink": "https://docs.google.com/document/d/doc_id",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["create", "Title", "--body", "plain text", "--plain", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.create.assert_called_once_with("Title", body="plain text", markdown=False)
+
+    def test_create_with_file(self, runner, mock_get_credentials, mock_docs_client_class, tmp_path):
+        """Should read content from file."""
+        from desk.commands.docs import docs
+
+        md_file = tmp_path / "test.md"
+        md_file.write_text("# From File")
+
+        mock_client = MagicMock()
+        mock_client.create.return_value = {
+            "documentId": "doc_id",
+            "title": "Title",
+            "webViewLink": "https://docs.google.com/document/d/doc_id",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["create", "Title", "--file", str(md_file), "--json"])
+
+        assert result.exit_code == 0
+        mock_client.create.assert_called_once_with("Title", body="# From File", markdown=True)
+
+    def test_create_no_body_creates_empty_doc(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should create empty doc when no content is provided."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.create.return_value = {
+            "documentId": "doc_id",
+            "title": "Empty",
+            "webViewLink": "https://docs.google.com/document/d/doc_id",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["create", "Empty", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.create.assert_called_once_with("Empty", body="", markdown=True)
+
 
 class TestDocsInsert:
     """Tests for desk docs insert command."""
@@ -145,7 +216,7 @@ class TestDocsInsert:
         output = json.loads(result.output)
         assert output["success"] is True
         assert output["operation"] == "insert"
-        mock_client.insert_at.assert_called_once_with("doc123", "Hello", index=None)
+        mock_client.insert_at.assert_called_once_with("doc123", "Hello", index=None, tab_id=None)
 
     def test_insert_at_index(self, runner, mock_get_credentials, mock_docs_client_class):
         """Should insert text at specific index."""
@@ -158,7 +229,7 @@ class TestDocsInsert:
         result = runner.invoke(docs, ["insert", "doc123", "Hello", "--at", "5", "--json"])
 
         assert result.exit_code == 0
-        mock_client.insert_at.assert_called_once_with("doc123", "Hello", index=5)
+        mock_client.insert_at.assert_called_once_with("doc123", "Hello", index=5, tab_id=None)
 
 
 class TestDocsDeleteRange:
@@ -179,7 +250,7 @@ class TestDocsDeleteRange:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["success"] is True
-        mock_client.delete_range.assert_called_once_with("doc123", 5, 20)
+        mock_client.delete_range.assert_called_once_with("doc123", 5, 20, tab_id=None)
 
     def test_delete_range_invalid(self, runner, mock_get_credentials, mock_docs_client_class):
         """Should error when start >= end."""
@@ -301,7 +372,7 @@ class TestDocsInsertTable:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["success"] is True
-        mock_client.insert_table.assert_called_once_with("doc123", 3, 4, index=None)
+        mock_client.insert_table.assert_called_once_with("doc123", 3, 4, index=None, tab_id=None)
 
     def test_insert_table_invalid_rows(self, runner, mock_get_credentials, mock_docs_client_class):
         """Should error when rows < 1."""
@@ -349,7 +420,7 @@ class TestDocsParagraphStyle:
         assert output["success"] is True
         assert output["changes"]["heading"] == 2
         mock_client.update_paragraph_style.assert_called_once_with(
-            "doc123", 1, 20, heading=2, alignment=None
+            "doc123", 1, 20, heading=2, alignment=None, tab_id=None
         )
 
     def test_alignment_style(self, runner, mock_get_credentials, mock_docs_client_class):
@@ -415,7 +486,7 @@ class TestDocsInsertImage:
         assert output["operation"] == "insert_image"
         assert output["changes"]["uri"] == "https://example.com/img.png"
         mock_client.insert_image.assert_called_once_with(
-            "doc123", "https://example.com/img.png", index=None, width=None, height=None
+            "doc123", "https://example.com/img.png", index=None, width=None, height=None, tab_id=None
         )
 
     def test_insert_image_at_index_with_size(self, runner, mock_get_credentials, mock_docs_client_class):
@@ -434,7 +505,7 @@ class TestDocsInsertImage:
 
         assert result.exit_code == 0
         mock_client.insert_image.assert_called_once_with(
-            "doc123", "https://example.com/img.png", index=5, width=200.0, height=100.0
+            "doc123", "https://example.com/img.png", index=5, width=200.0, height=100.0, tab_id=None
         )
 
 
@@ -478,3 +549,156 @@ class TestParseAt:
         assert result.exit_code != 0
         output = json.loads(result.output)
         assert output["success"] is False
+
+
+class TestDocsListTabs:
+    """Tests for desk docs list-tabs command."""
+
+    def test_list_tabs_json(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should output tab list as JSON."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.list_tabs.return_value = [
+            {"tabId": "t.0", "title": "Tab 1", "index": 0, "parentTabId": None},
+            {"tabId": "t.1", "title": "Tab 2", "index": 1, "parentTabId": None},
+        ]
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["list-tabs", "doc123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 2
+        assert output[0]["tabId"] == "t.0"
+        assert output[1]["title"] == "Tab 2"
+
+
+class TestDocsAddTab:
+    """Tests for desk docs add-tab command."""
+
+    def test_add_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should create a new tab."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.add_tab.return_value = {"tabId": "t.new", "title": "Notes"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["add-tab", "doc123", "--title", "Notes", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "add_tab"
+        mock_client.add_tab.assert_called_once_with("doc123", "Notes", index=None, parent_tab_id=None)
+
+    def test_add_tab_with_index_and_parent(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass index and parent to service."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.add_tab.return_value = {"tabId": "t.child", "title": "Sub"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["add-tab", "doc123", "--title", "Sub", "--index", "2", "--parent", "t.0", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.add_tab.assert_called_once_with("doc123", "Sub", index=2, parent_tab_id="t.0")
+
+
+class TestDocsDeleteTab:
+    """Tests for desk docs delete-tab command."""
+
+    def test_delete_tab_with_yes(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should delete tab when --yes is provided."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.delete_tab.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["delete-tab", "doc123", "--tab", "t.1", "--yes", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "delete_tab"
+        mock_client.delete_tab.assert_called_once_with("doc123", "t.1")
+
+
+class TestDocsRenameTab:
+    """Tests for desk docs rename-tab command."""
+
+    def test_rename_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should rename a tab."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.rename_tab.return_value = {"tabId": "t.0", "title": "Renamed"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["rename-tab", "doc123", "--tab", "t.0", "--title", "Renamed", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["operation"] == "rename_tab"
+        mock_client.rename_tab.assert_called_once_with("doc123", "t.0", "Renamed")
+
+
+class TestDocsTabOption:
+    """Tests for --tab option on content commands."""
+
+    def test_read_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to read."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "documentId": "doc123",
+            "title": "Test",
+            "body": "Tab content",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["read", "doc123", "--tab", "t.1", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.read.assert_called_once_with("doc123", tab_id="t.1")
+
+    def test_insert_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to insert_at."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.insert_at.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["insert", "doc123", "Hello", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.insert_at.assert_called_once_with("doc123", "Hello", index=None, tab_id="t.1")
+
+    def test_write_markdown_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass tab_id to write_markdown."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.write_markdown.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["write-markdown", "doc123", "--body", "# Hello", "--tab", "t.1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        mock_client.write_markdown.assert_called_once_with(
+            "doc123", "# Hello", index=None, replace=False, tab_id="t.1"
+        )

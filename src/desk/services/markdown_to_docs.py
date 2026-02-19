@@ -238,9 +238,18 @@ class MarkdownConverter:
         self._current_utf16_offset += utf16_len(text)
 
 
+def _make_range(start: int, end: int, tab_id: str | None = None) -> dict:
+    """Build a range object, optionally scoped to a tab."""
+    r = {"startIndex": start, "endIndex": end}
+    if tab_id:
+        r["tabId"] = tab_id
+    return r
+
+
 def markdown_to_requests(
     markdown: str,
     base_index: int,
+    tab_id: str | None = None,
 ) -> list[dict]:
     """Convert markdown to Google Docs batchUpdate requests.
 
@@ -249,6 +258,7 @@ def markdown_to_requests(
         base_index: Document index where text will be inserted.
                    Callers must resolve the concrete index before calling
                    (e.g. by fetching the document length for appends).
+        tab_id: Optional tab ID to inject into all location/range objects.
 
     Returns:
         List of batchUpdate request dicts ready for the API.
@@ -263,10 +273,13 @@ def markdown_to_requests(
     requests: list[dict] = []
 
     # First request: insert the plain text
+    location: dict = {"index": base_index}
+    if tab_id:
+        location["tabId"] = tab_id
     requests.append(
         {
             "insertText": {
-                "location": {"index": base_index},
+                "location": location,
                 "text": plain_text,
             }
         }
@@ -284,7 +297,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "updateTextStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "textStyle": {"bold": True},
                         "fields": "bold",
                     }
@@ -294,7 +307,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "updateTextStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "textStyle": {"italic": True},
                         "fields": "italic",
                     }
@@ -304,7 +317,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "updateTextStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "textStyle": {
                             "weightedFontFamily": {"fontFamily": "Courier New"},
                         },
@@ -316,7 +329,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "updateTextStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "textStyle": {"link": {"url": ann.url}},
                         "fields": "link",
                     }
@@ -327,7 +340,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "updateParagraphStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "paragraphStyle": {"namedStyleType": f"HEADING_{level}"},
                         "fields": "namedStyleType",
                     }
@@ -337,7 +350,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "updateParagraphStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "paragraphStyle": {
                             "borderBottom": {
                                 "color": {
@@ -362,7 +375,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "createParagraphBullets": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
                     }
                 }
@@ -371,7 +384,7 @@ def markdown_to_requests(
             requests.append(
                 {
                     "createParagraphBullets": {
-                        "range": {"startIndex": start, "endIndex": end},
+                        "range": _make_range(start, end, tab_id),
                         "bulletPreset": "NUMBERED_DECIMAL_ALPHA_ROMAN",
                     }
                 }
