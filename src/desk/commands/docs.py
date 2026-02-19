@@ -6,6 +6,7 @@ import sys
 import click
 from rich.console import Console
 from rich.markup import escape
+from rich.table import Table
 
 from desk.agent import (
     ERROR_SUGGESTIONS,
@@ -82,29 +83,108 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
     sys.exit(1)
 
 
+def _read_content(text: str | None, file: str | None, stdin: bool) -> str:
+    """Read content from text argument, file, or stdin.
+
+    Priority: stdin > file > text. Only one source should be provided.
+    """
+    sources = sum([stdin, file is not None, text is not None])
+    if sources > 1:
+        raise click.UsageError("Provide only one of text, --file, or --stdin")
+    if stdin:
+        return sys.stdin.read()
+    if file:
+        from pathlib import Path
+
+        return Path(file).read_text(encoding="utf-8")
+    if text is not None:
+        return text
+    raise click.UsageError("Provide text, --file, or --stdin")
+
+
+def _parse_at(at: str, as_json: bool = False) -> int | None:
+    """Parse --at value: 'end' returns None, otherwise integer index >= 1.
+
+    Exits with structured error on invalid input.
+    """
+    if at.lower() == "end":
+        return None
+    try:
+        val = int(at)
+    except ValueError:
+        msg = f"--at must be an integer or 'end', got '{at}'"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+    if val < 1:
+        msg = "--at index must be >= 1 (Google Docs indices are 1-based)"
+        if as_json:
+            error = structured_error(ErrorCode.INDEX_OUT_OF_RANGE, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+    return val
+
+
 @click.group()
 def docs() -> None:
     """Google Docs — read and update documents."""
     pass
 
 
+# ── Document creation ───────────────────────────────────────────────────
+
 @docs.command()
 @click.argument("title")
-@click.option("--body", "-b", default="", help="Initial document content")
+@click.option("--body", "-b", default=None, help="Initial content (markdown by default)")
+@click.option("--file", "-f", "file_path", help="Read content from file")
+@click.option("--stdin", is_flag=True, help="Read content from stdin")
+@click.option("--plain", is_flag=True, help="Insert content as plain text instead of markdown")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def create(title: str, body: str, quiet: bool, as_json: bool) -> None:
+def create(
+    title: str,
+    body: str | None,
+    file_path: str | None,
+    stdin: bool,
+    plain: bool,
+    quiet: bool,
+    as_json: bool,
+) -> None:
     """Create a new Google Doc.
+
+    Content is processed as markdown by default, producing native Google Docs
+    formatting (headings, bold, italic, links, lists). Use --plain for raw text.
 
     Examples:
 
         desk docs create "Meeting Notes"
 
-        desk docs create "Draft" --body "Hello world"
+        desk docs create "Draft" --body "# Hello\\n\\n**Bold** text"
+
+        desk docs create "Report" --file report.md
+
+        desk docs create "Plain" --body "no formatting" --plain
     """
+    content = ""
+    if (body is not None and body != "") or file_path or stdin:
+        try:
+            content = _read_content(body, file_path, stdin)
+        except (click.UsageError, OSError) as e:
+            if as_json:
+                error = structured_error(ErrorCode.INVALID_INPUT, str(e))
+                print(json.dumps(error, indent=2))
+            else:
+                console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
+
     client = _get_client(as_json)
     try:
-        result = client.create(title, body=body)
+        result = client.create(title, body=content, markdown=not plain)
     except Exception as e:
         _handle_api_error(e, as_json, {"title": title})
 
@@ -119,19 +199,24 @@ def create(title: str, body: str, quiet: bool, as_json: bool) -> None:
     output_result(receipt, as_json, quiet)
 
 
+# ── Read / inspect / export ─────────────────────────────────────────────
+
 @docs.command()
 @click.argument("document_id")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to read from")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def read(document_id: str, as_json: bool) -> None:
+def read(document_id: str, tab_id: str | None, as_json: bool) -> None:
     """Read a document's content.
 
     Examples:
 
         desk docs read <document-id>
+
+        desk docs read <id> --tab <tab-id>
     """
     client = _get_client(as_json)
     try:
-        result = client.read(document_id)
+        result = client.read(document_id, tab_id=tab_id)
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id})
 
@@ -144,96 +229,60 @@ def read(document_id: str, as_json: bool) -> None:
     console.print(result["body"])
 
 
-@docs.command()
+@docs.command("inspect")
 @click.argument("document_id")
-@click.argument("text")
-@click.option(
-    "--mode",
-    "-m",
-    type=click.Choice(["append", "prepend", "replace"]),
-    default="append",
-    help="Where to insert: append (end), prepend (beginning), replace (all)",
-)
-@click.option(
-    "--find", "-f", default=None,
-    help="Find and replace: TEXT replaces all occurrences of FIND",
-)
-@click.option("--ignore-case", is_flag=True, help="Case-insensitive find (use with --find)")
-@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to inspect")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def update(
-    document_id: str, text: str, mode: str,
-    find: str | None, ignore_case: bool,
-    quiet: bool, as_json: bool,
-) -> None:
-    """Insert or replace text in a document.
+def inspect_cmd(document_id: str, tab_id: str | None, quiet: bool, as_json: bool) -> None:
+    """Inspect document structure with indices.
+
+    Shows each element's type, start/end indices, and preview text.
+    Use this to plan index-based edits.
 
     Examples:
 
-        desk docs update <id> "New text at the end"
+        desk docs inspect <id>
 
-        desk docs update <id> "Text at start" --mode prepend
-
-        desk docs update <id> "Replace everything" --mode replace
-
-        desk docs update <id> "New Title" --find "Template Title"
-
-        desk docs update <id> "new" --find "old" --ignore-case
+        desk docs inspect <id> --tab <tab-id>
     """
-    if find and mode != "append":
-        if as_json:
-            error = structured_error(
-                ErrorCode.INVALID_INPUT,
-                "--find and --mode cannot be used together",
-                suggestions=[
-                    "Use --find alone for find-and-replace",
-                    "Use --mode alone for insert/replace",
-                ],
-            )
-            print(json.dumps(error, indent=2))
-        else:
-            console.print("[red]Error: --find and --mode cannot be used together[/red]")
-        sys.exit(1)
-
     client = _get_client(as_json)
+    try:
+        result = client.inspect(document_id, tab_id=tab_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id})
 
-    if find:
-        try:
-            result = client.find_and_replace(
-                document_id, find_text=find, replace_text=text, match_case=not ignore_case
-            )
-        except Exception as e:
-            _handle_api_error(e, as_json, {"document_id": document_id, "find": find})
-
-        receipt = operation_receipt(
-            operation="find_and_replace",
-            target={"id": document_id},
-            changes={
-                "find": find,
-                "replace": text,
-                "ignore_case": ignore_case,
-                "occurrences_changed": result["occurrences_changed"],
-            },
-        )
-        output_result(receipt, as_json, quiet)
+    if as_json:
+        print(json.dumps(result, indent=2))
         return
 
-    try:
-        result = client.update(document_id, text, mode=mode)
-    except Exception as e:
-        _handle_api_error(e, as_json, {"document_id": document_id, "mode": mode})
+    if quiet:
+        return
 
-    receipt = operation_receipt(
-        operation="update",
-        target={
-            "id": document_id,
-        },
-        changes={
-            "mode": mode,
-            "text_length": len(text),
-        },
-    )
-    output_result(receipt, as_json, quiet)
+    console.print(f"[bold]{result['title']}[/bold]")
+    console.print(f"[dim]Document end index: {result['endIndex']}[/dim]")
+    console.print()
+
+    for elem in result["elements"]:
+        etype = elem["type"]
+        start = elem["startIndex"]
+        end = elem["endIndex"]
+
+        if etype == "paragraph":
+            style = elem.get("style", "NORMAL_TEXT")
+            text_preview = elem.get("text", "")
+            if text_preview:
+                console.print(
+                    f"  [{start}:{end}] [cyan]{style}[/cyan] {escape(text_preview[:80])}"
+                )
+            else:
+                console.print(f"  [{start}:{end}] [cyan]{style}[/cyan] [dim](empty)[/dim]")
+        elif etype == "table":
+            rows = elem.get("rows", 0)
+            cols = elem.get("columns", 0)
+            console.print(f"  [{start}:{end}] [yellow]TABLE[/yellow] {rows}x{cols}")
+        elif etype == "sectionBreak":
+            console.print(f"  [{start}:{end}] [dim]SECTION_BREAK[/dim]")
 
 
 @docs.command()
@@ -297,45 +346,101 @@ def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) ->
     output_result(receipt, as_json, quiet)
 
 
-def _read_content(text: str | None, file: str | None, stdin: bool) -> str:
-    """Read content from text argument, file, or stdin."""
-    if stdin:
-        return sys.stdin.read()
-    if file:
-        from pathlib import Path
+# ── Text operations ─────────────────────────────────────────────────────
 
-        return Path(file).read_text(encoding="utf-8")
-    if text:
-        return text
-    raise click.UsageError("Provide text, --file, or --stdin")
+@docs.command()
+@click.argument("document_id")
+@click.argument("text")
+@click.option(
+    "--mode",
+    "-m",
+    type=click.Choice(["append", "prepend", "replace"]),
+    default="append",
+    help="Where to insert: append (end), prepend (beginning), replace (all)",
+)
+@click.option(
+    "--find", "-f", default=None,
+    help="Find and replace: TEXT replaces all occurrences of FIND",
+)
+@click.option("--ignore-case", is_flag=True, help="Case-insensitive find (use with --find)")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def update(
+    document_id: str, text: str, mode: str,
+    find: str | None, ignore_case: bool,
+    tab_id: str | None,
+    quiet: bool, as_json: bool,
+) -> None:
+    """Insert or replace text in a document.
 
+    Examples:
 
-def _parse_at(at: str, as_json: bool = False) -> int | None:
-    """Parse --at value: 'end' returns None, otherwise integer index >= 1.
+        desk docs update <id> "New text at the end"
 
-    Exits with structured error on invalid input.
+        desk docs update <id> "Text at start" --mode prepend
+
+        desk docs update <id> "Replace everything" --mode replace
+
+        desk docs update <id> "New Title" --find "Template Title"
+
+        desk docs update <id> "new" --find "old" --ignore-case
     """
-    if at.lower() == "end":
-        return None
+    if find and mode != "append":
+        if as_json:
+            error = structured_error(
+                ErrorCode.INVALID_INPUT,
+                "--find and --mode cannot be used together",
+                suggestions=[
+                    "Use --find alone for find-and-replace",
+                    "Use --mode alone for insert/replace",
+                ],
+            )
+            print(json.dumps(error, indent=2))
+        else:
+            console.print("[red]Error: --find and --mode cannot be used together[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+
+    if find:
+        try:
+            result = client.find_and_replace(
+                document_id, find_text=find, replace_text=text,
+                match_case=not ignore_case, tab_id=tab_id,
+            )
+        except Exception as e:
+            _handle_api_error(e, as_json, {"document_id": document_id, "find": find})
+
+        receipt = operation_receipt(
+            operation="find_and_replace",
+            target={"id": document_id},
+            changes={
+                "find": find,
+                "replace": text,
+                "ignore_case": ignore_case,
+                "occurrences_changed": result["occurrences_changed"],
+            },
+        )
+        output_result(receipt, as_json, quiet)
+        return
+
     try:
-        val = int(at)
-    except ValueError:
-        msg = f"--at must be an integer or 'end', got '{at}'"
-        if as_json:
-            error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
-        else:
-            console.print(f"[red]Error: {msg}[/red]")
-        sys.exit(1)
-    if val < 1:
-        msg = "--at index must be >= 1 (Google Docs indices are 1-based)"
-        if as_json:
-            error = structured_error(ErrorCode.INDEX_OUT_OF_RANGE, msg)
-            print(json.dumps(error, indent=2))
-        else:
-            console.print(f"[red]Error: {msg}[/red]")
-        sys.exit(1)
-    return val
+        result = client.update(document_id, text, mode=mode, tab_id=tab_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "mode": mode})
+
+    receipt = operation_receipt(
+        operation="update",
+        target={
+            "id": document_id,
+        },
+        changes={
+            "mode": mode,
+            "text_length": len(text),
+        },
+    )
+    output_result(receipt, as_json, quiet)
 
 
 @docs.command("insert")
@@ -344,6 +449,7 @@ def _parse_at(at: str, as_json: bool = False) -> int | None:
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--file", "-f", "file_path", help="Read content from file")
 @click.option("--stdin", is_flag=True, help="Read content from stdin")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_cmd(
@@ -352,6 +458,7 @@ def insert_cmd(
     at: str,
     file_path: str | None,
     stdin: bool,
+    tab_id: str | None,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -378,7 +485,7 @@ def insert_cmd(
     index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
-        client.insert_at(document_id, content, index=index)
+        client.insert_at(document_id, content, index=index, tab_id=tab_id)
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "at": at})
 
@@ -394,10 +501,12 @@ def insert_cmd(
 @click.argument("document_id")
 @click.option("--start", required=True, type=int, help="Start index (inclusive)")
 @click.option("--end", required=True, type=int, help="End index (exclusive)")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def delete_range_cmd(
-    document_id: str, start: int, end: int, quiet: bool, as_json: bool
+    document_id: str, start: int, end: int, tab_id: str | None,
+    quiet: bool, as_json: bool,
 ) -> None:
     """Delete content between two indices.
 
@@ -423,7 +532,7 @@ def delete_range_cmd(
 
     client = _get_client(as_json)
     try:
-        client.delete_range(document_id, start, end)
+        client.delete_range(document_id, start, end, tab_id=tab_id)
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
 
@@ -434,6 +543,8 @@ def delete_range_cmd(
     )
     output_result(receipt, as_json, quiet)
 
+
+# ── Styling ─────────────────────────────────────────────────────────────
 
 @docs.command("style")
 @click.argument("document_id")
@@ -447,6 +558,7 @@ def delete_range_cmd(
 @click.option("--link", default=None, help="Set hyperlink URL")
 @click.option("--font-size", type=float, default=None, help="Font size in points")
 @click.option("--font", default=None, help="Font family name")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def style_cmd(
@@ -461,6 +573,7 @@ def style_cmd(
     link: str | None,
     font_size: float | None,
     font: str | None,
+    tab_id: str | None,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -486,6 +599,7 @@ def style_cmd(
             underline=underline,
             strikethrough=strikethrough,
             font_family=font,
+            tab_id=tab_id,
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
@@ -527,6 +641,7 @@ def style_cmd(
     default=None,
     help="Text alignment",
 )
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def paragraph_style_cmd(
@@ -535,6 +650,7 @@ def paragraph_style_cmd(
     end: int,
     heading: int | None,
     alignment: str | None,
+    tab_id: str | None,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -561,6 +677,7 @@ def paragraph_style_cmd(
             document_id, start, end,
             heading=heading,
             alignment=alignment,
+            tab_id=tab_id,
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
@@ -579,6 +696,8 @@ def paragraph_style_cmd(
     output_result(receipt, as_json, quiet)
 
 
+# ── Markdown / tables / images ──────────────────────────────────────────
+
 @docs.command("write-markdown")
 @click.argument("document_id")
 @click.option("--body", "-b", default=None, help="Markdown content inline")
@@ -586,6 +705,7 @@ def paragraph_style_cmd(
 @click.option("--stdin", is_flag=True, help="Read markdown from stdin")
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--replace", is_flag=True, help="Replace entire document content")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def write_markdown_cmd(
@@ -595,6 +715,7 @@ def write_markdown_cmd(
     stdin: bool,
     at: str,
     replace: bool,
+    tab_id: str | None,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -624,7 +745,9 @@ def write_markdown_cmd(
     index = _parse_at(at, as_json) if not replace else None
     client = _get_client(as_json)
     try:
-        client.write_markdown(document_id, content, index=index, replace=replace)
+        client.write_markdown(
+            document_id, content, index=index, replace=replace, tab_id=tab_id,
+        )
     except Exception as e:
         _handle_api_error(
             e, as_json, {"document_id": document_id, "replace": replace, "at": at}
@@ -643,10 +766,12 @@ def write_markdown_cmd(
 @click.option("--rows", required=True, type=int, help="Number of rows")
 @click.option("--cols", required=True, type=int, help="Number of columns")
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_table_cmd(
-    document_id: str, rows: int, cols: int, at: str, quiet: bool, as_json: bool
+    document_id: str, rows: int, cols: int, at: str,
+    tab_id: str | None, quiet: bool, as_json: bool,
 ) -> None:
     """Insert a table into a document.
 
@@ -668,7 +793,7 @@ def insert_table_cmd(
     index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
-        client.insert_table(document_id, rows, cols, index=index)
+        client.insert_table(document_id, rows, cols, index=index, tab_id=tab_id)
     except Exception as e:
         _handle_api_error(
             e, as_json, {"document_id": document_id, "rows": rows, "cols": cols, "at": at}
@@ -688,6 +813,7 @@ def insert_table_cmd(
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--width", type=float, default=None, help="Image width in points")
 @click.option("--height", type=float, default=None, help="Image height in points")
+@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_image_cmd(
@@ -696,6 +822,7 @@ def insert_image_cmd(
     at: str,
     width: float | None,
     height: float | None,
+    tab_id: str | None,
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -712,7 +839,9 @@ def insert_image_cmd(
     index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
-        client.insert_image(document_id, uri, index=index, width=width, height=height)
+        client.insert_image(
+            document_id, uri, index=index, width=width, height=height, tab_id=tab_id,
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "uri": uri, "at": at})
 
@@ -724,56 +853,167 @@ def insert_image_cmd(
     output_result(receipt, as_json, quiet)
 
 
-@docs.command("inspect")
-@click.argument("document_id")
-@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def inspect_cmd(document_id: str, quiet: bool, as_json: bool) -> None:
-    """Inspect document structure with indices.
+# ── Tab management ──────────────────────────────────────────────────────
 
-    Shows each element's type, start/end indices, and preview text.
-    Use this to plan index-based edits.
+@docs.command("list-tabs")
+@click.argument("document_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def list_tabs(document_id: str, as_json: bool) -> None:
+    """List all tabs in a document.
 
     Examples:
 
-        desk docs inspect <id>
-
-        desk docs inspect <id> --json
+        desk docs list-tabs <document-id>
     """
     client = _get_client(as_json)
     try:
-        result = client.inspect(document_id)
+        tab_list = client.list_tabs(document_id)
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id})
 
     if as_json:
-        print(json.dumps(result, indent=2))
+        print(json.dumps(tab_list, indent=2))
         return
 
-    if quiet:
+    if not tab_list:
+        console.print("No tabs found.")
         return
 
-    console.print(f"[bold]{result['title']}[/bold]")
-    console.print(f"[dim]Document end index: {result['endIndex']}[/dim]")
-    console.print()
+    table = Table(show_header=True)
+    table.add_column("Tab ID", width=20)
+    table.add_column("Title", width=30)
+    table.add_column("Index", width=6, justify="right")
+    table.add_column("Parent", width=20)
 
-    for elem in result["elements"]:
-        etype = elem["type"]
-        start = elem["startIndex"]
-        end = elem["endIndex"]
+    for t in tab_list:
+        table.add_row(
+            t["tabId"],
+            t["title"],
+            str(t["index"]),
+            t.get("parentTabId") or "",
+        )
 
-        if etype == "paragraph":
-            style = elem.get("style", "NORMAL_TEXT")
-            text_preview = elem.get("text", "")
-            if text_preview:
-                console.print(
-                    f"  [{start}:{end}] [cyan]{style}[/cyan] {escape(text_preview[:80])}"
+    console.print(table)
+
+
+@docs.command("add-tab")
+@click.argument("document_id")
+@click.option("--title", "-t", required=True, help="Title for the new tab")
+@click.option("--index", "-i", type=int, default=None, help="Position index")
+@click.option("--parent", default=None, help="Parent tab ID for nesting")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def add_tab(
+    document_id: str, title: str, index: int | None,
+    parent: str | None, quiet: bool, as_json: bool,
+) -> None:
+    """Add a new tab to a document.
+
+    Examples:
+
+        desk docs add-tab <id> --title "Notes"
+
+        desk docs add-tab <id> --title "Appendix" --index 2
+
+        desk docs add-tab <id> --title "Sub-Tab" --parent <parent-tab-id>
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.add_tab(document_id, title, index=index, parent_tab_id=parent)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "title": title})
+
+    receipt = operation_receipt(
+        operation="add-tab",
+        target={
+            "document_id": document_id,
+            "tab_id": result.get("tabId"),
+            "title": result.get("title"),
+        },
+        undo_command=f"desk docs delete-tab {document_id} --tab {result.get('tabId')} --yes",
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("delete-tab")
+@click.argument("document_id")
+@click.option("--tab", "tab_id", required=True, help="Tab ID to delete")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def delete_tab(
+    document_id: str, tab_id: str, yes: bool, quiet: bool, as_json: bool,
+) -> None:
+    """Delete a tab from a document.
+
+    Examples:
+
+        desk docs delete-tab <id> --tab <tab-id>
+
+        desk docs delete-tab <id> --tab <tab-id> --yes
+    """
+    client = _get_client(as_json)
+
+    if not yes:
+        if not sys.stdin.isatty():
+            if as_json:
+                error = structured_error(
+                    ErrorCode.INVALID_INPUT,
+                    "Non-interactive mode requires --yes flag",
+                    suggestions=["Use --yes to confirm deletion in non-interactive mode"],
                 )
+                print(json.dumps(error, indent=2))
             else:
-                console.print(f"  [{start}:{end}] [cyan]{style}[/cyan] [dim](empty)[/dim]")
-        elif etype == "table":
-            rows = elem.get("rows", 0)
-            cols = elem.get("columns", 0)
-            console.print(f"  [{start}:{end}] [yellow]TABLE[/yellow] {rows}x{cols}")
-        elif etype == "sectionBreak":
-            console.print(f"  [{start}:{end}] [dim]SECTION_BREAK[/dim]")
+                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            sys.exit(1)
+        if not click.confirm(f"Delete tab {tab_id}? This cannot be undone."):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    try:
+        client.delete_tab(document_id, tab_id)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"document_id": document_id, "tab_id": tab_id})
+
+    receipt = operation_receipt(
+        operation="delete-tab",
+        target={
+            "document_id": document_id,
+            "tab_id": tab_id,
+        },
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@docs.command("rename-tab")
+@click.argument("document_id")
+@click.option("--tab", "tab_id", required=True, help="Tab ID to rename")
+@click.option("--title", "-t", required=True, help="New title for the tab")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def rename_tab(
+    document_id: str, tab_id: str, title: str, quiet: bool, as_json: bool,
+) -> None:
+    """Rename a tab.
+
+    Examples:
+
+        desk docs rename-tab <id> --tab <tab-id> --title "New Name"
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.rename_tab(document_id, tab_id, title)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"document_id": document_id, "tab_id": tab_id, "title": title}
+        )
+
+    receipt = operation_receipt(
+        operation="rename-tab",
+        target={
+            "document_id": document_id,
+            "tab_id": result.get("tabId"),
+            "title": result.get("title"),
+        },
+    )
+    output_result(receipt, as_json, quiet)

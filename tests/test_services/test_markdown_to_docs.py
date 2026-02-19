@@ -261,6 +261,36 @@ class TestMarkdownToRequests:
         insert_text = result[0]["insertText"]["text"]
         assert "\r" not in insert_text
 
+    def test_tab_id_injected_into_insert_location(self):
+        result = markdown_to_requests("Hello", base_index=1, tab_id="t.1")
+        insert = result[0]["insertText"]
+        assert insert["location"]["tabId"] == "t.1"
+        assert insert["location"]["index"] == 1
+
+    def test_tab_id_injected_into_style_ranges(self):
+        result = markdown_to_requests("**bold**", base_index=1, tab_id="t.1")
+        style = result[1]["updateTextStyle"]
+        assert style["range"]["tabId"] == "t.1"
+
+    def test_tab_id_injected_into_heading_ranges(self):
+        result = markdown_to_requests("# Title", base_index=1, tab_id="t.1")
+        para_reqs = [r for r in result if "updateParagraphStyle" in r]
+        assert len(para_reqs) == 1
+        assert para_reqs[0]["updateParagraphStyle"]["range"]["tabId"] == "t.1"
+
+    def test_tab_id_injected_into_bullet_ranges(self):
+        result = markdown_to_requests("- one\n- two", base_index=1, tab_id="t.1")
+        bullet_reqs = [r for r in result if "createParagraphBullets" in r]
+        assert len(bullet_reqs) == 1
+        assert bullet_reqs[0]["createParagraphBullets"]["range"]["tabId"] == "t.1"
+
+    def test_no_tab_id_when_none(self):
+        result = markdown_to_requests("**bold**", base_index=1, tab_id=None)
+        insert = result[0]["insertText"]
+        assert "tabId" not in insert["location"]
+        style = result[1]["updateTextStyle"]
+        assert "tabId" not in style["range"]
+
 
 class TestDocsEditingUtils:
     """Tests for the docs_editing utility functions."""
