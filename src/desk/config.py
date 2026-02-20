@@ -17,7 +17,7 @@ def get_bundled_credentials() -> dict | None:
     import json
 
     try:
-        ref = resources.files("desk.data").joinpath("credentials.json")
+        ref = resources.files("desk.data").joinpath("client.json")
         data = json.loads(ref.read_text(encoding="utf-8"))
         # Check it's not the placeholder
         installed = data.get("installed", {})

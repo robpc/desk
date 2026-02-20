@@ -42,10 +42,7 @@ htmlcov/
 # macOS
 .DS_Store
 
-# Credentials - NEVER commit user tokens
+# Credentials - NEVER commit these
+credentials.json
 token.json
 client_secret*.json
-
-# Ignore user-provided credentials at root, but allow bundled package data
-credentials.json
-!src/desk/data/credentials.json
