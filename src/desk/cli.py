@@ -268,7 +268,7 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
         console.print()
         console.print("Now running authentication flow...")
         try:
-            login(verbose=verbose)
+            login(verbose=verbose, credentials_path=str(credentials))
         except Exception as e:
             console.print(f"[red]Authentication failed: {e}[/red]")
             sys.exit(1)
@@ -281,7 +281,20 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
 
     status = get_auth_status()
 
-    if status["gcloud_available"]:
+    # Check if bundled credentials are available
+    from desk.config import get_bundled_credentials
+
+    has_bundled = get_bundled_credentials() is not None
+
+    if has_bundled:
+        console.print("Bundled credentials detected. Running authentication flow...")
+        try:
+            login(verbose=verbose)
+        except Exception as e:
+            console.print(f"[red]Authentication failed: {e}[/red]")
+            sys.exit(1)
+        console.print("[green]Authentication successful![/green]")
+    elif status["gcloud_available"]:
         console.print("Choose setup method:")
         console.print()
         console.print("  [bold]1.[/bold] gcloud (simplest, for personal use)")
@@ -290,10 +303,10 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
         console.print("  [bold]2.[/bold] Team credentials (for shared projects)")
         console.print("     Run: [cyan]desk setup --credentials /path/to/credentials.json[/cyan]")
     else:
-        console.print("gcloud not found. Using team credentials setup.")
+        console.print("No credentials found.")
         console.print()
         console.print("To set up:")
-        console.print("  1. Get credentials.json from your team's 1Password vault")
+        console.print("  1. Get credentials.json from your team")
         console.print("  2. Run: [cyan]desk setup --credentials /path/to/credentials.json[/cyan]")
 
 

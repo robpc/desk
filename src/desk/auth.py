@@ -15,7 +15,14 @@ from google.auth.exceptions import DefaultCredentialsError, RefreshError, Transp
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
-from desk.config import CREDENTIALS_FILE, GCLOUD_SCOPES, SCOPES, TOKEN_FILE, ensure_config_dir
+from desk.config import (
+    CREDENTIALS_FILE,
+    GCLOUD_SCOPES,
+    SCOPES,
+    TOKEN_FILE,
+    ensure_config_dir,
+    get_bundled_credentials,
+)
 
 # Debug logging - enable with DESK_DEBUG=1
 _logger = logging.getLogger("desk.auth")
@@ -167,38 +174,57 @@ def _get_adc_credentials() -> Credentials | None:
         return None
 
 
-def login(verbose: bool = False) -> Credentials:
+def login(verbose: bool = False, credentials_path: str | None = None) -> Credentials:
     """Run OAuth flow to get new credentials.
 
     Opens browser for user to authenticate.
-    Requires credentials.json to be present.
+
+    Credentials resolution order:
+    1. Explicit credentials_path argument
+    2. User-provided ~/.desk/credentials.json
+    3. Bundled package credentials
+    4. Error with instructions
     """
-    if not CREDENTIALS_FILE.exists():
-        print(f"Error: No credentials file found at {CREDENTIALS_FILE}")
-        print()
-        print("Options:")
-        print()
-        print("  Option 1 - Use gcloud (simplest):")
-        print("    desk auth login --gcloud")
-        print()
-        print("  Option 2 - Use team credentials:")
-        print("    1. Get credentials.json from your team's 1Password vault")
-        print(f"    2. Copy to {CREDENTIALS_FILE}")
-        print("    3. Run: desk auth login")
-        print()
-        sys.exit(1)
+    from google_auth_oauthlib.flow import InstalledAppFlow
 
     ensure_config_dir()
 
+    # 1. Explicit path
+    if credentials_path:
+        if verbose:
+            print(f"Using credentials from {credentials_path}")
+        flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+    # 2. User-provided credentials file
+    elif CREDENTIALS_FILE.exists():
+        if verbose:
+            print(f"Using credentials from {CREDENTIALS_FILE}")
+        flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
+    # 3. Bundled credentials
+    else:
+        bundled = get_bundled_credentials()
+        if bundled:
+            if verbose:
+                print("Using bundled credentials")
+            flow = InstalledAppFlow.from_client_config(bundled, SCOPES)
+        else:
+            print("Error: No credentials available.")
+            print()
+            print("Options:")
+            print()
+            print("  Option 1 - Use gcloud (simplest):")
+            print("    desk auth login --gcloud")
+            print()
+            print("  Option 2 - Use team credentials:")
+            print("    1. Get credentials.json from your team")
+            print(f"    2. Copy to {CREDENTIALS_FILE}")
+            print("    3. Run: desk auth login")
+            print()
+            sys.exit(1)
+
     if verbose:
-        print(f"Using credentials from {CREDENTIALS_FILE}")
         print("Opening browser for authentication...")
 
-    from google_auth_oauthlib.flow import InstalledAppFlow
-
-    flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
     creds = flow.run_local_server(port=0)
-
     _save_credentials(creds)
 
     if verbose:
