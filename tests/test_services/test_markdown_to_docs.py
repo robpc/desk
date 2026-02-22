@@ -2,6 +2,10 @@
 
 from desk.services.markdown_to_docs import (
     MarkdownConverter,
+    TableData,
+    _cell_empty_index,
+    _empty_table_size,
+    _table_total_size,
     markdown_to_requests,
 )
 
@@ -342,3 +346,326 @@ class TestDocsEditingUtils:
 
         # "a" (1) + U+1F600 (2) + "b" (1) = 4
         assert utf16_len("a\U0001f600b") == 4
+
+
+# ── Table parsing tests ──────────────────────────────────────────────
+
+
+class TestTableParsing:
+    """Tests for markdown table parsing into segments."""
+
+    def test_simple_table_produces_table_segment(self):
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments("| A | B |\n|---|---|\n| 1 | 2 |")
+        table_segs = [s for s in segments if s.segment_type == "table"]
+        assert len(table_segs) == 1
+        table = table_segs[0].table
+        assert table is not None
+        assert table.headers == ["A", "B"]
+        assert table.rows == [["1", "2"]]
+        assert table.num_cols == 2
+        assert table.num_rows == 2
+
+    def test_table_with_multiple_body_rows(self):
+        md = "| H1 | H2 |\n|---|---|\n| a | b |\n| c | d |\n| e | f |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        assert table.headers == ["H1", "H2"]
+        assert table.rows == [["a", "b"], ["c", "d"], ["e", "f"]]
+        assert table.num_rows == 4  # 1 header + 3 body
+
+    def test_table_with_three_columns(self):
+        md = "| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        assert table.num_cols == 3
+        assert table.headers == ["A", "B", "C"]
+        assert table.rows == [["1", "2", "3"]]
+
+    def test_text_before_table(self):
+        md = "Hello world\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        assert len(segments) == 2
+        assert segments[0].segment_type == "text"
+        assert "Hello world" in segments[0].text
+        assert segments[1].segment_type == "table"
+
+    def test_text_after_table(self):
+        md = "| A | B |\n|---|---|\n| 1 | 2 |\n\nGoodbye"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        assert len(segments) == 2
+        assert segments[0].segment_type == "table"
+        assert segments[1].segment_type == "text"
+        assert "Goodbye" in segments[1].text
+
+    def test_text_table_text(self):
+        md = "Before\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nAfter"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        assert len(segments) == 3
+        assert segments[0].segment_type == "text"
+        assert segments[1].segment_type == "table"
+        assert segments[2].segment_type == "text"
+
+    def test_multiple_tables(self):
+        md = (
+            "| A | B |\n|---|---|\n| 1 | 2 |\n\n"
+            "Some text\n\n"
+            "| C | D |\n|---|---|\n| 3 | 4 |"
+        )
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        tables = [s for s in segments if s.segment_type == "table"]
+        assert len(tables) == 2
+
+    def test_bold_in_cell(self):
+        md = "| **Bold** | Normal |\n|---|---|\n| x | y |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        assert table.headers == ["Bold", "Normal"]
+        # First header cell should have a bold annotation
+        bold = [a for a in table.header_annotations[0] if a.style_type == "bold"]
+        assert len(bold) == 1
+        assert bold[0].start == 0
+        assert bold[0].end == 4  # len("Bold")
+
+    def test_italic_in_cell(self):
+        md = "| *Italic* | Normal |\n|---|---|\n| x | y |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        italic = [a for a in table.header_annotations[0] if a.style_type == "italic"]
+        assert len(italic) == 1
+
+    def test_code_in_cell(self):
+        md = "| `code` | Normal |\n|---|---|\n| x | y |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        code = [a for a in table.header_annotations[0] if a.style_type == "code"]
+        assert len(code) == 1
+
+    def test_link_in_cell(self):
+        md = "| [link](http://x.com) | Normal |\n|---|---|\n| x | y |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        links = [a for a in table.header_annotations[0] if a.style_type == "link"]
+        assert len(links) == 1
+        assert links[0].url == "http://x.com"
+
+    def test_empty_cell(self):
+        md = "| A | |\n|---|---|\n| | B |"
+        converter = MarkdownConverter()
+        segments = converter.convert_to_segments(md)
+        table = segments[0].table
+        assert table is not None
+        assert table.headers == ["A", ""]
+        assert table.rows == [["", "B"]]
+
+    def test_convert_backwards_compat_ignores_tables(self):
+        """convert() returns flat text without table content."""
+        converter = MarkdownConverter()
+        text, annotations = converter.convert(
+            "Hello\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nWorld"
+        )
+        assert "Hello" in text
+        assert "World" in text
+        # Table content should not appear in flat text
+        assert "|" not in text
+
+
+# ── Table index calculation tests ────────────────────────────────────
+
+
+class TestTableIndexCalculation:
+    """Tests for the deterministic cell index formula."""
+
+    def test_empty_table_size_2x2(self):
+        # 2 rows * (2*2 + 1) + 3 = 2*5 + 3 = 13
+        assert _empty_table_size(2, 2) == 13
+
+    def test_empty_table_size_3x3(self):
+        # 3 * (2*3 + 1) + 3 = 3*7 + 3 = 24
+        assert _empty_table_size(3, 3) == 24
+
+    def test_empty_table_size_1x1(self):
+        # 1 * (2*1 + 1) + 3 = 3 + 3 = 6
+        assert _empty_table_size(1, 1) == 6
+
+    def test_cell_index_2x2_at_index_1(self):
+        """Verify against known indices from Google Docs API research."""
+        # 2x2 table at index 1: cell(0,0)=5, cell(0,1)=7, cell(1,0)=10, cell(1,1)=12
+        assert _cell_empty_index(1, 0, 0, 2) == 5
+        assert _cell_empty_index(1, 0, 1, 2) == 7
+        assert _cell_empty_index(1, 1, 0, 2) == 10
+        assert _cell_empty_index(1, 1, 1, 2) == 12
+
+    def test_cell_index_3x2_at_index_1(self):
+        """3 rows, 2 columns at index 1."""
+        # Row stride = 2*2 + 1 = 5
+        # cell(0,0) = 1+4 = 5, cell(0,1) = 7
+        # cell(1,0) = 1+4+5 = 10, cell(1,1) = 12
+        # cell(2,0) = 1+4+10 = 15, cell(2,1) = 17
+        assert _cell_empty_index(1, 0, 0, 2) == 5
+        assert _cell_empty_index(1, 0, 1, 2) == 7
+        assert _cell_empty_index(1, 1, 0, 2) == 10
+        assert _cell_empty_index(1, 1, 1, 2) == 12
+        assert _cell_empty_index(1, 2, 0, 2) == 15
+        assert _cell_empty_index(1, 2, 1, 2) == 17
+
+    def test_cell_index_with_offset_base(self):
+        """Table at a non-1 base index."""
+        # At index 20: cell(0,0) = 20+4 = 24
+        assert _cell_empty_index(20, 0, 0, 2) == 24
+        assert _cell_empty_index(20, 0, 1, 2) == 26
+
+    def test_table_total_size_empty_cells(self):
+        table = TableData(
+            headers=["A", "B"],
+            header_annotations=[[], []],
+            rows=[["", ""]],
+            row_annotations=[[[]]],
+        )
+        # Fix: row_annotations needs same shape
+        table.row_annotations = [[[], []]]
+        # empty size = 2*(2*2+1)+3 = 13, content = 1+1+0+0 = 2
+        assert _table_total_size(table) == 13 + 2  # "A" + "B" = 2 chars
+
+    def test_table_total_size_with_content(self):
+        table = TableData(
+            headers=["Name", "Age"],
+            header_annotations=[[], []],
+            rows=[["Alice", "30"]],
+            row_annotations=[[[], []]],
+        )
+        # empty = 2*(2*2+1)+3 = 13
+        # content = 4+3+5+2 = 14 (Name, Age, Alice, 30)
+        assert _table_total_size(table) == 13 + 14
+
+
+# ── Table request generation tests ───────────────────────────────────
+
+
+class TestTableRequests:
+    """Tests for batchUpdate request generation with tables."""
+
+    def test_simple_table_generates_insert_table(self):
+        md = "| A | B |\n|---|---|\n| 1 | 2 |"
+        result = markdown_to_requests(md, base_index=1)
+        table_reqs = [r for r in result if "insertTable" in r]
+        assert len(table_reqs) == 1
+        req = table_reqs[0]["insertTable"]
+        assert req["rows"] == 2
+        assert req["columns"] == 2
+        assert req["location"]["index"] == 1
+
+    def test_table_cell_inserts_in_reverse_order(self):
+        md = "| A | B |\n|---|---|\n| 1 | 2 |"
+        result = markdown_to_requests(md, base_index=1)
+        cell_inserts = [r for r in result if "insertText" in r]
+        # Should have 4 cell inserts (A, B, 1, 2) in reverse order
+        assert len(cell_inserts) == 4
+        indices = [r["insertText"]["location"]["index"] for r in cell_inserts]
+        # Reverse order means indices should be descending
+        assert indices == sorted(indices, reverse=True)
+
+    def test_table_cell_indices_match_formula(self):
+        md = "| A | B |\n|---|---|\n| 1 | 2 |"
+        result = markdown_to_requests(md, base_index=1)
+        cell_inserts = [r for r in result if "insertText" in r]
+        # Reverse order: cell(1,1)=12, cell(1,0)=10, cell(0,1)=7, cell(0,0)=5
+        texts_and_indices = [
+            (r["insertText"]["text"], r["insertText"]["location"]["index"])
+            for r in cell_inserts
+        ]
+        assert ("2", 12) in texts_and_indices
+        assert ("1", 10) in texts_and_indices
+        assert ("B", 7) in texts_and_indices
+        assert ("A", 5) in texts_and_indices
+
+    def test_table_headers_are_bolded(self):
+        md = "| H1 | H2 |\n|---|---|\n| a | b |"
+        result = markdown_to_requests(md, base_index=1)
+        bold_reqs = [
+            r for r in result
+            if "updateTextStyle" in r
+            and r["updateTextStyle"]["textStyle"].get("bold") is True
+        ]
+        # Should have bold for H1 and H2
+        assert len(bold_reqs) >= 2
+
+    def test_text_before_table(self):
+        md = "Hello\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        result = markdown_to_requests(md, base_index=1)
+        # First request should be insertText for "Hello\n"
+        assert result[0]["insertText"]["text"] == "Hello\n"
+        assert result[0]["insertText"]["location"]["index"] == 1
+        # Then insertTable at cursor after text
+        table_reqs = [r for r in result if "insertTable" in r]
+        assert len(table_reqs) == 1
+        # "Hello\n" = 6 UTF-16 units, so table starts at 1+6=7
+        assert table_reqs[0]["insertTable"]["location"]["index"] == 7
+
+    def test_text_after_table(self):
+        md = "| A | B |\n|---|---|\n| 1 | 2 |\n\nGoodbye"
+        result = markdown_to_requests(md, base_index=1)
+        # Should have insertTable, cell inserts, and then insertText for "Goodbye\n"
+        text_inserts = [
+            r for r in result
+            if "insertText" in r and r["insertText"]["text"] == "Goodbye\n"
+        ]
+        assert len(text_inserts) == 1
+
+    def test_base_index_offsets_table(self):
+        md = "| X |\n|---|\n| Y |"
+        result = markdown_to_requests(md, base_index=10)
+        table_req = [r for r in result if "insertTable" in r][0]
+        assert table_req["insertTable"]["location"]["index"] == 10
+
+    def test_empty_cell_no_insert(self):
+        md = "| A | |\n|---|---|\n| | B |"
+        result = markdown_to_requests(md, base_index=1)
+        cell_inserts = [r for r in result if "insertText" in r]
+        # Only cells with content get inserts: A and B
+        texts = [r["insertText"]["text"] for r in cell_inserts]
+        assert "A" in texts
+        assert "B" in texts
+        assert "" not in texts
+
+    def test_formatting_in_body_cell(self):
+        md = "| H |\n|---|\n| **bold** |"
+        result = markdown_to_requests(md, base_index=1)
+        bold_reqs = [
+            r for r in result
+            if "updateTextStyle" in r
+            and r["updateTextStyle"]["textStyle"].get("bold") is True
+        ]
+        # Should have bold for header "H" AND for body cell "bold"
+        assert len(bold_reqs) >= 2
+
+    def test_multiple_tables(self):
+        md = (
+            "| A |\n|---|\n| 1 |\n\n"
+            "Between\n\n"
+            "| B |\n|---|\n| 2 |"
+        )
+        result = markdown_to_requests(md, base_index=1)
+        table_reqs = [r for r in result if "insertTable" in r]
+        assert len(table_reqs) == 2
+        # Second table should be at a higher index than the first
+        assert (
+            table_reqs[1]["insertTable"]["location"]["index"]
+            > table_reqs[0]["insertTable"]["location"]["index"]
+        )
