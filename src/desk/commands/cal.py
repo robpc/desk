@@ -387,7 +387,7 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
     "--add-attendee", "-a", "add_attendees", multiple=True, help="Email to add (repeatable)"
 )
 @click.option(
-    "--remove-attendee", "-r", "remove_attendees", multiple=True, help="Email to remove (repeatable)"
+    "--remove-attendee", "-r", "remove_attendees", multiple=True, help="Email to remove (sends cancellation notification)"
 )
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -442,7 +442,11 @@ def update(
     if add_attendees:
         changes["added_attendees"] = list(add_attendees)
     if remove_attendees:
-        changes["removed_attendees"] = list(remove_attendees)
+        actually_removed = event.get("removedAttendees", [])
+        changes["removed_attendees"] = actually_removed
+        not_found = [e for e in remove_attendees if e.lower() not in {r.lower() for r in actually_removed}]
+        if not_found:
+            changes["not_found_attendees"] = list(not_found)
 
     receipt = operation_receipt(
         operation="update",

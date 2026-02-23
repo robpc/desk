@@ -244,12 +244,16 @@ class CalendarClient:
                     if email not in existing_emails:
                         existing.append({"email": email})
                 event["attendees"] = existing
+            actually_removed: list[str] = []
             if remove_attendees:
                 remove_set = {e.lower() for e in remove_attendees}
-                event["attendees"] = [
-                    a for a in event.get("attendees", [])
-                    if a.get("email", "").lower() not in remove_set
+                existing = event.get("attendees", [])
+                kept = [a for a in existing if a.get("email", "").lower() not in remove_set]
+                actually_removed = [
+                    a.get("email", "") for a in existing
+                    if a.get("email", "").lower() in remove_set
                 ]
+                event["attendees"] = kept
 
             result = (
                 self.service.events()
@@ -261,7 +265,10 @@ class CalendarClient:
                 )
                 .execute()
             )
-            return self._parse_event(result)
+            parsed = self._parse_event(result)
+            if remove_attendees:
+                parsed["removedAttendees"] = actually_removed
+            return parsed
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 

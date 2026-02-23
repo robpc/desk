@@ -189,6 +189,107 @@ class TestCalendarDelete:
                 client.delete("nonexistent_id")
 
 
+class TestCalendarUpdateRemoveAttendees:
+    """Tests for CalendarClient.update with remove_attendees."""
+
+    def _make_client(self, mock_credentials, mock_service):
+        """Helper: create a CalendarClient backed by a mock service."""
+        with patch("desk.services.calendar.build") as mock_build:
+            mock_build.return_value = mock_service
+            from desk.services.calendar import CalendarClient
+            return CalendarClient(mock_credentials)
+
+    def _setup_event(self, mock_service, attendees):
+        """Helper: configure mock to return an event with given attendees."""
+        events_mock = mock_service.events.return_value
+        event = {
+            "id": "ev1",
+            "summary": "Team Sync",
+            "start": {"dateTime": "2024-01-15T09:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T10:00:00-05:00"},
+            "attendees": [{"email": e} for e in attendees],
+        }
+        events_mock.get.return_value.execute.return_value = dict(event)
+        # update() returns the same event structure
+        events_mock.update.return_value.execute.return_value = dict(event)
+        return events_mock
+
+    def test_remove_attendee_filters_from_list(self, mock_credentials):
+        """Should remove matching attendee from the event body sent to API."""
+        mock_service = MagicMock()
+        events_mock = self._setup_event(
+            mock_service, ["alice@example.com", "bob@example.com"]
+        )
+        client = self._make_client(mock_credentials, mock_service)
+        client.update("ev1", remove_attendees=["bob@example.com"])
+
+        body = events_mock.update.call_args[1]["body"]
+        emails = [a["email"] for a in body["attendees"]]
+        assert "bob@example.com" not in emails
+        assert "alice@example.com" in emails
+
+    def test_remove_attendee_case_insensitive(self, mock_credentials):
+        """Should match emails case-insensitively."""
+        mock_service = MagicMock()
+        events_mock = self._setup_event(
+            mock_service, ["Alice@Example.com", "bob@example.com"]
+        )
+        client = self._make_client(mock_credentials, mock_service)
+        client.update("ev1", remove_attendees=["alice@example.com"])
+
+        body = events_mock.update.call_args[1]["body"]
+        emails = [a["email"] for a in body["attendees"]]
+        assert "Alice@Example.com" not in emails
+        assert "bob@example.com" in emails
+
+    def test_remove_nonexistent_attendee_is_no_op(self, mock_credentials):
+        """Removing an email not in the list should leave attendees unchanged."""
+        mock_service = MagicMock()
+        events_mock = self._setup_event(
+            mock_service, ["alice@example.com"]
+        )
+        client = self._make_client(mock_credentials, mock_service)
+        result = client.update("ev1", remove_attendees=["nobody@example.com"])
+
+        body = events_mock.update.call_args[1]["body"]
+        emails = [a["email"] for a in body["attendees"]]
+        assert "alice@example.com" in emails
+        assert result["removedAttendees"] == []
+
+    def test_remove_multiple_attendees(self, mock_credentials):
+        """Should remove multiple attendees in one call."""
+        mock_service = MagicMock()
+        events_mock = self._setup_event(
+            mock_service, ["alice@example.com", "bob@example.com", "carol@example.com"]
+        )
+        client = self._make_client(mock_credentials, mock_service)
+        client.update("ev1", remove_attendees=["alice@example.com", "carol@example.com"])
+
+        body = events_mock.update.call_args[1]["body"]
+        emails = [a["email"] for a in body["attendees"]]
+        assert emails == ["bob@example.com"]
+
+    def test_removed_attendees_in_result(self, mock_credentials):
+        """Result should include removedAttendees with actually removed emails."""
+        mock_service = MagicMock()
+        self._setup_event(
+            mock_service, ["alice@example.com", "bob@example.com"]
+        )
+        client = self._make_client(mock_credentials, mock_service)
+        result = client.update("ev1", remove_attendees=["bob@example.com"])
+
+        assert result["removedAttendees"] == ["bob@example.com"]
+
+    def test_no_removed_attendees_key_when_not_removing(self, mock_credentials):
+        """Result should not include removedAttendees when not removing anyone."""
+        mock_service = MagicMock()
+        self._setup_event(mock_service, ["alice@example.com"])
+        client = self._make_client(mock_credentials, mock_service)
+        result = client.update("ev1", summary="New Title")
+
+        assert "removedAttendees" not in result
+
+
 class TestParseEventAttendees:
     """Tests for attendee structure in _parse_event output."""
 
