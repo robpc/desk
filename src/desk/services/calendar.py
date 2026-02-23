@@ -208,6 +208,7 @@ class CalendarClient:
         end: str | None = None,
         description: str | None = None,
         add_attendees: list[str] | None = None,
+        remove_attendees: list[str] | None = None,
         calendar_id: str = "primary",
     ) -> dict:
         """Update an existing event.
@@ -219,6 +220,7 @@ class CalendarClient:
             end: New end time (or None to keep)
             description: New description (or None to keep)
             add_attendees: Email addresses to add
+            remove_attendees: Email addresses to remove
             calendar_id: Calendar ID
 
         Returns:
@@ -242,6 +244,12 @@ class CalendarClient:
                     if email not in existing_emails:
                         existing.append({"email": email})
                 event["attendees"] = existing
+            if remove_attendees:
+                remove_set = {e.lower() for e in remove_attendees}
+                event["attendees"] = [
+                    a for a in event.get("attendees", [])
+                    if a.get("email", "").lower() not in remove_set
+                ]
 
             result = (
                 self.service.events()

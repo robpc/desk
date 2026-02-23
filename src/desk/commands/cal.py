@@ -386,6 +386,9 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
 @click.option(
     "--add-attendee", "-a", "add_attendees", multiple=True, help="Email to add (repeatable)"
 )
+@click.option(
+    "--remove-attendee", "-r", "remove_attendees", multiple=True, help="Email to remove (repeatable)"
+)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
@@ -395,6 +398,7 @@ def update(
     end: str | None,
     description: str | None,
     add_attendees: tuple[str, ...],
+    remove_attendees: tuple[str, ...],
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -409,6 +413,8 @@ def update(
         desk cal update <id> --start 2024-01-15T14:00:00 --end 2024-01-15T15:00:00
 
         desk cal update <id> -a newperson@example.com
+
+        desk cal update <id> -r former.employee@example.com
     """
     client = _get_client(as_json)
     try:
@@ -419,6 +425,7 @@ def update(
             end=end,
             description=description,
             add_attendees=list(add_attendees) if add_attendees else None,
+            remove_attendees=list(remove_attendees) if remove_attendees else None,
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"event_id": event_id})
@@ -434,6 +441,8 @@ def update(
         changes["description"] = description
     if add_attendees:
         changes["added_attendees"] = list(add_attendees)
+    if remove_attendees:
+        changes["removed_attendees"] = list(remove_attendees)
 
     receipt = operation_receipt(
         operation="update",
