@@ -100,6 +100,61 @@ class TestCalNext:
         assert "events" in output
 
 
+class TestCalUpdate:
+    """Tests for desk cal update command."""
+
+    def test_update_with_remove_attendee(self, runner, mock_get_credentials, mock_calendar_client_class):
+        """Should pass remove_attendees through to client and show receipt."""
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.update.return_value = {
+            "id": "ev1",
+            "summary": "Team Sync",
+            "htmlLink": "https://calendar.google.com/event?eid=ev1",
+            "removedAttendees": ["bob@example.com"],
+        }
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, [
+            "update", "ev1",
+            "--remove-attendee", "bob@example.com",
+            "--json",
+        ])
+
+        assert result.exit_code == 0
+        mock_client.update.assert_called_once()
+        call_kwargs = mock_client.update.call_args
+        assert call_kwargs[1]["remove_attendees"] == ["bob@example.com"]
+
+        output = json.loads(result.output)
+        assert output["changes"]["removed_attendees"] == ["bob@example.com"]
+
+    def test_update_remove_nonexistent_shows_not_found(self, runner, mock_get_credentials, mock_calendar_client_class):
+        """Receipt should include not_found_attendees when email wasn't in attendee list."""
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.update.return_value = {
+            "id": "ev1",
+            "summary": "Team Sync",
+            "htmlLink": "https://calendar.google.com/event?eid=ev1",
+            "removedAttendees": [],
+        }
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, [
+            "update", "ev1",
+            "--remove-attendee", "nobody@example.com",
+            "--json",
+        ])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["removed_attendees"] == []
+        assert output["changes"]["not_found_attendees"] == ["nobody@example.com"]
+
+
 class TestCalList:
     """Tests for desk cal list command."""
 
