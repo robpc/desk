@@ -342,7 +342,15 @@ class CalendarClient:
             "description": event.get("description", ""),
             "htmlLink": event.get("htmlLink", ""),
             "status": event.get("status", ""),
-            "attendees": [a.get("email", "") for a in attendees],
+            "attendees": [
+                {
+                    "email": a.get("email", ""),
+                    "responseStatus": a.get("responseStatus", "needsAction"),
+                    "organizer": a.get("organizer", False),
+                    "self": a.get("self", False),
+                }
+                for a in attendees
+            ],
             "attendeeCount": len(attendees),
         }
 
