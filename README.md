@@ -1,26 +1,64 @@
 # Desk
 
-Google Workspace from the command line — Gmail, Drive, Sheets, Docs, Calendar. Unix philosophy: simple commands that compose with pipes.
+Google Workspace from the command line — Gmail, Drive, Sheets, Docs, Calendar, and Forms. Unix philosophy: simple commands that compose with pipes.
 
 ## Quick Start
 
 ```bash
-pip install -e .
+uv tool install git+https://github.com/robpc/desk
+desk setup
+desk mail search "is:unread"
+```
 
-# Setup (choose one)
-desk setup --gcloud                    # Easiest: use gcloud credentials
-desk setup --credentials creds.json    # Team: use shared OAuth credentials
+## Installation
 
-# Use it
-desk mail search "from:boss is:unread"
-desk mail read <message-id>
-desk drive recent
-desk cal today
+### Recommended: uv (fastest)
+
+```bash
+uv tool install git+https://github.com/robpc/desk
+```
+
+### Alternative: pipx
+
+```bash
+pipx install git+https://github.com/robpc/desk
+```
+
+### Alternative: pip + venv
+
+```bash
+python3 -m venv ~/.local/share/desk-venv
+~/.local/share/desk-venv/bin/pip install git+https://github.com/robpc/desk
+mkdir -p ~/.local/bin
+ln -sf ~/.local/share/desk-venv/bin/desk ~/.local/bin/desk
+```
+
+### Don't have Python?
+
+Install [uv](https://docs.astral.sh/uv/) — it manages Python for you:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install git+https://github.com/robpc/desk
+```
+
+### Troubleshooting
+
+**`externally-managed-environment` error**: Your system Python is managed by Homebrew (or similar). Use uv or pipx instead of `pip install` directly.
+
+**`desk: command not found` after install**: `~/.local/bin` may not be on your PATH. Add it:
+
+```bash
+# zsh (macOS default)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+# bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ## Setup
 
-### Option A: gcloud (Simplest)
+### Quick (gcloud users)
 
 If you have `gcloud` installed and authenticated:
 
@@ -28,121 +66,60 @@ If you have `gcloud` installed and authenticated:
 desk setup --gcloud
 ```
 
-That's it. Uses your existing gcloud Application Default Credentials.
+### Standard (team credentials)
 
-### Option B: Team Credentials
-
-For teams sharing a Google Cloud project, get the `credentials.json` from your team (e.g., 1Password vault):
+Get `credentials.json` from your team (e.g., 1Password vault):
 
 ```bash
 desk setup --credentials ~/Downloads/credentials.json
 ```
 
-### Option C: Create Your Own Credentials
+### From scratch (create your own)
 
 This takes about 10 minutes the first time.
 
-#### 1. Create a Google Cloud Project
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or use an existing one)
-
-#### 2. Enable APIs
-
-1. Go to **APIs & Services** → **Library**
-2. Enable: **Gmail API**, **Google Drive API**, **Google Sheets API**, **Google Docs API**, **Google Calendar API**
-
-#### 3. Create OAuth Credentials
-
-1. Go to **APIs & Services** → **Credentials**
-2. Click **Create Credentials** → **OAuth client ID**
-3. If prompted, configure the OAuth consent screen:
-   - User type: External (or Internal for Workspace)
-   - App name: "Desk" (or whatever you like)
-   - Scopes: Add Gmail, Drive, Sheets, Docs, Calendar scopes
-4. Application type: **Desktop app**
-5. Name: "Desk"
-6. Click **Create**
-7. Download the JSON file
-
-#### 4. Install Credentials
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a project
+2. Go to **APIs & Services** → **Library** and enable: **Gmail API**, **Google Drive API**, **Google Sheets API**, **Google Docs API**, **Google Calendar API**, **Google Forms API**
+3. Go to **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID**
+4. If prompted, configure the OAuth consent screen (User type: External, App name: "Desk")
+5. Application type: **Desktop app**, Name: "Desk", click **Create**
+6. Download the JSON file, then:
 
 ```bash
 mkdir -p ~/.desk
 mv ~/Downloads/client_secret_*.json ~/.desk/credentials.json
-```
-
-#### 5. Authenticate
-
-```bash
 desk auth login
 ```
 
-This opens your browser. Log in with your Google account and approve access. Done!
+## Usage
 
-## Commands
+### Discovering commands
+
+```bash
+desk --help                    # All command groups
+desk mail --help               # All mail commands
+desk mail search --help        # Detailed help for a command
+```
 
 ### Mail (Gmail)
 
 ```bash
-# Search and read
-desk mail search "query"                # Search messages (Gmail search syntax)
-desk mail search "from:boss" --max 10
-desk mail unread                        # Shortcut for search "is:unread"
-desk mail read <id>                     # Read a message
-
-# Threads (conversations)
-desk mail threads "from:boss"           # Search by thread
-desk mail thread <thread-id>            # Read entire conversation
-desk mail thread-archive <thread-id>    # Archive entire thread
-desk mail thread-label Work <thread-id> # Label entire thread
-desk mail thread-trash <thread-id>      # Trash entire thread
-
-# Send email
+desk mail search "from:boss" --max 10    # Search messages
+desk mail unread                         # Unread messages
+desk mail read <id>                      # Read a message
+desk mail threads "from:boss"            # Search by thread
+desk mail thread <thread-id>             # Read entire conversation
 desk mail send --to "user@example.com" --subject "Hello" --body "Message"
-desk mail send --to "a@b.com" --cc "c@d.com" --subject "Update" --body-file notes.txt
-echo "Report" | desk mail send --to "boss@example.com" --subject "Report" --stdin
-
-# Reply and forward
 desk mail reply <id> --body "Thanks!"
-desk mail reply <id> --all --body "Sounds good"  # Reply all
 desk mail forward <id> --to "colleague@example.com" --body "FYI"
-
-# Drafts
-desk mail drafts                        # List drafts
-desk mail draft create --to "..." --subject "..." --body "..."
-desk mail draft read <draft-id>
-desk mail draft send <draft-id>
-desk mail draft delete <draft-id>
-desk mail draft update <draft-id> --body "Updated"
-
-# Attachments
-desk mail attachments <id>              # List attachments
-desk mail attachment <id> "file.pdf" --output file.pdf
-desk mail attachment <id> "data.csv" | head -5   # Pipe to stdout
+desk mail drafts                         # List drafts
+desk mail labels                         # List labels
+desk mail archive <id>...                # Archive messages
+desk mail trash <id>...                  # Move to trash
+desk mail star <id>...                   # Star messages
+desk mail label <label> <id>...          # Add a label
+desk mail attachments <id>               # List attachments
 desk mail download-attachments <id> --output-dir ./files/
-
-# Labels
-desk mail labels                        # List available labels
-desk mail create-label "Projects/Work"  # Create label (/ for nesting)
-desk mail create-label "Urgent" --color red  # Create with color
-desk mail delete-label "Old Label"      # Delete a label (removes from messages)
-desk mail rename-label "Old" "New"      # Rename a label
-desk mail label <label> <id>...         # Add a label
-desk mail remove-label <label> <id>...  # Remove a label
-
-# Actions
-desk mail archive <id>...               # Archive messages
-desk mail trash <id>...                 # Move to trash
-desk mail mark-read <id>...             # Mark as read
-desk mail mark-unread <id>...           # Mark as unread
-desk mail star <id>...                  # Star messages
-desk mail unstar <id>...                # Unstar messages
-desk mail modify <id>... -a Work -r INBOX  # Generic label changes
-
-# Dry run (preview without executing)
-desk mail archive <id> --dry-run
-desk mail send --to "..." --subject "..." --body "..." --dry-run
 ```
 
 ### Drive
@@ -153,16 +130,11 @@ desk drive recent --max 10                    # Recently modified files
 desk drive read <file-id>                     # Read file content
 desk drive info <file-id>                     # File metadata
 desk drive upload report.pdf                  # Upload a file
-desk drive upload data.csv --folder <id>      # Upload to specific folder
-desk drive download <file-id>                 # Download to current dir
-desk drive download <file-id> ~/Downloads/    # Download to path
+desk drive download <file-id>                 # Download a file
 desk drive mkdir "Project Files"              # Create a folder
 desk drive move <file-id> <folder-id>         # Move file to folder
 desk drive trash <file-id>                    # Move to trash
-desk drive share <file-id> bob@co.com         # Share as writer
-desk drive share <id> bob@co.com --role reader # Share as reader
-desk drive star <file-id>                     # Star a file
-desk drive unstar <file-id>                   # Unstar a file
+desk drive share <file-id> bob@co.com         # Share with someone
 ```
 
 ### Sheets
@@ -172,22 +144,20 @@ desk sheets read <spreadsheet-id>                    # Read entire first sheet
 desk sheets read <id> --range "Sheet1!A1:C10"        # Read specific range
 desk sheets update-cell <id> "Sheet1!A1" "New value" # Update a cell
 desk sheets create "Q1 Budget"                       # Create spreadsheet
-desk sheets write <id> "Sheet1!A1:B2" '[["A","B"],["1","2"]]'  # Write range
-desk sheets append <id> "Sheet1!A:Z" '[["Alice","30"]]'        # Append rows
+desk sheets write <id> "Sheet1!A1:B2" '[["A","B"],["1","2"]]'
+desk sheets append <id> "Sheet1!A:Z" '[["Alice","30"]]'
 desk sheets clear <id> "Sheet1!A1:C10"               # Clear a range
 ```
 
 ### Docs
 
 ```bash
-desk docs create "Meeting Notes"                       # Create a doc
-desk docs create "Draft" --body "Hello world"          # Create with content
-desk docs read <document-id>                           # Read document
-desk docs update <id> "Appended text"                  # Append text
-desk docs update <id> "New text" --mode prepend        # Prepend text
-desk docs update <id> "Replacement" --mode replace     # Replace all content
-desk docs export <id> report.pdf                       # Export as PDF
-desk docs export <id> notes.txt --format txt           # Export as text
+desk docs create "Meeting Notes"                 # Create a doc
+desk docs read <document-id>                     # Read document
+desk docs update <id> "Appended text"            # Append text
+desk docs update <id> "New" --mode replace       # Replace all content
+desk docs export <id> report.pdf                 # Export as PDF
+desk docs export <id> notes.txt --format txt     # Export as text
 ```
 
 ### Calendar
@@ -195,38 +165,30 @@ desk docs export <id> notes.txt --format txt           # Export as text
 ```bash
 desk cal today                    # Today's events
 desk cal week                     # This week's events
-desk cal next --max 5             # Next upcoming events
-desk cal list                     # List all calendars
-desk cal find "standup"           # Search events by text
+desk cal next --max 5             # Upcoming events
+desk cal list                     # List calendars
+desk cal find "standup"           # Search events
 desk cal create "Meeting" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00
-desk cal create "Sync" --start ... --end ... -a bob@co.com -a alice@co.com
 desk cal update <event-id> --summary "New Title"
-desk cal update <id> -a newperson@co.com
 desk cal delete <event-id>
 ```
 
-### Batch Operations (Mail)
+### Forms
 
 ```bash
-# Multiple IDs
-desk mail archive ID1 ID2 ID3
-
-# Pipe from search
-desk mail search "from:notifications" --json | jq -r '.[].id' | desk mail archive --stdin
-
-# Combine operations with modify
-desk mail modify ID1 ID2 --remove-label INBOX --remove-label UNREAD
+desk forms create "Survey"                       # Create a form
+desk forms read <form-id>                        # Read form structure
+desk forms responses <form-id>                   # List responses
+desk forms add-question <form-id> "Your name?" --type short-answer
+desk forms add-section <form-id> "Part 2"        # Add a section
 ```
 
-### Auth
+### Batch Operations
 
 ```bash
-desk setup               # Interactive setup guide
-desk setup --gcloud      # Use gcloud ADC (simplest)
-desk setup --credentials ~/path/to/credentials.json
-
-desk auth login          # Re-authenticate
-desk auth status         # Check authentication status
+desk mail archive ID1 ID2 ID3                                                    # Multiple IDs
+desk mail search "from:notifications" --json | jq -r '.[].id' | desk mail archive --stdin  # Pipe
+desk mail modify ID1 ID2 --remove-label INBOX --remove-label UNREAD              # Combine
 ```
 
 ### Output Formats
@@ -239,6 +201,13 @@ desk drive recent --json
 desk cal today --json
 ```
 
+## Updating
+
+```bash
+desk update              # Update to latest
+desk update --check      # Check without updating
+```
+
 ## Migrating from gmail-cli
 
 If you previously used `gmail`, Desk will auto-migrate your config from `~/.gmail-cli/` to `~/.desk/` on first run. You'll need to re-authenticate to grant the expanded scopes (Drive, Sheets, Docs, Calendar).
@@ -246,7 +215,8 @@ If you previously used `gmail`, Desk will auto-migrate your config from `~/.gmai
 ## Development
 
 ```bash
-# Install in dev mode (use a virtualenv)
+git clone https://github.com/robpc/desk
+cd desk
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 

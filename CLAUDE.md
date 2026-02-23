@@ -2,6 +2,22 @@
 
 Guidance for Claude Code when working on Desk.
 
+## First-Run Check
+
+Before doing anything else, verify desk is installed and working:
+
+```bash
+desk --version
+```
+
+If `desk` is not found or the command fails:
+1. Check if `uv` is available: `uv --version`
+2. Install desk: `uv tool install git+https://github.com/robpc/desk`
+3. If `uv` is not available, install it first: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+4. Verify: `desk --version`
+
+Do not proceed with any desk-related work until `desk --version` succeeds.
+
 ## Before You Write Any Code
 
 Do these first. Not after. Not during. Before.
@@ -20,9 +36,11 @@ Skip this and you will ship incomplete work. The documentation is part of the de
 ## Quick Start
 
 ```bash
+# Install (one-time)
+uv tool install git+https://github.com/robpc/desk
+
 # Setup (one-time)
-pip install -e ".[dev]"
-desk auth login
+desk setup
 
 # Usage
 desk mail search "from:boss is:unread"
