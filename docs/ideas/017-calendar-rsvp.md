@@ -58,3 +58,7 @@ Meeting management is incomplete without RSVP capability. This is a fundamental 
 - The self attendee entry needs to be updated
 - Consider: `desk cal respond --all-pending --status declined` for bulk operations?
 - This is Google's vocabulary - "respond" and "RSVP" are standard calendar terms
+
+## Follow-on: Attendee RSVP enrichment (PR #16)
+
+The `_parse_event` method was updated to expose `responseStatus`, `organizer`, and `self` for each attendee in all calendar event output. Previously, attendees were returned as a flat list of email strings — now they are dicts with full RSVP metadata. This enables agents to inspect RSVP state from any calendar query without a separate API call.

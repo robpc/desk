@@ -187,3 +187,103 @@ class TestCalendarDelete:
             client = CalendarClient(mock_credentials)
             with pytest.raises(RuntimeError, match="Calendar API error"):
                 client.delete("nonexistent_id")
+
+
+class TestParseEventAttendees:
+    """Tests for attendee structure in _parse_event output."""
+
+    def _make_client_with_event(self, mock_credentials, event):
+        """Helper: create a CalendarClient that returns a single event from today()."""
+        with patch("desk.services.calendar.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            events_mock = mock_service.events.return_value
+            events_mock.list.return_value.execute.return_value = {
+                "items": [event]
+            }
+
+            from desk.services.calendar import CalendarClient
+
+            client = CalendarClient(mock_credentials)
+            result = client.today()
+            return result["events"][0]
+
+    def test_attendees_are_dicts_with_expected_keys(self, mock_credentials):
+        """Attendees should be dicts with email, responseStatus, organizer, self."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev1",
+            "summary": "Sync",
+            "start": {"dateTime": "2024-01-15T09:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T10:00:00-05:00"},
+            "attendees": [
+                {
+                    "email": "alice@example.com",
+                    "responseStatus": "accepted",
+                    "organizer": True,
+                    "self": False,
+                },
+            ],
+        })
+        assert len(event["attendees"]) == 1
+        attendee = event["attendees"][0]
+        assert attendee["email"] == "alice@example.com"
+        assert attendee["responseStatus"] == "accepted"
+        assert attendee["organizer"] is True
+        assert attendee["self"] is False
+
+    def test_response_status_populated_from_api(self, mock_credentials):
+        """Each attendee's responseStatus should reflect API data."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev2",
+            "summary": "Review",
+            "start": {"dateTime": "2024-01-15T11:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T12:00:00-05:00"},
+            "attendees": [
+                {"email": "alice@example.com", "responseStatus": "accepted"},
+                {"email": "bob@example.com", "responseStatus": "declined"},
+                {"email": "carol@example.com", "responseStatus": "tentative"},
+            ],
+        })
+        statuses = {a["email"]: a["responseStatus"] for a in event["attendees"]}
+        assert statuses["alice@example.com"] == "accepted"
+        assert statuses["bob@example.com"] == "declined"
+        assert statuses["carol@example.com"] == "tentative"
+
+    def test_missing_response_status_defaults_to_needs_action(self, mock_credentials):
+        """responseStatus should default to 'needsAction' when absent from API."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev3",
+            "summary": "New Invite",
+            "start": {"dateTime": "2024-01-15T13:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T14:00:00-05:00"},
+            "attendees": [
+                {"email": "dave@example.com"},
+            ],
+        })
+        assert event["attendees"][0]["responseStatus"] == "needsAction"
+
+    def test_missing_organizer_and_self_default_to_false(self, mock_credentials):
+        """organizer and self should default to False when absent from API."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev4",
+            "summary": "Standup",
+            "start": {"dateTime": "2024-01-15T09:30:00-05:00"},
+            "end": {"dateTime": "2024-01-15T09:45:00-05:00"},
+            "attendees": [
+                {"email": "eve@example.com", "responseStatus": "accepted"},
+            ],
+        })
+        assert event["attendees"][0]["organizer"] is False
+        assert event["attendees"][0]["self"] is False
+
+    def test_no_attendees_returns_empty_list(self, mock_credentials):
+        """Events with no attendees should have an empty attendees list."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev5",
+            "summary": "Personal Block",
+            "start": {"dateTime": "2024-01-15T12:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T13:00:00-05:00"},
+        })
+        assert event["attendees"] == []
+        assert event["attendeeCount"] == 0
