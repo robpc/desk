@@ -5,6 +5,7 @@ Supports two authentication methods:
 2. User-provided OAuth credentials (credentials.json) - for teams
 """
 
+import json as json_module
 import logging
 import os
 import subprocess
@@ -15,6 +16,7 @@ from google.auth.exceptions import DefaultCredentialsError, RefreshError, Transp
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
+from desk import keyring_store
 from desk.config import (
     CREDENTIALS_FILE,
     GCLOUD_SCOPES,
@@ -23,6 +25,9 @@ from desk.config import (
     ensure_config_dir,
     get_bundled_credentials,
 )
+
+# Fields safe to keep in plaintext metadata files (no secrets)
+_TOKEN_SENSITIVE_FIELDS = ("token", "refresh_token", "client_secret")
 
 # Debug logging - enable with DESK_DEBUG=1
 _logger = logging.getLogger("desk.auth")
@@ -78,22 +83,73 @@ def get_credentials() -> Credentials | None:
     return None
 
 
-def _get_oauth_credentials() -> Credentials | None:
-    """Get credentials from token.json (previous OAuth flow)."""
+def _migrate_token_to_keyring() -> None:
+    """Migrate token from token.json to keyring, then scrub secrets from file."""
     if not TOKEN_FILE.exists():
-        return None
-
+        return
     try:
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-    except (ValueError, KeyError) as e:
-        _logger.debug(f"Failed to parse token file: {e}")
-        _last_auth_failure["reason"] = f"Corrupted token file: {e}"
-        _last_auth_failure["error_code"] = "AUTH_INVALID"
-        return None
-    except Exception as e:
-        _logger.debug(f"Unexpected error loading token file: {type(e).__name__}: {e}")
-        _last_auth_failure["reason"] = f"Could not load token file: {type(e).__name__}: {e}"
-        _last_auth_failure["error_code"] = "AUTH_INVALID"
+        data = json_module.loads(TOKEN_FILE.read_text())
+    except (json_module.JSONDecodeError, OSError):
+        return
+    if "token" not in data and "refresh_token" not in data:
+        return  # Already scrubbed or not a real token
+    # Write full token to keyring
+    keyring_store.set_token(data)
+    # Scrub secrets from file, keep metadata
+    scrubbed = {k: v for k, v in data.items() if k not in _TOKEN_SENSITIVE_FIELDS}
+    TOKEN_FILE.write_text(json_module.dumps(scrubbed))
+
+
+def _migrate_credentials_to_keyring() -> None:
+    """Migrate credentials.json to keyring, then remove the file."""
+    if not CREDENTIALS_FILE.exists():
+        return
+    try:
+        data = json_module.loads(CREDENTIALS_FILE.read_text())
+    except (json_module.JSONDecodeError, OSError):
+        return
+    if "installed" in data:
+        keyring_store.set_client_credentials(data)
+        CREDENTIALS_FILE.unlink(missing_ok=True)
+
+
+def _get_oauth_credentials() -> Credentials | None:
+    """Get credentials from keyring or token.json (previous OAuth flow)."""
+    # Try keyring first
+    token_data = keyring_store.get_token()
+    if token_data:
+        try:
+            creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+        except (ValueError, KeyError) as e:
+            _logger.debug(f"Failed to parse keyring token: {e}")
+            _last_auth_failure["reason"] = f"Corrupted keyring token: {e}"
+            _last_auth_failure["error_code"] = "AUTH_INVALID"
+            return None
+    elif TOKEN_FILE.exists():
+        # Fall back to file — check if it has secrets (needs migration)
+        try:
+            file_data = json_module.loads(TOKEN_FILE.read_text())
+        except (json_module.JSONDecodeError, OSError):
+            return None
+        if "token" not in file_data and "refresh_token" not in file_data:
+            return None  # Scrubbed metadata only, no usable token
+        try:
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        except (ValueError, KeyError) as e:
+            _logger.debug(f"Failed to parse token file: {e}")
+            _last_auth_failure["reason"] = f"Corrupted token file: {e}"
+            _last_auth_failure["error_code"] = "AUTH_INVALID"
+            return None
+        except Exception as e:
+            _logger.debug(f"Unexpected error loading token file: {type(e).__name__}: {e}")
+            _last_auth_failure["reason"] = (
+                f"Could not load token file: {type(e).__name__}: {e}"
+            )
+            _last_auth_failure["error_code"] = "AUTH_INVALID"
+            return None
+        # Migrate to keyring
+        _migrate_token_to_keyring()
+    else:
         return None
 
     if creds.valid:
@@ -181,45 +237,64 @@ def login(verbose: bool = False, credentials_path: str | None = None) -> Credent
 
     Credentials resolution order:
     1. Explicit credentials_path argument
-    2. User-provided ~/.desk/credentials.json
-    3. Bundled package credentials
-    4. Error with instructions
+    2. Keyring client credentials
+    3. User-provided ~/.desk/credentials.json (migrates to keyring)
+    4. Bundled package credentials
+    5. Error with instructions
     """
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     ensure_config_dir()
+
+    flow = None
 
     # 1. Explicit path
     if credentials_path:
         if verbose:
             print(f"Using credentials from {credentials_path}")
         flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-    # 2. User-provided credentials file
-    elif CREDENTIALS_FILE.exists():
+
+    # 2. Keyring client credentials
+    if flow is None:
+        keyring_creds = keyring_store.get_client_credentials()
+        if keyring_creds:
+            if verbose:
+                print("Using credentials from keychain")
+            flow = InstalledAppFlow.from_client_config(keyring_creds, SCOPES)
+
+    # 3. User-provided credentials file (migrate to keyring)
+    if flow is None and CREDENTIALS_FILE.exists():
         if verbose:
             print(f"Using credentials from {CREDENTIALS_FILE}")
         flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
-    # 3. Bundled credentials
-    else:
+        _migrate_credentials_to_keyring()
+
+    # 4. Bundled credentials
+    if flow is None:
         bundled = get_bundled_credentials()
         if bundled:
             if verbose:
                 print("Using bundled credentials")
             flow = InstalledAppFlow.from_client_config(bundled, SCOPES)
-        else:
-            print("Error: No credentials available.")
-            print()
-            print("Options:")
-            print()
-            print("  Option 1 - Use gcloud (simplest):")
-            print("    desk auth login --gcloud")
-            print()
-            print("  Option 2 - Use team credentials:")
-            print("    1. Get credentials.json from your team")
-            print(f"    2. Copy to {CREDENTIALS_FILE}")
-            print("    3. Run: desk auth login")
-            print()
-            sys.exit(1)
+
+    # 5. Error with instructions
+    if flow is None:
+        print("Error: No credentials available.")
+        print()
+        print("Options:")
+        print()
+        print("  Option 1 - Use gcloud (simplest):")
+        print("    desk auth login --gcloud")
+        print()
+        print("  Option 2 - Use team credentials:")
+        print("    desk auth set-client --client-id X --client-secret Y")
+        print()
+        print("  Option 3 - Use credentials file:")
+        print("    1. Get credentials.json from your team")
+        print(f"    2. Copy to {CREDENTIALS_FILE}")
+        print("    3. Run: desk auth login")
+        print()
+        sys.exit(1)
 
     if verbose:
         print("Opening browser for authentication...")
@@ -228,7 +303,7 @@ def login(verbose: bool = False, credentials_path: str | None = None) -> Credent
     _save_credentials(creds)
 
     if verbose:
-        print(f"Token saved to {TOKEN_FILE}")
+        print("Token saved to keychain")
 
     return creds
 
@@ -282,17 +357,17 @@ def _gcloud_available() -> bool:
 
 
 def _save_credentials(creds: Credentials) -> None:
-    """Save credentials to token file."""
-    import json
-
+    """Save credentials to keyring. Write non-sensitive metadata to token file."""
     ensure_config_dir()
-    data = json.loads(creds.to_json())
-    # Preserve quota_project_id for gcloud ADC credentials —
-    # to_json() omits it, but from_authorized_user_file() restores it
+    data = json_module.loads(creds.to_json())
+    # Preserve quota_project_id for gcloud ADC credentials
     if getattr(creds, "quota_project_id", None):
         data["quota_project_id"] = creds.quota_project_id
-    TOKEN_FILE.write_text(json.dumps(data))
-    os.chmod(TOKEN_FILE, 0o600)
+    # Store full token in keyring
+    keyring_store.set_token(data)
+    # Write scrubbed metadata to file for debuggability
+    scrubbed = {k: v for k, v in data.items() if k not in _TOKEN_SENSITIVE_FIELDS}
+    TOKEN_FILE.write_text(json_module.dumps(scrubbed))
 
 
 def get_auth_status(verify: bool = False) -> dict:
@@ -308,8 +383,10 @@ def get_auth_status(verify: bool = False) -> dict:
         "authenticated": False,
         "gcloud_available": gcloud_available,
         "credentials_file": CREDENTIALS_FILE.exists(),
+        "credentials_in_keyring": keyring_store.get_client_credentials() is not None,
         "credentials_path": str(CREDENTIALS_FILE),
         "token_file": TOKEN_FILE.exists(),
+        "token_in_keyring": keyring_store.get_token() is not None,
         "token_path": str(TOKEN_FILE),
         "email": None,
         "services": None,  # Populated if verify=True

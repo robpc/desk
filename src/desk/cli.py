@@ -319,6 +319,44 @@ def auth() -> None:
     pass
 
 
+@auth.command("set-client")
+@click.option("--client-id", required=True, help="Google OAuth Client ID")
+@click.option("--client-secret", required=True, help="Google OAuth Client Secret")
+@click.option("--project-id", default=None, help="Google Cloud project ID")
+def auth_set_client(client_id: str, client_secret: str, project_id: str | None) -> None:
+    """Store Google OAuth credentials in the OS keychain.
+
+    Constructs the standard Google "installed" credentials block and stores
+    it in the OS keychain. Used by install scripts to provision credentials
+    without writing plaintext files to disk.
+    """
+    from desk.keyring_store import KeyringUnavailableError, check_keyring_backend
+
+    try:
+        check_keyring_backend()
+    except KeyringUnavailableError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    from desk import keyring_store
+
+    credentials = {
+        "installed": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "redirect_uris": ["http://localhost"],
+        }
+    }
+    if project_id:
+        credentials["installed"]["project_id"] = project_id
+
+    keyring_store.set_client_credentials(credentials)
+    console.print("Client credentials stored in keychain.")
+
+
 @auth.command("login")
 @click.option("--gcloud", "use_gcloud", is_flag=True, help="Use gcloud for authentication")
 @click.pass_context
