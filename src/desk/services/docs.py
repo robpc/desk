@@ -360,6 +360,42 @@ class DocsClient:
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
+    def find_paragraph_boundary(
+        self, document_id: str, index: int, position: str = "after",
+        tab_id: str | None = None,
+    ) -> int:
+        """Find a paragraph boundary near the given index.
+
+        Args:
+            document_id: The document ID
+            index: A character index within the target paragraph
+            position: "after" to get the end of the paragraph (insert point
+                     for adding content after it), or "before" to get the
+                     start of the paragraph.
+            tab_id: Optional tab ID
+
+        Returns:
+            The resolved insertion index at the paragraph boundary.
+
+        Raises:
+            RuntimeError: If no paragraph contains the given index.
+        """
+        _, body = self._get_body(document_id, tab_id)
+        for element in body.get("content", []):
+            if "paragraph" not in element:
+                continue
+            start = element.get("startIndex", 0)
+            end = element.get("endIndex", 0)
+            if start <= index < end:
+                if position == "before":
+                    return start
+                else:
+                    return end
+        raise RuntimeError(
+            f"No paragraph found containing index {index}. "
+            "Use 'desk docs inspect' to see valid indices."
+        )
+
     def insert_at(
         self, document_id: str, text: str, index: int | None = None,
         tab_id: str | None = None,
@@ -718,13 +754,26 @@ class DocsClient:
                     style = para.get("paragraphStyle", {})
                     named_style = style.get("namedStyleType", "NORMAL_TEXT")
                     text = self._extract_paragraph_text(para).rstrip("\n")
-                    elements.append({
+                    elem_dict: dict = {
                         "type": "paragraph",
                         "startIndex": start,
                         "endIndex": end,
                         "style": named_style,
                         "text": text[:200],
-                    })
+                    }
+                    if "bullet" in para:
+                        elem_dict["bullet"] = True
+                    has_hr_element = any(
+                        "horizontalRule" in pe
+                        for pe in para.get("elements", [])
+                    )
+                    has_border_hr = (
+                        not text
+                        and "borderBottom" in style
+                    )
+                    if has_hr_element or has_border_hr:
+                        elem_dict["horizontalRule"] = True
+                    elements.append(elem_dict)
                 elif "table" in element:
                     table = element["table"]
                     rows = len(table.get("tableRows", []))
@@ -788,12 +837,61 @@ class DocsClient:
         return self._extract_text_from_body(doc.get("body", {}))
 
     def _extract_text_from_body(self, body: dict) -> str:
-        """Extract text from a body dict. Handles paragraphs and tables."""
+        """Extract text from a body dict. Handles paragraphs and tables.
+
+        Bullet and numbered list items are prefixed with ``- `` or ``N. ``
+        so that agents can distinguish list items from plain paragraphs.
+        """
         parts = []
+        ordered_counter = 0
+        prev_list_id: str | None = None
+
         for element in body.get("content", []):
             if "paragraph" in element:
-                parts.append(self._extract_paragraph_text(element["paragraph"]))
+                para = element["paragraph"]
+                text = self._extract_paragraph_text(para)
+                bullet = para.get("bullet")
+                if bullet:
+                    list_id = bullet.get("listId", "")
+                    nesting = bullet.get("nestingLevel", 0)
+                    indent = "  " * nesting
+
+                    # Detect ordered vs unordered from the list's glyphType.
+                    # Google Docs stores list metadata at the document level
+                    # under "lists", but we may not always have access to it
+                    # from just the body.  Fall back to unordered when unknown.
+                    glyph = (
+                        bullet.get("listProperties", {})
+                        .get("nestingLevels", [{}])[0]
+                        .get("glyphType", "")
+                        if "listProperties" in bullet
+                        else ""
+                    )
+                    is_ordered = glyph.upper() in (
+                        "DECIMAL", "ALPHA", "ROMAN",
+                        "UPPER_ALPHA", "UPPER_ROMAN",
+                    )
+
+                    if is_ordered:
+                        if list_id != prev_list_id:
+                            ordered_counter = 1
+                        else:
+                            ordered_counter += 1
+                        prefix = f"{indent}{ordered_counter}. "
+                    else:
+                        prefix = f"{indent}- "
+
+                    # Prepend the bullet prefix to the first line
+                    text = prefix + text.lstrip()
+                    prev_list_id = list_id
+                else:
+                    prev_list_id = None
+                    ordered_counter = 0
+
+                parts.append(text)
             elif "table" in element:
+                prev_list_id = None
+                ordered_counter = 0
                 parts.append(self._extract_table_text(element["table"]))
         return "".join(parts)
 

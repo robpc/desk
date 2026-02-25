@@ -109,6 +109,90 @@ class TestDocsRead:
                 client.read("nonexistent_id")
 
 
+class TestDocsReadBullets:
+    """Tests for bullet list extraction in DocsClient.read."""
+
+    def test_unordered_bullets_prefixed_with_dash(self, mock_credentials):
+        """Bullet list items should be prefixed with '- ' in read output."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Bullet Doc",
+                "body": {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": "Header\n"}}],
+                            },
+                        },
+                        {
+                            "paragraph": {
+                                "bullet": {"listId": "kix.abc", "nestingLevel": 0},
+                                "elements": [{"textRun": {"content": "Item one\n"}}],
+                            },
+                        },
+                        {
+                            "paragraph": {
+                                "bullet": {"listId": "kix.abc", "nestingLevel": 0},
+                                "elements": [{"textRun": {"content": "Item two\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert "- Item one\n" in result["body"]
+            assert "- Item two\n" in result["body"]
+            assert "Header\n" in result["body"]
+            # Header should NOT have a bullet prefix
+            assert "- Header" not in result["body"]
+
+    def test_nested_bullets_indented(self, mock_credentials):
+        """Nested bullet items should have indentation."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Nested Doc",
+                "body": {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "bullet": {"listId": "kix.abc", "nestingLevel": 0},
+                                "elements": [{"textRun": {"content": "Top level\n"}}],
+                            },
+                        },
+                        {
+                            "paragraph": {
+                                "bullet": {"listId": "kix.abc", "nestingLevel": 1},
+                                "elements": [{"textRun": {"content": "Nested\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert "- Top level\n" in result["body"]
+            assert "  - Nested\n" in result["body"]
+
+
 class TestDocsReadTables:
     """Tests for table extraction in DocsClient.read."""
 
@@ -567,6 +651,116 @@ class TestDocsInsertAt:
             assert "endOfSegmentLocation" in req["insertText"]
 
 
+class TestDocsFindParagraphBoundary:
+    """Tests for DocsClient.find_paragraph_boundary method."""
+
+    def _make_client(self, mock_credentials, body_content):
+        """Helper to create a client with mocked document body."""
+        from unittest.mock import patch, MagicMock
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test Doc",
+                "body": {"content": body_content},
+            }
+            from desk.services.docs import DocsClient
+            client = DocsClient(mock_credentials)
+            return client
+
+    def test_after_returns_paragraph_end(self, mock_credentials):
+        """--after-paragraph should return the endIndex of the containing paragraph."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test",
+                "body": {
+                    "content": [
+                        {"startIndex": 0, "endIndex": 1, "sectionBreak": {}},
+                        {
+                            "startIndex": 1, "endIndex": 20,
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": "First paragraph\n"}}],
+                            },
+                        },
+                        {
+                            "startIndex": 20, "endIndex": 40,
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": "Second paragraph\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+            from desk.services.docs import DocsClient
+            client = DocsClient(mock_credentials)
+            result = client.find_paragraph_boundary("doc123", 10, position="after")
+            assert result == 20  # endIndex of first paragraph
+
+    def test_before_returns_paragraph_start(self, mock_credentials):
+        """--before-paragraph should return the startIndex of the containing paragraph."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test",
+                "body": {
+                    "content": [
+                        {"startIndex": 0, "endIndex": 1, "sectionBreak": {}},
+                        {
+                            "startIndex": 1, "endIndex": 20,
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": "First paragraph\n"}}],
+                            },
+                        },
+                        {
+                            "startIndex": 20, "endIndex": 40,
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": "Second paragraph\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+            from desk.services.docs import DocsClient
+            client = DocsClient(mock_credentials)
+            result = client.find_paragraph_boundary("doc123", 25, position="before")
+            assert result == 20  # startIndex of second paragraph
+
+    def test_index_not_in_any_paragraph_raises(self, mock_credentials):
+        """Should raise RuntimeError if index is not in any paragraph."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test",
+                "body": {
+                    "content": [
+                        {"startIndex": 0, "endIndex": 1, "sectionBreak": {}},
+                        {
+                            "startIndex": 1, "endIndex": 20,
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": "Only paragraph\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+            from desk.services.docs import DocsClient
+            client = DocsClient(mock_credentials)
+            with pytest.raises(RuntimeError, match="No paragraph found"):
+                client.find_paragraph_boundary("doc123", 999, position="after")
+
+
 class TestDocsDeleteRange:
     """Tests for DocsClient.delete_range method."""
 
@@ -829,6 +1023,146 @@ class TestDocsInspect:
             assert result["elements"][1]["type"] == "paragraph"
             assert result["elements"][1]["style"] == "HEADING_1"
             assert result["elements"][1]["startIndex"] == 1
+
+
+    def test_inspect_detects_bullet_list(self, mock_credentials):
+        """Should flag paragraphs with bullet property."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test Doc",
+                "body": {
+                    "content": [
+                        {
+                            "startIndex": 1,
+                            "endIndex": 15,
+                            "paragraph": {
+                                "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                                "bullet": {"listId": "kix.abc", "nestingLevel": 0},
+                                "elements": [{"textRun": {"content": "Bullet item\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.inspect("doc123")
+
+            assert len(result["elements"]) == 1
+            assert result["elements"][0]["bullet"] is True
+
+    def test_inspect_detects_horizontal_rule(self, mock_credentials):
+        """Should flag paragraphs containing a horizontalRule element."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test Doc",
+                "body": {
+                    "content": [
+                        {
+                            "startIndex": 50,
+                            "endIndex": 51,
+                            "paragraph": {
+                                "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                                "elements": [
+                                    {
+                                        "horizontalRule": {},
+                                        "startIndex": 50,
+                                        "endIndex": 51,
+                                    }
+                                ],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.inspect("doc123")
+
+            assert len(result["elements"]) == 1
+            assert result["elements"][0]["horizontalRule"] is True
+
+    def test_inspect_detects_border_bottom_hr(self, mock_credentials):
+        """Should detect empty paragraphs with borderBottom as horizontal rules."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test Doc",
+                "body": {
+                    "content": [
+                        {
+                            "startIndex": 50,
+                            "endIndex": 51,
+                            "paragraph": {
+                                "paragraphStyle": {
+                                    "namedStyleType": "NORMAL_TEXT",
+                                    "borderBottom": {
+                                        "color": {"color": {"rgbColor": {"red": 0.8, "green": 0.8, "blue": 0.8}}},
+                                        "width": {"magnitude": 1, "unit": "PT"},
+                                        "dashStyle": "SOLID",
+                                    },
+                                },
+                                "elements": [{"textRun": {"content": "\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.inspect("doc123")
+
+            assert len(result["elements"]) == 1
+            assert result["elements"][0]["horizontalRule"] is True
+
+    def test_inspect_normal_paragraph_no_extra_flags(self, mock_credentials):
+        """Normal paragraphs should not have bullet or horizontalRule flags."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Test Doc",
+                "body": {
+                    "content": [
+                        {
+                            "startIndex": 1,
+                            "endIndex": 15,
+                            "paragraph": {
+                                "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                                "elements": [{"textRun": {"content": "Normal text\n"}}],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.inspect("doc123")
+
+            assert len(result["elements"]) == 1
+            assert "bullet" not in result["elements"][0]
+            assert "horizontalRule" not in result["elements"][0]
 
 
 class TestDocsListTabs:

@@ -223,6 +223,52 @@ class TestMarkdownToRequests:
         ps = para_reqs[0]["updateParagraphStyle"]["paragraphStyle"]
         assert ps["namedStyleType"] == "HEADING_1"
 
+    def test_heading_followed_by_text_resets_to_normal(self):
+        """Issue #18: heading style should not bleed into following paragraphs."""
+        result = markdown_to_requests("## Heading\n\nBody text here.", base_index=1)
+        para_reqs = [r for r in result if "updateParagraphStyle" in r]
+        # Should have heading request AND a NORMAL_TEXT reset
+        heading_reqs = [
+            r for r in para_reqs
+            if r["updateParagraphStyle"]["paragraphStyle"].get("namedStyleType", "")
+            .startswith("HEADING_")
+        ]
+        normal_reqs = [
+            r for r in para_reqs
+            if r["updateParagraphStyle"]["paragraphStyle"].get("namedStyleType")
+            == "NORMAL_TEXT"
+        ]
+        assert len(heading_reqs) == 1
+        assert len(normal_reqs) == 1
+        # The NORMAL_TEXT reset should start where the heading ends
+        heading_end = heading_reqs[0]["updateParagraphStyle"]["range"]["endIndex"]
+        normal_start = normal_reqs[0]["updateParagraphStyle"]["range"]["startIndex"]
+        assert normal_start == heading_end
+
+    def test_heading_only_no_normal_reset(self):
+        """A heading with no following text should not produce a NORMAL_TEXT reset."""
+        result = markdown_to_requests("# Title", base_index=1)
+        normal_reqs = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and r["updateParagraphStyle"]["paragraphStyle"].get("namedStyleType")
+            == "NORMAL_TEXT"
+        ]
+        assert len(normal_reqs) == 0
+
+    def test_multiple_headings_each_reset(self):
+        """Multiple headings should each get a NORMAL_TEXT reset."""
+        result = markdown_to_requests(
+            "# H1\n\nBody\n\n## H2\n\nMore body", base_index=1
+        )
+        normal_reqs = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and r["updateParagraphStyle"]["paragraphStyle"].get("namedStyleType")
+            == "NORMAL_TEXT"
+        ]
+        assert len(normal_reqs) == 2
+
     def test_base_index_offsets_all_ranges(self):
         result = markdown_to_requests("**bold**", base_index=10)
         style = result[1]

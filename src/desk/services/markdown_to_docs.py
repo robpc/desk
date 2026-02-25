@@ -576,6 +576,7 @@ def _text_segment_to_requests(
         return []
 
     requests: list[dict] = []
+    text_end = cursor + utf16_len(segment.text)
     requests.append(
         {
             "insertText": {
@@ -589,6 +590,19 @@ def _text_segment_to_requests(
         start = cursor + ann.start
         end = cursor + ann.end
         requests.extend(_annotation_to_requests(ann, start, end, tab_id))
+
+        # After a heading, reset subsequent paragraphs to NORMAL_TEXT
+        # to prevent Google Docs API from bleeding heading style forward.
+        if ann.style_type.startswith("heading_") and end < text_end:
+            requests.append(
+                {
+                    "updateParagraphStyle": {
+                        "range": _make_range(end, text_end, tab_id),
+                        "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                        "fields": "namedStyleType",
+                    }
+                }
+            )
 
     return requests
 

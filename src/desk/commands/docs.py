@@ -271,6 +271,14 @@ def inspect_cmd(document_id: str, tab_id: str | None, quiet: bool, as_json: bool
         if etype == "paragraph":
             style = elem.get("style", "NORMAL_TEXT")
             text_preview = elem.get("text", "")
+            # Override display for special paragraph types
+            if elem.get("horizontalRule"):
+                console.print(
+                    f"  [{start}:{end}] [magenta]HORIZONTAL_RULE[/magenta]"
+                )
+                continue
+            if elem.get("bullet"):
+                style = "BULLET_LIST"
             if text_preview:
                 console.print(
                     f"  [{start}:{end}] [cyan]{style}[/cyan] {escape(text_preview[:80])}"
@@ -447,6 +455,14 @@ def update(
 @click.argument("document_id")
 @click.argument("text", required=False)
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
+@click.option(
+    "--after-paragraph", type=int, default=None,
+    help="Insert after the paragraph containing this index",
+)
+@click.option(
+    "--before-paragraph", type=int, default=None,
+    help="Insert before the paragraph containing this index",
+)
 @click.option("--file", "-f", "file_path", help="Read content from file")
 @click.option("--stdin", is_flag=True, help="Read content from stdin")
 @click.option("--tab", "tab_id", default=None, help="Tab ID to target")
@@ -456,6 +472,8 @@ def insert_cmd(
     document_id: str,
     text: str | None,
     at: str,
+    after_paragraph: int | None,
+    before_paragraph: int | None,
     file_path: str | None,
     stdin: bool,
     tab_id: str | None,
@@ -464,6 +482,9 @@ def insert_cmd(
 ) -> None:
     """Insert text at a specific position in a document.
 
+    Use --after-paragraph or --before-paragraph for paragraph-aware insertion
+    that snaps to paragraph boundaries, preventing mid-word splits.
+
     Examples:
 
         desk docs insert <id> "New text" --at end
@@ -471,7 +492,30 @@ def insert_cmd(
         desk docs insert <id> "Text at position 5" --at 5
 
         desk docs insert <id> --file notes.txt --at end
+
+        desk docs insert <id> "\\n" --after-paragraph 637
+
+        desk docs insert <id> "New section" --before-paragraph 638
     """
+    # Validate that paragraph options aren't combined with --at
+    para_opts = sum([after_paragraph is not None, before_paragraph is not None])
+    if para_opts > 1:
+        msg = "Use only one of --after-paragraph or --before-paragraph"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+    if para_opts == 1 and at != "end":
+        msg = "--after-paragraph and --before-paragraph cannot be used with --at"
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
     try:
         content = _read_content(text, file_path, stdin)
     except (click.UsageError, OSError) as e:
@@ -482,17 +526,37 @@ def insert_cmd(
             console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    index = _parse_at(at, as_json)
     client = _get_client(as_json)
+
+    # Resolve paragraph-aware index
+    if after_paragraph is not None or before_paragraph is not None:
+        try:
+            if after_paragraph is not None:
+                index = client.find_paragraph_boundary(
+                    document_id, after_paragraph, position="after", tab_id=tab_id,
+                )
+                at_label = f"after-paragraph({after_paragraph})->index({index})"
+            else:
+                index = client.find_paragraph_boundary(
+                    document_id, before_paragraph, position="before", tab_id=tab_id,
+                )
+                at_label = f"before-paragraph({before_paragraph})->index({index})"
+        except Exception as e:
+            _handle_api_error(e, as_json, {"document_id": document_id})
+            return  # unreachable but makes type checker happy
+    else:
+        index = _parse_at(at, as_json)
+        at_label = at
+
     try:
         client.insert_at(document_id, content, index=index, tab_id=tab_id)
     except Exception as e:
-        _handle_api_error(e, as_json, {"document_id": document_id, "at": at})
+        _handle_api_error(e, as_json, {"document_id": document_id, "at": at_label})
 
     receipt = operation_receipt(
         operation="insert",
         target={"id": document_id},
-        changes={"at": at, "text_length": len(content)},
+        changes={"at": at_label, "text_length": len(content)},
     )
     output_result(receipt, as_json, quiet)
 
