@@ -56,7 +56,6 @@ desk cal today
 ```
 desk (CLI entry point)
 ├── setup              → Interactive auth setup
-├── update             → Self-update to latest version
 ├── auth login         → OAuth flow, stores tokens
 ├── auth status        → Show current auth state
 ├── mail               → Gmail operations
@@ -153,9 +152,8 @@ Config/Tokens: ~/.desk/
 
 ## Key Files
 
-- `src/desk/cli.py` - Root CLI group, setup, auth, update commands
+- `src/desk/cli.py` - Root CLI group, setup, auth commands
 - `src/desk/auth.py` - OAuth flow and token management
-- `src/desk/update.py` - Self-update detection and execution
 - `src/desk/config.py` - Configuration, paths, scopes
 - `src/desk/commands/mail.py` - Gmail commands
 - `src/desk/commands/drive.py` - Drive commands

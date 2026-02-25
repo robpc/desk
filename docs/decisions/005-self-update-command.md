@@ -1,10 +1,10 @@
 ---
 id: 5
 title: Self-Update Command
-status: accepted
+status: superseded
 date: 2026-02-09
 supersedes: []
-superseded_by: null
+superseded_by: 13
 tags: [cli, developer-experience]
 ---
 

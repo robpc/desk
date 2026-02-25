@@ -201,13 +201,6 @@ desk drive recent --json
 desk cal today --json
 ```
 
-## Updating
-
-```bash
-desk update              # Update to latest
-desk update --check      # Check without updating
-```
-
 ## Migrating from gmail-cli
 
 If you previously used `gmail`, Desk will auto-migrate your config from `~/.gmail-cli/` to `~/.desk/` on first run. You'll need to re-authenticate to grant the expanded scopes (Drive, Sheets, Docs, Calendar).
