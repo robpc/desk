@@ -34,8 +34,9 @@ def _load_store() -> dict[str, Any]:
 def _save_store(store: dict[str, Any]) -> None:
     """Save the idempotency store to disk."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(IDEMPOTENCY_FILE, "w") as f:
+    with open(IDEMPOTENCY_FILE, "w", opener=lambda p, flags: os.open(p, flags, 0o600)) as f:
         json.dump(store, f, indent=2)
+    os.chmod(IDEMPOTENCY_FILE, 0o600)  # mitigation: restrict read access; operation result content risk remains
 
 
 def _cleanup_expired(store: dict[str, Any]) -> dict[str, Any]:
