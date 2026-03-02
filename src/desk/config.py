@@ -1,5 +1,6 @@
 """Configuration and path management."""
 
+import os
 from importlib import resources
 from pathlib import Path
 
@@ -50,8 +51,9 @@ GCLOUD_SCOPES = [
 
 
 def ensure_config_dir() -> Path:
-    """Ensure config directory exists and return its path."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    """Ensure config directory exists with restricted permissions and return its path."""
+    CONFIG_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(CONFIG_DIR, 0o700)  # fix pre-existing directories
     return CONFIG_DIR
 
 
