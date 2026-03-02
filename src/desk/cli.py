@@ -1,6 +1,7 @@
 """Desk - Google Workspace CLI."""
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -253,7 +254,8 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
         return
 
     if credentials:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
+        os.chmod(CONFIG_DIR, 0o700)  # fix pre-existing directories
         shutil.copy(credentials, CREDENTIALS_FILE)
         console.print(f"Copied credentials to {CREDENTIALS_FILE}")
         console.print()
