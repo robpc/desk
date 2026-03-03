@@ -1066,3 +1066,218 @@ class TestParseFullMessageLinks:
             result = client._parse_full_message(msg)
 
             assert result["links"] == []
+
+
+class TestListSendAsAliases:
+    """Tests for GmailClient.list_send_as_aliases method."""
+
+    def test_returns_aliases(self, mock_credentials):
+        """Should return list of alias dicts."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            settings = mock_service.users.return_value.settings.return_value
+            send_as = settings.sendAs.return_value
+            send_as.list.return_value.execute.return_value = {
+                "sendAs": [
+                    {
+                        "sendAsEmail": "primary@example.com",
+                        "displayName": "Primary",
+                        "isDefault": True,
+                        "isPrimary": True,
+                        "verificationStatus": "accepted",
+                    },
+                    {
+                        "sendAsEmail": "alias@example.com",
+                        "displayName": "Alias",
+                        "isDefault": False,
+                        "isPrimary": False,
+                        "verificationStatus": "accepted",
+                    },
+                ]
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            result = client.list_send_as_aliases()
+
+            assert len(result) == 2
+            assert result[0]["sendAsEmail"] == "primary@example.com"
+            assert result[0]["isDefault"] is True
+            assert result[1]["sendAsEmail"] == "alias@example.com"
+
+    def test_empty_aliases(self, mock_credentials):
+        """Should return empty list when no aliases configured."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            settings = mock_service.users.return_value.settings.return_value
+            send_as = settings.sendAs.return_value
+            send_as.list.return_value.execute.return_value = {"sendAs": []}
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            result = client.list_send_as_aliases()
+
+            assert result == []
+
+
+class TestDetectSendAsAlias:
+    """Tests for GmailClient.detect_send_as_alias method."""
+
+    def _make_client_with_aliases(self, mock_credentials, aliases):
+        """Helper to create a client with mocked aliases."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            settings = mock_service.users.return_value.settings.return_value
+            send_as = settings.sendAs.return_value
+            send_as.list.return_value.execute.return_value = {
+                "sendAs": aliases
+            }
+
+            from desk.services.gmail import GmailClient
+
+            return GmailClient(mock_credentials)
+
+    def test_matches_delivered_to(self, mock_credentials):
+        """Should match Delivered-To header first."""
+        aliases = [
+            {"sendAsEmail": "alias@example.com", "isPrimary": False,
+             "verificationStatus": "accepted"},
+            {"sendAsEmail": "primary@example.com", "isPrimary": True,
+             "verificationStatus": "accepted"},
+        ]
+        client = self._make_client_with_aliases(mock_credentials, aliases)
+        msg = {
+            "deliveredTo": "alias@example.com",
+            "to": "primary@example.com",
+        }
+        assert client.detect_send_as_alias(msg) == "alias@example.com"
+
+    def test_matches_to_header(self, mock_credentials):
+        """Should match To header when Delivered-To is absent."""
+        aliases = [
+            {"sendAsEmail": "alias@example.com", "isPrimary": False,
+             "verificationStatus": "accepted"},
+        ]
+        client = self._make_client_with_aliases(mock_credentials, aliases)
+        msg = {"to": "alias@example.com", "deliveredTo": ""}
+        assert client.detect_send_as_alias(msg) == "alias@example.com"
+
+    def test_matches_cc_header(self, mock_credentials):
+        """Should match CC when To doesn't match."""
+        aliases = [
+            {"sendAsEmail": "alias@example.com", "isPrimary": False,
+             "verificationStatus": "accepted"},
+        ]
+        client = self._make_client_with_aliases(mock_credentials, aliases)
+        msg = {
+            "to": "someone@other.com",
+            "cc": "alias@example.com",
+            "deliveredTo": "",
+        }
+        assert client.detect_send_as_alias(msg) == "alias@example.com"
+
+    def test_returns_none_when_no_match(self, mock_credentials):
+        """Should return None when no alias matches."""
+        aliases = [
+            {"sendAsEmail": "primary@example.com", "isPrimary": True,
+             "verificationStatus": "accepted"},
+        ]
+        client = self._make_client_with_aliases(mock_credentials, aliases)
+        msg = {"to": "unknown@other.com", "deliveredTo": "", "cc": ""}
+        assert client.detect_send_as_alias(msg) is None
+
+    def test_matches_name_angle_bracket_format(self, mock_credentials):
+        """Should match 'Name <email>' format in To header."""
+        aliases = [
+            {"sendAsEmail": "alias@example.com", "isPrimary": False,
+             "verificationStatus": "accepted"},
+        ]
+        client = self._make_client_with_aliases(mock_credentials, aliases)
+        msg = {
+            "to": "My Alias <alias@example.com>",
+            "deliveredTo": "",
+        }
+        assert client.detect_send_as_alias(msg) == "alias@example.com"
+
+    def test_case_insensitive_match(self, mock_credentials):
+        """Should match case-insensitively."""
+        aliases = [
+            {"sendAsEmail": "Alias@Example.com", "isPrimary": False,
+             "verificationStatus": "accepted"},
+        ]
+        client = self._make_client_with_aliases(mock_credentials, aliases)
+        msg = {
+            "to": "alias@example.com",
+            "deliveredTo": "",
+        }
+        assert client.detect_send_as_alias(msg) == "alias@example.com"
+
+
+class TestSendFromAlias:
+    """Tests for from_addr parameter on send/reply/forward."""
+
+    def test_send_sets_from_header(self, mock_credentials):
+        """send() with from_addr should set From MIME header."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            users = mock_service.users.return_value
+            messages = users.messages.return_value
+            messages.send.return_value.execute.return_value = {
+                "id": "msg123", "threadId": "t1"
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            client.send(
+                to=["recipient@example.com"],
+                subject="Test",
+                body="Hello",
+                from_addr="alias@example.com",
+            )
+
+            call_kwargs = messages.send.call_args[1]
+            import base64 as b64
+            raw = b64.urlsafe_b64decode(
+                call_kwargs["body"]["raw"]
+            ).decode("utf-8")
+            assert "alias@example.com" in raw
+            assert "from:" in raw.lower()
+
+    def test_send_without_from_has_no_from_header(self, mock_credentials):
+        """send() without from_addr should not set explicit From."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            users = mock_service.users.return_value
+            messages = users.messages.return_value
+            messages.send.return_value.execute.return_value = {
+                "id": "msg123", "threadId": "t1"
+            }
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            client.send(
+                to=["recipient@example.com"],
+                subject="Test",
+                body="Hello",
+            )
+
+            call_kwargs = messages.send.call_args[1]
+            import base64 as b64
+            raw = b64.urlsafe_b64decode(
+                call_kwargs["body"]["raw"]
+            ).decode("utf-8")
+            assert "From: alias" not in raw

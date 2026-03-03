@@ -21,6 +21,7 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=credentials)
         self.user_id = "me"
         self._labels_cache: list[dict] | None = None
+        self._aliases_cache: list[dict] | None = None
         self._timeout_services: dict[int, object] = {}
 
     def _build_service_with_timeout(self, timeout: int):
@@ -574,6 +575,7 @@ class GmailClient:
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
         html: bool = False,
+        from_addr: str | None = None,
     ) -> dict:
         """Send an email.
 
@@ -584,6 +586,7 @@ class GmailClient:
             cc: List of CC recipients
             bcc: List of BCC recipients
             html: If True, body is HTML with plain-text fallback
+            from_addr: Send from this alias (must be configured in Gmail)
 
         Returns:
             The sent message metadata (id, threadId, labelIds)
@@ -593,6 +596,8 @@ class GmailClient:
         message["to"] = ", ".join(to)
         message["subject"] = subject
 
+        if from_addr:
+            message["from"] = from_addr
         if cc:
             message["cc"] = ", ".join(cc)
         if bcc:
@@ -618,6 +623,7 @@ class GmailClient:
         body: str,
         reply_all: bool = False,
         html: bool = False,
+        from_addr: str | None = None,
     ) -> dict:
         """Reply to an email.
 
@@ -626,6 +632,7 @@ class GmailClient:
             body: Reply body (plain text, or HTML if html=True)
             reply_all: If True, reply to all recipients (To + CC)
             html: If True, body is HTML with plain-text fallback
+            from_addr: Send from this alias (overrides auto-detect)
 
         Returns:
             The sent message metadata
@@ -646,6 +653,10 @@ class GmailClient:
             if original.get("cc"):
                 cc_addrs = self._parse_addresses(original["cc"])
 
+        # Auto-detect which alias the message was sent to
+        if not from_addr:
+            from_addr = self.detect_send_as_alias(original)
+
         # Build subject with Re: prefix
         subject = original.get("subject", "")
         if not subject.lower().startswith("re:"):
@@ -656,6 +667,8 @@ class GmailClient:
         message["to"] = ", ".join(to_addrs)
         message["subject"] = subject
 
+        if from_addr:
+            message["from"] = from_addr
         if cc_addrs:
             message["cc"] = ", ".join(cc_addrs)
 
@@ -690,6 +703,7 @@ class GmailClient:
         to: list[str],
         body: str = "",
         html: bool = False,
+        from_addr: str | None = None,
     ) -> dict:
         """Forward an email.
 
@@ -698,6 +712,7 @@ class GmailClient:
             to: List of recipient email addresses
             body: Optional additional message to include before forwarded content
             html: If True, body is HTML with plain-text fallback
+            from_addr: Send from this alias (must be configured in Gmail)
 
         Returns:
             The sent message metadata
@@ -728,6 +743,9 @@ class GmailClient:
         message = self._build_mime_message(forward_body, html=html)
         message["to"] = ", ".join(to)
         message["subject"] = subject
+
+        if from_addr:
+            message["from"] = from_addr
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
 
@@ -1168,6 +1186,81 @@ class GmailClient:
         # Return as-is and let API error if invalid
         return label
 
+    # -------------------------------------------------------------------------
+    # Send-as aliases
+    # -------------------------------------------------------------------------
+
+    def list_send_as_aliases(self) -> list[dict]:
+        """List configured send-as aliases.
+
+        Returns:
+            List of alias dicts with sendAsEmail, displayName,
+            isDefault, verificationStatus.
+        """
+        try:
+            results = (
+                self.service.users()
+                .settings()
+                .sendAs()
+                .list(userId=self.user_id)
+                .execute()
+            )
+            return [
+                {
+                    "sendAsEmail": alias.get("sendAsEmail", ""),
+                    "displayName": alias.get("displayName", ""),
+                    "isDefault": alias.get("isDefault", False),
+                    "isPrimary": alias.get("isPrimary", False),
+                    "verificationStatus": alias.get(
+                        "verificationStatus", ""
+                    ),
+                }
+                for alias in results.get("sendAs", [])
+            ]
+        except HttpError as error:
+            raise RuntimeError(f"Gmail API error: {error}")
+
+    def detect_send_as_alias(self, message: dict) -> str | None:
+        """Detect which send-as alias a message was delivered to.
+
+        Matches Delivered-To, To, then CC headers against the user's
+        configured send-as aliases.  Returns the matching alias email,
+        or None if no match (caller should fall back to default).
+
+        Args:
+            message: Parsed message dict (from read())
+
+        Returns:
+            Matching alias email address, or None
+        """
+        try:
+            if self._aliases_cache is None:
+                self._aliases_cache = self.list_send_as_aliases()
+            aliases = self._aliases_cache
+        except RuntimeError:
+            return None
+
+        alias_emails = {
+            a["sendAsEmail"].lower()
+            for a in aliases
+            if a.get("verificationStatus") == "accepted"
+            or a.get("isPrimary")
+        }
+
+        # Check headers in priority order
+        for header_key in ("deliveredTo", "to", "cc"):
+            value = message.get(header_key, "")
+            if not value:
+                continue
+            for addr in self._parse_addresses(value):
+                # Extract bare email from "Name <email>" format
+                bare = addr.strip()
+                if "<" in bare and ">" in bare:
+                    bare = bare.split("<")[1].split(">")[0]
+                if bare.lower() in alias_emails:
+                    return bare
+        return None
+
     def _get_label_id(self, label_name: str) -> str | None:
         """Get label ID by name.
 
@@ -1194,6 +1287,7 @@ class GmailClient:
             "subject": headers.get("Subject", ""),
             "date": headers.get("Date", ""),
             "labelIds": msg.get("labelIds", []),
+            "deliveredTo": headers.get("Delivered-To", ""),
             # Headers needed for reply/forward
             "messageId": headers.get("Message-ID", headers.get("Message-Id", "")),
             "references": headers.get("References", ""),
