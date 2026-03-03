@@ -958,11 +958,7 @@ def aliases(as_json: bool) -> None:
     try:
         alias_list = client.list_send_as_aliases()
     except Exception as e:
-        if as_json:
-            print(json.dumps({"error": str(e)}, indent=2))
-        else:
-            console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
+        _handle_api_error(e, as_json, {"operation": "list-aliases"})
 
     if as_json:
         print(json.dumps(alias_list, indent=2))
@@ -973,10 +969,10 @@ def aliases(as_json: bool) -> None:
         return
 
     table = Table(show_header=True)
-    table.add_column("Email", width=35)
-    table.add_column("Name", width=25)
+    table.add_column("Email", no_wrap=True)
+    table.add_column("Name")
     table.add_column("Default", width=8)
-    table.add_column("Status", width=12)
+    table.add_column("Status")
 
     for a in alias_list:
         default = "yes" if a.get("isDefault") else ""
