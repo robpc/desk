@@ -133,29 +133,87 @@ def search(query: str, max_results: int, limit: int | None, page_token: str | No
         console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
 
 
+def _collect_ids(file_ids: tuple[str, ...], stdin: bool) -> list[str]:
+    """Collect file IDs from arguments and/or stdin."""
+    ids = list(file_ids)
+    if stdin:
+        for line in sys.stdin:
+            line = line.strip()
+            if line:
+                ids.append(line)
+    return ids
+
+
 @drive.command()
-@click.argument("file_id")
+@click.argument("file_ids", nargs=-1)
+@click.option("--stdin", is_flag=True, help="Read file IDs from stdin")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def read(file_id: str, as_json: bool) -> None:
+def read(file_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     """Read file content.
 
     Google Docs/Sheets/Slides are exported as plain text.
+    Uploaded Office files (.docx, .xlsx) are converted locally.
     Other files are downloaded as-is.
+
+    Accepts one or more file IDs as arguments, or piped via --stdin.
 
     Examples:
 
         desk drive read <file-id>
-    """
-    client = _get_client(as_json)
-    try:
-        content = client.read(file_id)
-    except Exception as e:
-        _handle_api_error(e, as_json, {"file_id": file_id})
 
+        desk drive read ID1 ID2 ID3
+
+        desk drive list-folder <id> --json | jq -r '.files[].id' | desk drive read --stdin
+    """
+    ids = _collect_ids(file_ids, stdin)
+    if not ids:
+        msg = "No file IDs provided"
+        if as_json:
+            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2))
+        else:
+            console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+
+    # Single file: original behavior
+    if len(ids) == 1:
+        try:
+            content = client.read(ids[0])
+        except Exception as e:
+            _handle_api_error(e, as_json, {"file_id": ids[0]})
+
+        if as_json:
+            print(json.dumps({"fileId": ids[0], "content": content}, indent=2))
+        else:
+            console.print(content)
+        return
+
+    # Multiple files: batch output
     if as_json:
-        print(json.dumps({"fileId": file_id, "content": content}, indent=2))
+        results = []
+        for fid in ids:
+            entry: dict = {"fileId": fid, "content": None, "error": None}
+            try:
+                entry["content"] = client.read(fid)
+            except Exception as e:
+                entry["error"] = structured_error(
+                    ErrorCode.OPERATION_FAILED,
+                    str(e),
+                    details={"fileId": fid},
+                )
+            results.append(entry)
+        print(json.dumps(results, indent=2))
     else:
-        console.print(content)
+        for i, fid in enumerate(ids):
+            console.print(f"[dim]--- {fid} ---[/dim]")
+            try:
+                content = client.read(fid)
+                console.print(content)
+            except Exception as e:
+                console.print(f"[red]Error reading {fid}: {e}[/red]")
+            if i < len(ids) - 1:
+                console.print()
 
 
 @drive.command()
@@ -889,6 +947,65 @@ def reply_comment(file_id: str, comment_id: str, text: str, quiet: bool, as_json
         },
     )
     output_result(receipt, as_json, quiet)
+
+
+@drive.command("list-folder")
+@click.argument("folder_id")
+@click.option("--max", "-n", "max_results", type=int, default=100, help="Max files to return")
+@click.option("--page-token", default=None, help="Pagination token")
+@click.option(
+    "--type", "file_type", default=None,
+    help="Filter by MIME type (e.g. 'document', 'spreadsheet', 'pdf')",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def list_folder(
+    folder_id: str,
+    max_results: int,
+    page_token: str | None,
+    file_type: str | None,
+    as_json: bool,
+) -> None:
+    """List files in a Drive folder.
+
+    Returns file metadata (id, name, type, modified time). Does NOT read content.
+    Pipe IDs to `desk drive read --stdin` to read content.
+
+    Examples:
+
+        desk drive list-folder <folder-id>
+
+        desk drive list-folder <folder-id> --type document --json
+
+        desk drive list-folder <id> --json | jq -r '.files[].id' | desk drive read --stdin
+    """
+    client = _get_client(as_json)
+
+    try:
+        result = client.list_folder(
+            folder_id,
+            max_results=max_results,
+            page_token=page_token,
+            file_type=file_type,
+        )
+    except Exception as e:
+        _handle_api_error(e, as_json, {"folder_id": folder_id})
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+
+    files = result.get("files", [])
+    if not files:
+        console.print("No files in folder.")
+        return
+
+    _print_file_table(files)
+
+    if result.get("nextPageToken"):
+        token = result["nextPageToken"]
+        console.print(
+            f"\n[dim]More results available. Use --page-token {token}[/dim]"
+        )
 
 
 def _print_file_table(files: list[dict]) -> None:

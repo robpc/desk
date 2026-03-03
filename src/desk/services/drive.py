@@ -1,12 +1,15 @@
 """Google Drive API wrapper."""
 
+import csv
 import io
 from pathlib import Path
 
+from docx import Document
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from openpyxl import load_workbook
 
 
 class DriveClient:
@@ -49,8 +52,16 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    # Mime types for uploaded Office files
+    _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
     def read(self, file_id: str) -> str:
         """Read file content as text (exports Google Docs/Sheets as plain text).
+
+        Google Workspace files are exported via the API. Uploaded Office files
+        (.docx, .xlsx) are downloaded and converted locally using python-docx
+        and openpyxl.
 
         Args:
             file_id: The file ID
@@ -80,9 +91,16 @@ class DriveClient:
                         "Use 'desk drive download' for large files."
                     )
                 content = self.service.files().get_media(fileId=file_id).execute()
-                if isinstance(content, bytes):
-                    return content.decode("utf-8", errors="replace")
-                return str(content)
+                if not isinstance(content, bytes):
+                    content = str(content).encode("utf-8")
+
+                # Route Office files to local converters
+                if mime == self._DOCX_MIME:
+                    return _read_docx(content)
+                elif mime == self._XLSX_MIME:
+                    return _read_xlsx(content)
+
+                return content.decode("utf-8", errors="replace")
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
@@ -625,9 +643,154 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    # Friendly name → MIME type prefix mapping for --type filter
+    _TYPE_MIME_MAP = {
+        "document": "application/vnd.google-apps.document",
+        "spreadsheet": "application/vnd.google-apps.spreadsheet",
+        "presentation": "application/vnd.google-apps.presentation",
+        "pdf": "application/pdf",
+        "folder": "application/vnd.google-apps.folder",
+        "image": "image/",
+        "video": "video/",
+        "audio": "audio/",
+    }
+
+    def list_folder(
+        self,
+        folder_id: str,
+        max_results: int = 100,
+        page_token: str | None = None,
+        file_type: str | None = None,
+    ) -> dict:
+        """List files in a folder with external pagination.
+
+        Filters out sub-folders and shortcuts at the query level (unless
+        file_type explicitly requests folders).
+
+        Args:
+            folder_id: The folder ID
+            max_results: Maximum number of files to return (default 100)
+            page_token: Token for fetching next page of results
+            file_type: Optional friendly type filter (e.g. 'document', 'spreadsheet', 'pdf')
+
+        Returns:
+            Dict with 'files' list and optional 'nextPageToken'
+        """
+        query = f"'{folder_id}' in parents and trashed=false"
+
+        if file_type:
+            mime = self._TYPE_MIME_MAP.get(file_type.lower())
+            if mime:
+                if mime.endswith("/"):
+                    # Prefix match (e.g. image/*)
+                    query += f" and mimeType contains '{mime}'"
+                else:
+                    query += f" and mimeType = '{mime}'"
+            else:
+                # Treat as raw MIME type
+                query += f" and mimeType = '{file_type}'"
+        else:
+            # Default: exclude folders and shortcuts
+            query += (
+                " and mimeType != 'application/vnd.google-apps.folder'"
+                " and mimeType != 'application/vnd.google-apps.shortcut'"
+            )
+
+        try:
+            request_kwargs = {
+                "q": query,
+                "pageSize": min(max_results, 100),
+                "fields": (
+                    "nextPageToken, files(id, name, mimeType, modifiedTime, size)"
+                ),
+                "orderBy": "modifiedTime desc",
+            }
+            if page_token:
+                request_kwargs["pageToken"] = page_token
+
+            results = self.service.files().list(**request_kwargs).execute()
+
+            result = {"files": results.get("files", [])}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
     def _export(self, file_id: str, mime_type: str) -> str:
         """Export a Google Workspace file."""
         content = self.service.files().export(fileId=file_id, mimeType=mime_type).execute()
         if isinstance(content, bytes):
             return content.decode("utf-8")
         return str(content)
+
+
+def _read_docx(content: bytes) -> str:
+    """Extract text from a .docx file, including paragraphs and tables.
+
+    Args:
+        content: Raw .docx file bytes
+
+    Returns:
+        Extracted text as string
+    """
+    try:
+        doc = Document(io.BytesIO(content))
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not read .docx file (may be encrypted or corrupted): {e}. "
+            "Use 'desk drive download' to save the raw file."
+        )
+
+    parts: list[str] = []
+
+    for paragraph in doc.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            parts.append(text)
+
+    for table in doc.tables:
+        rows: list[str] = []
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            rows.append("\t".join(cells))
+        if rows:
+            parts.append("\n".join(rows))
+
+    return "\n".join(parts)
+
+
+def _read_xlsx(content: bytes) -> str:
+    """Extract data from an .xlsx file as CSV text.
+
+    Multiple sheets are separated with markers.
+
+    Args:
+        content: Raw .xlsx file bytes
+
+    Returns:
+        CSV text with sheet separators
+    """
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not read .xlsx file (may be encrypted or corrupted): {e}. "
+            "Use 'desk drive download' to save the raw file."
+        )
+
+    parts: list[str] = []
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if len(wb.sheetnames) > 1:
+            parts.append(f"--- sheet: {sheet_name} ---")
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        for row in ws.iter_rows(values_only=True):
+            writer.writerow([str(cell) if cell is not None else "" for cell in row])
+        parts.append(output.getvalue().rstrip())
+
+    wb.close()
+    return "\n".join(parts)

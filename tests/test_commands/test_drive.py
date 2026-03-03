@@ -93,8 +93,8 @@ class TestDriveRecent:
 class TestDriveRead:
     """Tests for desk drive read command."""
 
-    def test_read_with_json_output(self, runner, mock_get_credentials, mock_drive_client_class):
-        """Should output file content as JSON."""
+    def test_read_single_file_json(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output file content as JSON for a single file."""
         from desk.commands.drive import drive
 
         mock_client = MagicMock()
@@ -106,6 +106,246 @@ class TestDriveRead:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["content"] == "File content here"
+        assert output["fileId"] == "file123"
+
+    def test_read_single_file_human(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output file content as plain text for a single file."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = "Hello from the file"
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["read", "file123"])
+
+        assert result.exit_code == 0
+        assert "Hello from the file" in result.output
+
+    def test_read_multiple_files_json(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output batch JSON for multiple file IDs."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.read.side_effect = ["Content A", "Content B", "Content C"]
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["read", "id1", "id2", "id3", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert isinstance(output, list)
+        assert len(output) == 3
+        assert output[0]["fileId"] == "id1"
+        assert output[0]["content"] == "Content A"
+        assert output[2]["fileId"] == "id3"
+        assert output[2]["content"] == "Content C"
+
+    def test_read_multiple_files_human(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output batch content with separators for human output."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.read.side_effect = ["Content A", "Content B"]
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["read", "id1", "id2"])
+
+        assert result.exit_code == 0
+        assert "--- id1 ---" in result.output
+        assert "Content A" in result.output
+        assert "--- id2 ---" in result.output
+        assert "Content B" in result.output
+
+    def test_read_multiple_files_with_error(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should report per-file errors in batch mode without stopping."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.read.side_effect = [
+            "Content A",
+            RuntimeError("File not found"),
+            "Content C",
+        ]
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["read", "id1", "id2", "id3", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 3
+        assert output[0]["content"] == "Content A"
+        assert output[1]["error"] is not None
+        assert output[1]["content"] is None
+        assert output[2]["content"] == "Content C"
+
+    def test_read_stdin(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should read file IDs from stdin with --stdin flag."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.read.side_effect = ["Content from stdin A", "Content from stdin B"]
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["read", "--stdin", "--json"], input="fileA\nfileB\n")
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert isinstance(output, list)
+        assert len(output) == 2
+        assert output[0]["fileId"] == "fileA"
+        assert output[1]["fileId"] == "fileB"
+
+    def test_read_no_ids_errors(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should error when no file IDs are provided."""
+        from desk.commands.drive import drive
+
+        result = runner.invoke(drive, ["read", "--json"])
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+    def test_read_args_and_stdin_combined(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should combine IDs from args and stdin."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.read.side_effect = ["C1", "C2", "C3"]
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["read", "arg_id", "--stdin", "--json"], input="stdin_id1\nstdin_id2\n")
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 3
+        assert output[0]["fileId"] == "arg_id"
+        assert output[1]["fileId"] == "stdin_id1"
+        assert output[2]["fileId"] == "stdin_id2"
+
+
+class TestDriveListFolder:
+    """Tests for desk drive list-folder command."""
+
+    def test_list_folder_json_output(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output folder contents as JSON."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {
+            "files": [
+                {"id": "f1", "name": "Doc.docx", "mimeType": "application/vnd.google-apps.document",
+                 "modifiedTime": "2026-01-01T00:00:00Z", "size": "1234"},
+                {"id": "f2", "name": "Sheet.xlsx", "mimeType": "application/vnd.google-apps.spreadsheet",
+                 "modifiedTime": "2026-01-02T00:00:00Z", "size": "5678"},
+            ]
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "folder123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert "files" in output
+        assert len(output["files"]) == 2
+        assert output["files"][0]["id"] == "f1"
+
+    def test_list_folder_human_output(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output folder contents as a table for humans."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {
+            "files": [
+                {"id": "f1", "name": "Doc.docx", "mimeType": "application/vnd.google-apps.document",
+                 "modifiedTime": "2026-01-01T00:00:00Z"},
+            ]
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "folder123"])
+
+        assert result.exit_code == 0
+        assert "Doc.docx" in result.output
+
+    def test_list_folder_empty(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should handle empty folder gracefully."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {"files": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "empty_folder"])
+
+        assert result.exit_code == 0
+        assert "No files in folder" in result.output
+
+    def test_list_folder_with_page_token(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should pass page_token to the service and show pagination hint."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {
+            "files": [{"id": "f1", "name": "Doc.docx", "mimeType": "text/plain",
+                        "modifiedTime": "2026-01-01T00:00:00Z"}],
+            "nextPageToken": "next_token_abc",
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "folder123", "--page-token", "prev_token"])
+
+        assert result.exit_code == 0
+        mock_client.list_folder.assert_called_once_with(
+            "folder123", max_results=100, page_token="prev_token", file_type=None
+        )
+        assert "next_token_abc" in result.output
+
+    def test_list_folder_with_type_filter(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should pass file_type filter to the service."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {"files": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "folder123", "--type", "document"])
+
+        assert result.exit_code == 0
+        mock_client.list_folder.assert_called_once_with(
+            "folder123", max_results=100, page_token=None, file_type="document"
+        )
+
+    def test_list_folder_with_max(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should pass max_results to the service."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {"files": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "folder123", "--max", "10"])
+
+        assert result.exit_code == 0
+        mock_client.list_folder.assert_called_once_with(
+            "folder123", max_results=10, page_token=None, file_type=None
+        )
+
+    def test_list_folder_json_includes_next_page_token(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should include nextPageToken in JSON output."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_folder.return_value = {
+            "files": [{"id": "f1", "name": "A.txt"}],
+            "nextPageToken": "token123",
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-folder", "folder123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["nextPageToken"] == "token123"
 
 
 class TestDriveInfo:

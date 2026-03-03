@@ -1,5 +1,6 @@
 """Tests for Drive service client."""
 
+import io
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -217,3 +218,371 @@ class TestDriveShare:
             call_kwargs = permissions_mock.create.call_args[1]
             assert call_kwargs["body"]["emailAddress"] == "user@example.com"
             assert call_kwargs["body"]["role"] == "reader"
+
+
+class TestDriveListFolder:
+    """Tests for DriveClient.list_folder method."""
+
+    def test_list_folder_returns_files(self, mock_credentials):
+        """Should return dict with files list."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {
+                "files": [
+                    {"id": "f1", "name": "Doc.docx", "mimeType": "application/vnd.google-apps.document"},
+                    {"id": "f2", "name": "Sheet.xlsx", "mimeType": "application/vnd.google-apps.spreadsheet"},
+                ]
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_folder("folder123")
+
+            assert "files" in result
+            assert len(result["files"]) == 2
+
+    def test_list_folder_with_pagination(self, mock_credentials):
+        """Should pass page_token and return nextPageToken."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {
+                "files": [{"id": "f1", "name": "Doc.docx"}],
+                "nextPageToken": "token_page2",
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_folder("folder123", page_token="token_page1")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["pageToken"] == "token_page1"
+            assert result["nextPageToken"] == "token_page2"
+
+    def test_list_folder_with_max_results(self, mock_credentials):
+        """Should pass max_results as pageSize (capped at 100)."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.list_folder("folder123", max_results=10)
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["pageSize"] == 10
+
+    def test_list_folder_caps_page_size_at_100(self, mock_credentials):
+        """Should cap pageSize at 100 even if max_results is higher."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.list_folder("folder123", max_results=500)
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["pageSize"] == 100
+
+    def test_list_folder_with_file_type_filter(self, mock_credentials):
+        """Should add MIME type filter to query for known types."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.list_folder("folder123", file_type="document")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert "application/vnd.google-apps.document" in call_kwargs["q"]
+            # Should not exclude folders when type is specified
+            assert "folder" not in call_kwargs["q"] or "google-apps.document" in call_kwargs["q"]
+
+    def test_list_folder_with_raw_mime_type(self, mock_credentials):
+        """Should accept raw MIME type strings when not a known friendly name."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.list_folder("folder123", file_type="application/pdf")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert "application/pdf" in call_kwargs["q"]
+
+    def test_list_folder_empty(self, mock_credentials):
+        """Should return empty files list for empty folder."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_folder("empty_folder")
+
+            assert result["files"] == []
+            assert "nextPageToken" not in result
+
+    def test_list_folder_excludes_folders_by_default(self, mock_credentials):
+        """Should exclude folders and shortcuts when no file_type specified."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.list_folder("folder123")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert "vnd.google-apps.folder" in call_kwargs["q"]
+            assert "vnd.google-apps.shortcut" in call_kwargs["q"]
+
+    def test_list_folder_api_error_raises_runtime_error(self, mock_credentials):
+        """Should raise RuntimeError on API error."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            http_error = HttpError(
+                resp=MagicMock(status=404),
+                content=b'{"error": {"message": "Folder not found"}}'
+            )
+            files_mock.list.return_value.execute.side_effect = http_error
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            with pytest.raises(RuntimeError, match="Drive API error"):
+                client.list_folder("bad_folder")
+
+
+class TestReadDocx:
+    """Tests for _read_docx helper."""
+
+    def test_read_docx_extracts_paragraphs(self):
+        """Should extract paragraph text from a .docx file."""
+        from docx import Document as DocxDocument
+
+        # Create a real docx in memory
+        doc = DocxDocument()
+        doc.add_paragraph("Hello world")
+        doc.add_paragraph("Second paragraph")
+        buf = io.BytesIO()
+        doc.save(buf)
+        content = buf.getvalue()
+
+        from desk.services.drive import _read_docx
+
+        result = _read_docx(content)
+        assert "Hello world" in result
+        assert "Second paragraph" in result
+
+    def test_read_docx_extracts_tables(self):
+        """Should extract table content from a .docx file."""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "A1"
+        table.cell(0, 1).text = "B1"
+        table.cell(1, 0).text = "A2"
+        table.cell(1, 1).text = "B2"
+        buf = io.BytesIO()
+        doc.save(buf)
+        content = buf.getvalue()
+
+        from desk.services.drive import _read_docx
+
+        result = _read_docx(content)
+        assert "A1" in result
+        assert "B2" in result
+
+    def test_read_docx_error_on_corrupt_file(self):
+        """Should raise RuntimeError on corrupt .docx content."""
+        from desk.services.drive import _read_docx
+
+        with pytest.raises(RuntimeError, match="Could not read .docx file"):
+            _read_docx(b"not a docx file")
+
+
+class TestReadXlsx:
+    """Tests for _read_xlsx helper."""
+
+    def test_read_xlsx_single_sheet(self):
+        """Should extract data from single-sheet .xlsx file as CSV."""
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Name", "Value"])
+        ws.append(["Alice", 42])
+        buf = io.BytesIO()
+        wb.save(buf)
+        content = buf.getvalue()
+
+        from desk.services.drive import _read_xlsx
+
+        result = _read_xlsx(content)
+        assert "Name" in result
+        assert "Alice" in result
+        assert "42" in result
+        # Single sheet should NOT have sheet separator
+        assert "--- sheet:" not in result
+
+    def test_read_xlsx_multi_sheet(self):
+        """Should include sheet separators for multi-sheet .xlsx files."""
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws1 = wb.active
+        ws1.title = "Sales"
+        ws1.append(["Q1", 100])
+
+        ws2 = wb.create_sheet("Costs")
+        ws2.append(["Q1", 50])
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        content = buf.getvalue()
+
+        from desk.services.drive import _read_xlsx
+
+        result = _read_xlsx(content)
+        assert "--- sheet: Sales ---" in result
+        assert "--- sheet: Costs ---" in result
+        assert "100" in result
+        assert "50" in result
+
+    def test_read_xlsx_error_on_corrupt_file(self):
+        """Should raise RuntimeError on corrupt .xlsx content."""
+        from desk.services.drive import _read_xlsx
+
+        with pytest.raises(RuntimeError, match="Could not read .xlsx file"):
+            _read_xlsx(b"not an xlsx file")
+
+
+class TestDriveReadMimeRouting:
+    """Tests for MIME type routing in DriveClient.read()."""
+
+    def test_read_routes_docx_to_local_converter(self, mock_credentials):
+        """Should route uploaded .docx files to _read_docx."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+
+            # First call: get metadata
+            docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            files_mock.get.return_value.execute.side_effect = [
+                {"mimeType": docx_mime, "name": "Report.docx"},
+                {"size": "1000"},
+            ]
+
+            # Create real docx bytes
+            from docx import Document as DocxDocument
+
+            doc = DocxDocument()
+            doc.add_paragraph("Test content")
+            buf = io.BytesIO()
+            doc.save(buf)
+            docx_bytes = buf.getvalue()
+
+            files_mock.get_media.return_value.execute.return_value = docx_bytes
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.read("file123")
+
+            assert "Test content" in result
+
+    def test_read_routes_xlsx_to_local_converter(self, mock_credentials):
+        """Should route uploaded .xlsx files to _read_xlsx."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+
+            xlsx_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            files_mock.get.return_value.execute.side_effect = [
+                {"mimeType": xlsx_mime, "name": "Data.xlsx"},
+                {"size": "2000"},
+            ]
+
+            from openpyxl import Workbook
+
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["Col1", "Col2"])
+            ws.append(["val1", "val2"])
+            buf = io.BytesIO()
+            wb.save(buf)
+            xlsx_bytes = buf.getvalue()
+
+            files_mock.get_media.return_value.execute.return_value = xlsx_bytes
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.read("file123")
+
+            assert "Col1" in result
+            assert "val2" in result
+
+    def test_read_exports_google_doc_as_text(self, mock_credentials):
+        """Should export Google Docs as plain text."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.get.return_value.execute.return_value = {
+                "mimeType": "application/vnd.google-apps.document",
+                "name": "Native Doc",
+            }
+            files_mock.export.return_value.execute.return_value = b"Exported text"
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.read("gdoc123")
+
+            assert result == "Exported text"
+            files_mock.export.assert_called_once_with(fileId="gdoc123", mimeType="text/plain")
