@@ -296,7 +296,8 @@ class TestDriveListFolder:
 
         assert result.exit_code == 0
         mock_client.list_folder.assert_called_once_with(
-            "folder123", max_results=100, page_token="prev_token", file_type=None
+            "folder123", max_results=100, page_token="prev_token", file_type=None,
+            drive_id=None, my_drive=False,
         )
         assert "next_token_abc" in result.output
 
@@ -312,7 +313,8 @@ class TestDriveListFolder:
 
         assert result.exit_code == 0
         mock_client.list_folder.assert_called_once_with(
-            "folder123", max_results=100, page_token=None, file_type="document"
+            "folder123", max_results=100, page_token=None, file_type="document",
+            drive_id=None, my_drive=False,
         )
 
     def test_list_folder_with_max(self, runner, mock_get_credentials, mock_drive_client_class):
@@ -327,7 +329,8 @@ class TestDriveListFolder:
 
         assert result.exit_code == 0
         mock_client.list_folder.assert_called_once_with(
-            "folder123", max_results=10, page_token=None, file_type=None
+            "folder123", max_results=10, page_token=None, file_type=None,
+            drive_id=None, my_drive=False,
         )
 
     def test_list_folder_json_includes_next_page_token(self, runner, mock_get_credentials, mock_drive_client_class):
@@ -371,3 +374,135 @@ class TestDriveInfo:
         output = json.loads(result.output)
         assert output["id"] == "file123"
         assert output["name"] == "Document.docx"
+
+
+class TestDriveListDrives:
+    """Tests for desk drive list-drives command."""
+
+    def test_list_drives_json(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output JSON with envelope structure {"drives": [...]}."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_drives.return_value = {
+            "drives": [
+                {"id": "drive1", "name": "Engineering", "createdTime": "2026-01-01T00:00:00Z"},
+                {"id": "drive2", "name": "Design", "createdTime": "2026-02-01T00:00:00Z"},
+            ]
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-drives", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert "drives" in output
+        assert len(output["drives"]) == 2
+        assert output["drives"][0]["name"] == "Engineering"
+
+    def test_list_drives_human(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should output human-readable table."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_drives.return_value = {
+            "drives": [
+                {"id": "drive1", "name": "Engineering", "createdTime": "2026-01-01T00:00:00Z"},
+            ]
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-drives"])
+
+        assert result.exit_code == 0
+        assert "Engineering" in result.output
+
+    def test_list_drives_empty(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should show 'No Shared Drives found.' for empty result."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_drives.return_value = {"drives": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-drives"])
+
+        assert result.exit_code == 0
+        assert "No Shared Drives found." in result.output
+
+    def test_list_drives_with_max(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should pass --max flag through to the service."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_drives.return_value = {"drives": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-drives", "--max", "10"])
+
+        assert result.exit_code == 0
+        mock_client.list_drives.assert_called_once_with(max_results=10, page_token=None)
+
+    def test_list_drives_json_includes_next_page_token(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should include nextPageToken in JSON output when present."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.list_drives.return_value = {
+            "drives": [{"id": "drive1", "name": "Eng", "createdTime": "2026-01-01T00:00:00Z"}],
+            "nextPageToken": "token_page2",
+        }
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["list-drives", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["nextPageToken"] == "token_page2"
+
+
+class TestDriveSearchDriveScope:
+    """Tests for --drive-id and --my-drive flags on search."""
+
+    def test_search_with_drive_id(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should pass drive_id to the service."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"files": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["search", "test", "--drive-id", "xyz"])
+
+        assert result.exit_code == 0
+        mock_client.search.assert_called_once_with(
+            "test", max_results=20, page_token=None,
+            drive_id="xyz", my_drive=False,
+        )
+
+    def test_search_with_my_drive(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should pass my_drive=True to the service."""
+        from desk.commands.drive import drive
+
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"files": []}
+        mock_drive_client_class.return_value = mock_client
+
+        result = runner.invoke(drive, ["search", "test", "--my-drive"])
+
+        assert result.exit_code == 0
+        mock_client.search.assert_called_once_with(
+            "test", max_results=20, page_token=None,
+            drive_id=None, my_drive=True,
+        )
+
+    def test_drive_id_and_my_drive_mutual_exclusion(self, runner, mock_get_credentials, mock_drive_client_class):
+        """Should produce a structured error when both flags are used."""
+        from desk.commands.drive import drive
+
+        result = runner.invoke(drive, ["search", "test", "--drive-id", "xyz", "--my-drive", "--json"])
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+        assert "mutually exclusive" in output["error"]["message"]

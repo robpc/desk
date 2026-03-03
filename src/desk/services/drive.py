@@ -18,8 +18,87 @@ class DriveClient:
     def __init__(self, credentials: Credentials):
         self.service = build("drive", "v3", credentials=credentials)
 
+    # ── Shared Drive helpers ─────────────────────────────────────────
+    # Centralize supportsAllDrives / includeItemsFromAllDrives so every
+    # API call works with Shared Drives automatically.  See ADR-015.
+
+    def _files_list(
+        self,
+        drive_id: str | None = None,
+        my_drive: bool = False,
+        **kwargs,
+    ):
+        """Wrap files().list() with Shared Drive parameters."""
+        kwargs["supportsAllDrives"] = True
+        kwargs["includeItemsFromAllDrives"] = True
+        if drive_id:
+            kwargs["corpora"] = "drive"
+            kwargs["driveId"] = drive_id
+        elif my_drive:
+            kwargs["corpora"] = "user"
+        else:
+            kwargs["corpora"] = "allDrives"
+        return self.service.files().list(**kwargs)
+
+    def _files_get(self, **kwargs):
+        """Wrap files().get() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().get(**kwargs)
+
+    def _files_get_media(self, **kwargs):
+        """Wrap files().get_media() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().get_media(**kwargs)
+
+    def _files_create(self, **kwargs):
+        """Wrap files().create() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().create(**kwargs)
+
+    def _files_update(self, **kwargs):
+        """Wrap files().update() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().update(**kwargs)
+
+    def _files_copy(self, **kwargs):
+        """Wrap files().copy() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().copy(**kwargs)
+
+    def _files_export(self, **kwargs):
+        """Wrap files().export() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().export(**kwargs)
+
+    def _files_export_media(self, **kwargs):
+        """Wrap files().export_media() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.files().export_media(**kwargs)
+
+    def _permissions_create(self, **kwargs):
+        """Wrap permissions().create() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.permissions().create(**kwargs)
+
+    def _permissions_list(self, **kwargs):
+        """Wrap permissions().list() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.permissions().list(**kwargs)
+
+    def _permissions_delete(self, **kwargs):
+        """Wrap permissions().delete() with Shared Drive support."""
+        kwargs["supportsAllDrives"] = True
+        return self.service.permissions().delete(**kwargs)
+
+    # ── Public methods ───────────────────────────────────────────────
+
     def search(
-        self, query: str, max_results: int = 20, page_token: str | None = None
+        self,
+        query: str,
+        max_results: int = 20,
+        page_token: str | None = None,
+        drive_id: str | None = None,
+        my_drive: bool = False,
     ) -> dict:
         """Search for files matching query.
 
@@ -27,6 +106,8 @@ class DriveClient:
             query: Drive search query (e.g., "name contains 'report'")
             max_results: Maximum number of results
             page_token: Token for fetching next page of results
+            drive_id: Scope search to a specific Shared Drive
+            my_drive: Scope search to My Drive only (faster)
 
         Returns:
             Dict with 'files' list and 'nextPageToken' (if more results exist)
@@ -43,7 +124,9 @@ class DriveClient:
             if page_token:
                 request_kwargs["pageToken"] = page_token
 
-            results = self.service.files().list(**request_kwargs).execute()
+            results = self._files_list(
+                drive_id=drive_id, my_drive=my_drive, **request_kwargs
+            ).execute()
 
             result = {"files": results.get("files", [])}
             if results.get("nextPageToken"):
@@ -71,7 +154,7 @@ class DriveClient:
         """
         try:
             # First get file metadata to determine type
-            meta = self.service.files().get(fileId=file_id, fields="mimeType, name").execute()
+            meta = self._files_get(fileId=file_id, fields="mimeType, name").execute()
             mime = meta["mimeType"]
 
             # Google Workspace files need export
@@ -83,14 +166,14 @@ class DriveClient:
                 return self._export(file_id, "text/plain")
             else:
                 # Check file size before downloading (50MB limit)
-                size_meta = self.service.files().get(fileId=file_id, fields="size").execute()
+                size_meta = self._files_get(fileId=file_id, fields="size").execute()
                 size = int(size_meta.get("size", 0))
                 if size > 50 * 1024 * 1024:
                     raise RuntimeError(
                         f"File is {size // (1024 * 1024)}MB — too large to read as text. "
                         "Use 'desk drive download' for large files."
                     )
-                content = self.service.files().get_media(fileId=file_id).execute()
+                content = self._files_get_media(fileId=file_id).execute()
                 if not isinstance(content, bytes):
                     content = str(content).encode("utf-8")
 
@@ -115,11 +198,10 @@ class DriveClient:
         """
         try:
             return (
-                self.service.files()
-                .get(
+                self._files_get(
                     fileId=file_id,
                     fields="id, name, mimeType, modifiedTime, createdTime, size, owners, "
-                    "parents, webViewLink, description, starred",
+                    "parents, webViewLink, description, starred, driveId",
                 )
                 .execute()
             )
@@ -127,13 +209,19 @@ class DriveClient:
             raise RuntimeError(f"Drive API error: {error}")
 
     def recent(
-        self, max_results: int = 20, page_token: str | None = None
+        self,
+        max_results: int = 20,
+        page_token: str | None = None,
+        drive_id: str | None = None,
+        my_drive: bool = False,
     ) -> dict:
         """List recently modified files.
 
         Args:
             max_results: Maximum number of results
             page_token: Token for fetching next page of results
+            drive_id: Scope to a specific Shared Drive
+            my_drive: Scope to My Drive only (faster)
 
         Returns:
             Dict with 'files' list and 'nextPageToken' (if more results exist)
@@ -147,7 +235,9 @@ class DriveClient:
             if page_token:
                 request_kwargs["pageToken"] = page_token
 
-            results = self.service.files().list(**request_kwargs).execute()
+            results = self._files_list(
+                drive_id=drive_id, my_drive=my_drive, **request_kwargs
+            ).execute()
 
             result = {"files": results.get("files", [])}
             if results.get("nextPageToken"):
@@ -176,11 +266,11 @@ class DriveClient:
 
         try:
             media = MediaFileUpload(str(path))
-            result = (
-                self.service.files()
-                .create(body=file_metadata, media_body=media, fields="id, name, webViewLink")
-                .execute()
-            )
+            result = self._files_create(
+                body=file_metadata,
+                media_body=media,
+                fields="id, name, webViewLink",
+            ).execute()
             return result
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
@@ -196,7 +286,7 @@ class DriveClient:
             Path to downloaded file
         """
         try:
-            meta = self.service.files().get(fileId=file_id, fields="name, mimeType").execute()
+            meta = self._files_get(fileId=file_id, fields="name, mimeType").execute()
             name = meta["name"]
             mime = meta["mimeType"]
 
@@ -217,9 +307,9 @@ class DriveClient:
                 export_mime, ext = export_map[mime]
                 if not dest.suffix:
                     dest = dest.with_suffix(ext)
-                request = self.service.files().export_media(fileId=file_id, mimeType=export_mime)
+                request = self._files_export_media(fileId=file_id, mimeType=export_mime)
             else:
-                request = self.service.files().get_media(fileId=file_id)
+                request = self._files_get_media(fileId=file_id)
 
             with io.FileIO(str(dest), "wb") as fh:
                 downloader = MediaIoBaseDownload(fh, request)
@@ -250,8 +340,7 @@ class DriveClient:
 
         try:
             result = (
-                self.service.files()
-                .create(body=file_metadata, fields="id, name, webViewLink")
+                self._files_create(body=file_metadata, fields="id, name, webViewLink")
                 .execute()
             )
             return result
@@ -270,12 +359,11 @@ class DriveClient:
         """
         try:
             # Get current parents to remove
-            file = self.service.files().get(fileId=file_id, fields="parents").execute()
+            file = self._files_get(fileId=file_id, fields="parents").execute()
             previous_parents = ",".join(file.get("parents", []))
 
             result = (
-                self.service.files()
-                .update(
+                self._files_update(
                     fileId=file_id,
                     addParents=folder_id,
                     removeParents=previous_parents,
@@ -297,11 +385,11 @@ class DriveClient:
             Updated file metadata
         """
         try:
-            result = (
-                self.service.files()
-                .update(fileId=file_id, body={"trashed": True}, fields="id, name, trashed")
-                .execute()
-            )
+            result = self._files_update(
+                fileId=file_id,
+                body={"trashed": True},
+                fields="id, name, trashed",
+            ).execute()
             return result
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
@@ -316,11 +404,11 @@ class DriveClient:
             Updated file metadata
         """
         try:
-            result = (
-                self.service.files()
-                .update(fileId=file_id, body={"trashed": False}, fields="id, name, trashed")
-                .execute()
-            )
+            result = self._files_update(
+                fileId=file_id,
+                body={"trashed": False},
+                fields="id, name, trashed",
+            ).execute()
             return result
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
@@ -338,8 +426,7 @@ class DriveClient:
         """
         try:
             permission = (
-                self.service.permissions()
-                .create(
+                self._permissions_create(
                     fileId=file_id,
                     body={"type": "user", "role": role, "emailAddress": email},
                     sendNotificationEmail=True,
@@ -363,8 +450,7 @@ class DriveClient:
         """
         try:
             result = (
-                self.service.files()
-                .update(
+                self._files_update(
                     fileId=file_id,
                     body={"starred": starred},
                     fields="id, name, starred",
@@ -396,8 +482,7 @@ class DriveClient:
                 body["parents"] = [folder_id]
 
             result = (
-                self.service.files()
-                .copy(
+                self._files_copy(
                     fileId=file_id,
                     body=body if body else None,
                     fields="id, name, webViewLink, parents",
@@ -419,8 +504,7 @@ class DriveClient:
         """
         try:
             results = (
-                self.service.permissions()
-                .list(
+                self._permissions_list(
                     fileId=file_id,
                     fields="permissions(id, type, role, emailAddress, displayName, domain)",
                 )
@@ -455,7 +539,7 @@ class DriveClient:
             raise ValueError(f"User '{email}' not found in file permissions")
 
         try:
-            self.service.permissions().delete(
+            self._permissions_delete(
                 fileId=file_id, permissionId=permission_id
             ).execute()
             return True
@@ -475,8 +559,7 @@ class DriveClient:
         try:
             # Create new owner permission
             result = (
-                self.service.permissions()
-                .create(
+                self._permissions_create(
                     fileId=file_id,
                     transferOwnership=True,
                     body={"type": "user", "role": "owner", "emailAddress": email},
@@ -661,6 +744,8 @@ class DriveClient:
         max_results: int = 100,
         page_token: str | None = None,
         file_type: str | None = None,
+        drive_id: str | None = None,
+        my_drive: bool = False,
     ) -> dict:
         """List files in a folder with external pagination.
 
@@ -672,6 +757,8 @@ class DriveClient:
             max_results: Maximum number of files to return (default 100)
             page_token: Token for fetching next page of results
             file_type: Optional friendly type filter (e.g. 'document', 'spreadsheet', 'pdf')
+            drive_id: Scope to a specific Shared Drive
+            my_drive: Scope to My Drive only (faster)
 
         Returns:
             Dict with 'files' list and optional 'nextPageToken'
@@ -708,7 +795,9 @@ class DriveClient:
             if page_token:
                 request_kwargs["pageToken"] = page_token
 
-            results = self.service.files().list(**request_kwargs).execute()
+            results = self._files_list(
+                drive_id=drive_id, my_drive=my_drive, **request_kwargs
+            ).execute()
 
             result = {"files": results.get("files", [])}
             if results.get("nextPageToken"):
@@ -717,9 +806,39 @@ class DriveClient:
         except HttpError as error:
             raise RuntimeError(f"Drive API error: {error}")
 
+    def list_drives(
+        self, max_results: int = 100, page_token: str | None = None
+    ) -> dict:
+        """List available Shared Drives (single page).
+
+        Args:
+            max_results: Page size (max 100)
+            page_token: Token for fetching next page of results
+
+        Returns:
+            Dict with 'drives' list and optional 'nextPageToken'
+        """
+        if max_results <= 0:
+            return {"drives": []}
+        try:
+            kwargs: dict = {
+                "pageSize": min(max_results, 100),
+                "fields": "nextPageToken, drives(id, name, createdTime)",
+            }
+            if page_token:
+                kwargs["pageToken"] = page_token
+            results = self.service.drives().list(**kwargs).execute()
+
+            result: dict = {"drives": results.get("drives", [])}
+            if results.get("nextPageToken"):
+                result["nextPageToken"] = results["nextPageToken"]
+            return result
+        except HttpError as error:
+            raise RuntimeError(f"Drive API error: {error}")
+
     def _export(self, file_id: str, mime_type: str) -> str:
         """Export a Google Workspace file."""
-        content = self.service.files().export(fileId=file_id, mimeType=mime_type).execute()
+        content = self._files_export(fileId=file_id, mimeType=mime_type).execute()
         if isinstance(content, bytes):
             return content.decode("utf-8")
         return str(content)

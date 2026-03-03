@@ -46,6 +46,15 @@ def _get_client(as_json: bool = False) -> DriveClient:
     return DriveClient(creds)
 
 
+def _validate_drive_scope(drive_id: str | None, my_drive: bool, as_json: bool) -> None:
+    """Error if both --drive-id and --my-drive are set."""
+    if drive_id and my_drive:
+        msg = "--drive-id and --my-drive are mutually exclusive"
+        error = structured_error(ErrorCode.INVALID_INPUT, msg)
+        output_result(error, as_json=as_json)
+        sys.exit(1)
+
+
 def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) -> None:
     """Handle API errors with structured output when --json is used."""
     raw_error = str(e)
@@ -96,25 +105,45 @@ def drive() -> None:
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
 @click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
+@click.option("--drive-id", "drive_id", default=None, help="Scope to a Shared Drive")
+@click.option("--my-drive", "my_drive", is_flag=True, help="Scope to My Drive only (faster)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def search(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
+def search(
+    query: str,
+    max_results: int,
+    limit: int | None,
+    page_token: str | None,
+    drive_id: str | None,
+    my_drive: bool,
+    as_json: bool,
+) -> None:
     """Search for files in Drive.
 
-    Uses Drive search query syntax.
+    Searches across all drives (My Drive + Shared Drives) by default.
+    Use --my-drive to limit to personal files, or --drive-id to target
+    a specific Shared Drive.
 
     Examples:
 
         desk drive search "name contains 'report'"
 
         desk drive search "mimeType = 'application/vnd.google-apps.spreadsheet'"
+
+        desk drive search "name contains 'budget'" --drive-id <shared-drive-id>
+
+        desk drive search "name contains 'notes'" --my-drive
     """
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
 
+    _validate_drive_scope(drive_id, my_drive, as_json)
     client = _get_client(as_json)
     try:
-        result = client.search(query, max_results=max_results, page_token=page_token)
+        result = client.search(
+            query, max_results=max_results, page_token=page_token,
+            drive_id=drive_id, my_drive=my_drive,
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"query": query})
 
@@ -251,21 +280,38 @@ def info(file_id: str, as_json: bool) -> None:
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
 @click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
+@click.option("--drive-id", "drive_id", default=None, help="Scope to a Shared Drive")
+@click.option("--my-drive", "my_drive", is_flag=True, help="Scope to My Drive only (faster)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def recent(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
+def recent(
+    max_results: int,
+    limit: int | None,
+    page_token: str | None,
+    drive_id: str | None,
+    my_drive: bool,
+    as_json: bool,
+) -> None:
     """List recently modified files.
+
+    Includes files from Shared Drives by default.
 
     Examples:
 
         desk drive recent --max 10
+
+        desk drive recent --my-drive
     """
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
 
+    _validate_drive_scope(drive_id, my_drive, as_json)
     client = _get_client(as_json)
     try:
-        result = client.recent(max_results=max_results, page_token=page_token)
+        result = client.recent(
+            max_results=max_results, page_token=page_token,
+            drive_id=drive_id, my_drive=my_drive,
+        )
     except Exception as e:
         _handle_api_error(e, as_json)
 
@@ -949,6 +995,55 @@ def reply_comment(file_id: str, comment_id: str, text: str, quiet: bool, as_json
     output_result(receipt, as_json, quiet)
 
 
+@drive.command("list-drives")
+@click.option("--max", "-n", "max_results", type=int, default=100, help="Max results")
+@click.option("--page-token", "page_token", default=None, help="Pagination token")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def list_drives(max_results: int, page_token: str | None, as_json: bool) -> None:
+    """List available Shared Drives.
+
+    Shows Shared Drives you have access to. Use the ID with --drive-id
+    on search, recent, and list-folder to scope queries.
+
+    Examples:
+
+        desk drive list-drives
+
+        desk drive list-drives --json
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.list_drives(max_results=max_results, page_token=page_token)
+    except Exception as e:
+        _handle_api_error(e, as_json)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+
+    drives = result.get("drives", [])
+    if not drives:
+        console.print("No Shared Drives found.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="dim", width=25)
+    table.add_column("Name", width=40)
+    table.add_column("Created", width=20)
+
+    for d in drives:
+        table.add_row(
+            d.get("id", ""),
+            d.get("name", ""),
+            d.get("createdTime", "")[:10],
+        )
+
+    console.print(table)
+
+    if result.get("nextPageToken"):
+        console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
+
+
 @drive.command("list-folder")
 @click.argument("folder_id")
 @click.option("--max", "-n", "max_results", type=int, default=100, help="Max files to return")
@@ -957,12 +1052,16 @@ def reply_comment(file_id: str, comment_id: str, text: str, quiet: bool, as_json
     "--type", "file_type", default=None,
     help="Filter by MIME type (e.g. 'document', 'spreadsheet', 'pdf')",
 )
+@click.option("--drive-id", "drive_id", default=None, help="Scope to a Shared Drive")
+@click.option("--my-drive", "my_drive", is_flag=True, help="Scope to My Drive only (faster)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def list_folder(
     folder_id: str,
     max_results: int,
     page_token: str | None,
     file_type: str | None,
+    drive_id: str | None,
+    my_drive: bool,
     as_json: bool,
 ) -> None:
     """List files in a Drive folder.
@@ -978,6 +1077,7 @@ def list_folder(
 
         desk drive list-folder <id> --json | jq -r '.files[].id' | desk drive read --stdin
     """
+    _validate_drive_scope(drive_id, my_drive, as_json)
     client = _get_client(as_json)
 
     try:
@@ -986,6 +1086,8 @@ def list_folder(
             max_results=max_results,
             page_token=page_token,
             file_type=file_type,
+            drive_id=drive_id,
+            my_drive=my_drive,
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"folder_id": folder_id})

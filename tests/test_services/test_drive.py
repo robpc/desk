@@ -585,4 +585,286 @@ class TestDriveReadMimeRouting:
             result = client.read("gdoc123")
 
             assert result == "Exported text"
-            files_mock.export.assert_called_once_with(fileId="gdoc123", mimeType="text/plain")
+            files_mock.export.assert_called_once_with(
+                fileId="gdoc123", mimeType="text/plain", supportsAllDrives=True
+            )
+
+
+class TestSharedDriveSupport:
+    """Tests for Shared Drive (supportsAllDrives) support across methods."""
+
+    def test_search_includes_shared_drive_params(self, mock_credentials):
+        """Search should include supportsAllDrives, includeItemsFromAllDrives, corpora."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.search("test")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+            assert call_kwargs["includeItemsFromAllDrives"] is True
+            assert call_kwargs["corpora"] == "allDrives"
+
+    def test_search_with_drive_id(self, mock_credentials):
+        """Search with drive_id should set corpora=drive and driveId."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.search("test", drive_id="0ABcDeFgHiJ")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["corpora"] == "drive"
+            assert call_kwargs["driveId"] == "0ABcDeFgHiJ"
+            assert call_kwargs["supportsAllDrives"] is True
+
+    def test_search_with_my_drive(self, mock_credentials):
+        """Search with my_drive=True should set corpora=user."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.search("test", my_drive=True)
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["corpora"] == "user"
+            assert "driveId" not in call_kwargs
+
+    def test_info_includes_supports_all_drives(self, mock_credentials):
+        """Info should pass supportsAllDrives=True."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.get.return_value.execute.return_value = {
+                "id": "file123", "name": "Test"
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.info("file123")
+
+            call_kwargs = files_mock.get.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+
+    def test_trash_includes_supports_all_drives(self, mock_credentials):
+        """Trash should pass supportsAllDrives=True."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.update.return_value.execute.return_value = {"id": "file123"}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.trash("file123")
+
+            call_kwargs = files_mock.update.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+
+    def test_share_includes_supports_all_drives(self, mock_credentials):
+        """Share should pass supportsAllDrives=True on permissions.create."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            permissions_mock = mock_service.permissions.return_value
+            permissions_mock.create.return_value.execute.return_value = {
+                "id": "perm123", "role": "writer"
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.share("file123", "user@example.com")
+
+            call_kwargs = permissions_mock.create.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+
+    def test_upload_includes_supports_all_drives(self, mock_credentials, tmp_path):
+        """Upload should pass supportsAllDrives=True."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.create.return_value.execute.return_value = {
+                "id": "new123", "name": "test.txt"
+            }
+
+            test_file = tmp_path / "test.txt"
+            test_file.write_text("hello")
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.upload(str(test_file))
+
+            call_kwargs = files_mock.create.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+
+    def test_copy_includes_supports_all_drives(self, mock_credentials):
+        """Copy should pass supportsAllDrives=True."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.copy.return_value.execute.return_value = {
+                "id": "copy123", "name": "Copy"
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.copy("file123")
+
+            call_kwargs = files_mock.copy.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+
+    def test_list_folder_includes_shared_drive_params(self, mock_credentials):
+        """list_folder should include Shared Drive params."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.list_folder("folder123")
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+            assert call_kwargs["includeItemsFromAllDrives"] is True
+            assert call_kwargs["corpora"] == "allDrives"
+
+    def test_recent_includes_shared_drive_params(self, mock_credentials):
+        """recent should include Shared Drive params."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            files_mock = mock_service.files.return_value
+            files_mock.list.return_value.execute.return_value = {"files": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            client.recent()
+
+            call_kwargs = files_mock.list.call_args[1]
+            assert call_kwargs["supportsAllDrives"] is True
+            assert call_kwargs["includeItemsFromAllDrives"] is True
+            assert call_kwargs["corpora"] == "allDrives"
+
+
+class TestListDrives:
+    """Tests for DriveClient.list_drives method."""
+
+    def test_list_drives_returns_drives(self, mock_credentials):
+        """Should return dict with drives list."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            drives_mock = mock_service.drives.return_value
+            drives_mock.list.return_value.execute.return_value = {
+                "drives": [
+                    {"id": "drive1", "name": "Engineering"},
+                    {"id": "drive2", "name": "Design"},
+                ]
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_drives()
+
+            assert "drives" in result
+            assert len(result["drives"]) == 2
+            assert result["drives"][0]["name"] == "Engineering"
+
+    def test_list_drives_empty(self, mock_credentials):
+        """Should return empty drives list when no Shared Drives."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            drives_mock = mock_service.drives.return_value
+            drives_mock.list.return_value.execute.return_value = {"drives": []}
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_drives()
+
+            assert result["drives"] == []
+
+    def test_list_drives_returns_next_page_token(self, mock_credentials):
+        """Should return nextPageToken when the API returns one."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            drives_mock = mock_service.drives.return_value
+            drives_mock.list.return_value.execute.return_value = {
+                "drives": [
+                    {"id": "drive1", "name": "Engineering"},
+                ],
+                "nextPageToken": "token_page2",
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_drives()
+
+            assert result["nextPageToken"] == "token_page2"
+
+    def test_list_drives_passes_page_token_to_api(self, mock_credentials):
+        """Should pass page_token parameter to the API call."""
+        with patch("desk.services.drive.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            drives_mock = mock_service.drives.return_value
+            drives_mock.list.return_value.execute.return_value = {
+                "drives": [
+                    {"id": "drive3", "name": "Marketing"},
+                ]
+            }
+
+            from desk.services.drive import DriveClient
+
+            client = DriveClient(mock_credentials)
+            result = client.list_drives(page_token="token_page1")
+
+            call_kwargs = drives_mock.list.call_args[1]
+            assert call_kwargs["pageToken"] == "token_page1"
+            assert len(result["drives"]) == 1

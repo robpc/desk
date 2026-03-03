@@ -227,7 +227,9 @@ class DocsClient:
                     ).execute()
 
             # Get the web link from Drive
-            meta = self._drive.files().get(fileId=doc_id, fields="webViewLink").execute()
+            meta = self._drive.files().get(
+                fileId=doc_id, fields="webViewLink", supportsAllDrives=True
+            ).execute()
 
             return {
                 "documentId": doc_id,
@@ -828,7 +830,9 @@ class DocsClient:
             raise RuntimeError(f"Unsupported format: {fmt}. Use: {', '.join(mime_map)}")
 
         try:
-            return self._drive.files().export(fileId=document_id, mimeType=mime).execute()
+            return self._drive.files().export(
+                fileId=document_id, mimeType=mime, supportsAllDrives=True
+            ).execute()
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
