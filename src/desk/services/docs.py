@@ -4,6 +4,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from desk.links import format_markdown_link
+
 
 class DocsClient:
     """Client for Google Docs API operations."""
@@ -896,11 +898,24 @@ class DocsClient:
         return "".join(parts)
 
     def _extract_paragraph_text(self, paragraph: dict) -> str:
-        """Extract text from a paragraph element."""
+        """Extract text from a paragraph element.
+
+        Hyperlinked text is emitted as ``[text](url)`` so that URLs
+        are preserved in the output.
+        """
         parts = []
         for pe in paragraph.get("elements", []):
             if "textRun" in pe:
-                parts.append(pe["textRun"].get("content", ""))
+                run = pe["textRun"]
+                content = run.get("content", "")
+                link_url = run.get("textStyle", {}).get("link", {}).get("url")
+                if link_url:
+                    # Strip trailing newline from link text, re-append after
+                    text = content.rstrip("\n")
+                    trailing = content[len(text):]
+                    parts.append(f"{format_markdown_link(text, link_url)}{trailing}")
+                else:
+                    parts.append(content)
         return "".join(parts)
 
     def _extract_table_text(self, table: dict) -> str:

@@ -1,12 +1,32 @@
-"""HTML link extraction and Google Workspace URL classification.
+"""Link utilities: markdown escaping, HTML extraction, and Workspace URL classification.
 
-Extracts <a href> links from email HTML bodies and classifies Google
-Workspace URLs so agents know which desk commands can read them.
+Provides shared helpers for emitting markdown ``[text](url)`` links with
+properly escaped delimiters, extracting ``<a href>`` links from email HTML
+bodies, and classifying Google Workspace URLs.
 """
 
 import re
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlparse
+
+
+# ------------------------------------------------------------------
+# Markdown link escaping
+# ------------------------------------------------------------------
+
+def escape_link_text(text: str) -> str:
+    """Escape markdown link text delimiters (``\\`` and ``]``)."""
+    return text.replace("\\", "\\\\").replace("]", "\\]")
+
+
+def escape_link_url(url: str) -> str:
+    """Escape markdown link URL delimiters (``\\``, ``(``, and ``)``).`"""
+    return url.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def format_markdown_link(text: str, url: str) -> str:
+    """Format a markdown link with properly escaped text and URL."""
+    return f"[{escape_link_text(text)}]({escape_link_url(url)})"
 
 
 class _LinkExtractor(HTMLParser):

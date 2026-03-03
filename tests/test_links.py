@@ -1,12 +1,68 @@
-"""Tests for HTML link extraction and URL classification."""
+"""Tests for link utilities: markdown escaping, HTML extraction, and URL classification."""
 
 import pytest
 
 from desk.links import (
     classify_url,
+    escape_link_text,
+    escape_link_url,
     extract_links_from_html,
     filter_links_not_in_text,
+    format_markdown_link,
 )
+
+
+class TestEscapeLinkText:
+    """Tests for escape_link_text."""
+
+    def test_plain_text_unchanged(self):
+        assert escape_link_text("hello world") == "hello world"
+
+    def test_escapes_closing_bracket(self):
+        assert escape_link_text("foo]bar") == r"foo\]bar"
+
+    def test_escapes_backslash(self):
+        assert escape_link_text(r"a\b") == r"a\\b"
+
+    def test_escapes_both(self):
+        assert escape_link_text(r"a\]b") == r"a\\\]b"
+
+    def test_empty_string(self):
+        assert escape_link_text("") == ""
+
+
+class TestEscapeLinkUrl:
+    """Tests for escape_link_url."""
+
+    def test_plain_url_unchanged(self):
+        assert escape_link_url("https://example.com/page") == "https://example.com/page"
+
+    def test_escapes_parentheses(self):
+        assert escape_link_url("https://example.com/a(b)") == r"https://example.com/a\(b\)"
+
+    def test_escapes_backslash(self):
+        assert escape_link_url(r"https://example.com/a\b") == r"https://example.com/a\\b"
+
+    def test_empty_string(self):
+        assert escape_link_url("") == ""
+
+
+class TestFormatMarkdownLink:
+    """Tests for format_markdown_link."""
+
+    def test_simple_link(self):
+        assert format_markdown_link("Example", "https://example.com") == "[Example](https://example.com)"
+
+    def test_escapes_text_and_url(self):
+        result = format_markdown_link("foo]bar", "https://example.com/a(b)")
+        assert result == r"[foo\]bar](https://example.com/a\(b\))"
+
+    def test_empty_text(self):
+        assert format_markdown_link("", "https://example.com") == "[](https://example.com)"
+
+    def test_backslash_in_both(self):
+        result = format_markdown_link(r"a\b", r"https://example.com/c\d")
+        assert result == r"[a\\b](https://example.com/c\\d)"
 
 
 class TestExtractLinksFromHtml:

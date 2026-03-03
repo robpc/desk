@@ -76,6 +76,268 @@ class TestSheetsRead:
                 client.read("nonexistent_id")
 
 
+class TestSheetsReadHyperlinks:
+    """Tests for hyperlink preservation in SheetsClient.read."""
+
+    def _setup_read_mocks(self, spreadsheets_mock, values, grid_data):
+        """Configure mocks for a read-without-ranges call with hyperlink enrichment."""
+        # Metadata call
+        spreadsheets_mock.get.return_value.execute.side_effect = [
+            # First call: metadata
+            {
+                "properties": {"title": "Link Sheet"},
+                "sheets": [{"properties": {"sheetId": 0, "title": "Sheet1"}}],
+            },
+            # Second call: hyperlink enrichment
+            grid_data,
+        ]
+        # Values call
+        values_mock = spreadsheets_mock.values.return_value
+        values_mock.get.return_value.execute.return_value = {
+            "range": "Sheet1!A1:B2",
+            "values": values,
+        }
+
+    def test_read_preserves_whole_cell_hyperlink(self, mock_credentials):
+        """Cell with a hyperlink should be emitted as [text](url)."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["Example", "Plain"], ["Link", "Also plain"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [
+                                    {"hyperlink": "https://example.com"},
+                                    {},
+                                ]},
+                                {"values": [
+                                    {"hyperlink": "https://link.com"},
+                                    {},
+                                ]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == "[Example](https://example.com)"
+            assert result["values"][0][1] == "Plain"
+            assert result["values"][1][0] == "[Link](https://link.com)"
+            assert result["values"][1][1] == "Also plain"
+
+    def test_read_preserves_inline_links_via_text_format_runs(self, mock_credentials):
+        """Inline links via textFormatRuns should produce [segment](url)."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["Visit our site for info"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [{
+                                    "textFormatRuns": [
+                                        {"startIndex": 0, "format": {}},
+                                        {
+                                            "startIndex": 6,
+                                            "format": {"link": {"uri": "https://example.com"}},
+                                        },
+                                        {"startIndex": 14, "format": {}},
+                                    ],
+                                }]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == "Visit [our site](https://example.com) for info"
+
+    def test_read_no_hyperlink_unchanged(self, mock_credentials):
+        """Cells without hyperlinks should remain unchanged."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["Hello", "World"]],
+                grid_data={"sheets": [{"data": [{"rowData": [{"values": [{}, {}]}]}]}]},
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0] == ["Hello", "World"]
+
+    def test_read_escapes_markdown_delimiters(self, mock_credentials):
+        """Brackets in text and parens in URLs should be escaped."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["foo]bar"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [{"hyperlink": "https://example.com/a(b)"}]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == r"[foo\]bar](https://example.com/a\(b\))"
+
+    def test_read_text_format_runs_no_links_unchanged(self, mock_credentials):
+        """textFormatRuns for bold/italic only (no URIs) should leave text unchanged."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["Bold text"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [{
+                                    "textFormatRuns": [
+                                        {"startIndex": 0, "format": {"bold": True}},
+                                        {"startIndex": 4, "format": {}},
+                                    ],
+                                }]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == "Bold text"
+
+    def test_read_enrichment_failure_returns_plain_values(self, mock_credentials):
+        """If hyperlink enrichment call fails, values should be returned as-is."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            http_error = HttpError(
+                resp=MagicMock(status=403),
+                content=b'{"error": {"message": "Forbidden"}}',
+            )
+            spreadsheets_mock.get.return_value.execute.side_effect = [
+                # First call: metadata succeeds
+                {
+                    "properties": {"title": "Test"},
+                    "sheets": [{"properties": {"sheetId": 0, "title": "Sheet1"}}],
+                },
+                # Second call: enrichment fails
+                http_error,
+            ]
+            values_mock = spreadsheets_mock.values.return_value
+            values_mock.get.return_value.execute.return_value = {
+                "range": "Sheet1!A1:A1",
+                "values": [["Click here"]],
+            }
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            # Should still return values, just without hyperlink enrichment
+            assert result["values"][0][0] == "Click here"
+
+    def test_read_with_ranges_preserves_hyperlinks(self, mock_credentials):
+        """The batchGet (with-ranges) path should also enrich hyperlinks."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            # batchGet values
+            values_mock = spreadsheets_mock.values.return_value
+            values_mock.batchGet.return_value.execute.return_value = {
+                "valueRanges": [
+                    {
+                        "range": "Sheet1!A1:B1",
+                        "values": [["Link", "Plain"]],
+                    },
+                ],
+            }
+            # Enrichment call
+            spreadsheets_mock.get.return_value.execute.return_value = {
+                "sheets": [{
+                    "data": [{
+                        "startRow": 0,
+                        "startColumn": 0,
+                        "rowData": [
+                            {"values": [
+                                {"hyperlink": "https://example.com"},
+                                {},
+                            ]},
+                        ],
+                    }],
+                }],
+            }
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id", ranges=["Sheet1!A1:B1"])
+
+            assert result["ranges"][0]["values"][0][0] == "[Link](https://example.com)"
+            assert result["ranges"][0]["values"][0][1] == "Plain"
+
+
 class TestSheetsWrite:
     """Tests for SheetsClient.write method."""
 

@@ -373,6 +373,160 @@ class TestDocsReadTables:
             assert lines[2].count("|") == 4  # | 1 |  |  |
 
 
+class TestDocsReadHyperlinks:
+    """Tests for hyperlink preservation in DocsClient.read."""
+
+    def test_read_preserves_hyperlinks_as_markdown(self, mock_credentials):
+        """Hyperlinked text should be emitted as [text](url)."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Link Doc",
+                "body": {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "elements": [
+                                    {"textRun": {"content": "Visit "}},
+                                    {
+                                        "textRun": {
+                                            "content": "our site",
+                                            "textStyle": {
+                                                "link": {"url": "https://example.com"}
+                                            },
+                                        }
+                                    },
+                                    {"textRun": {"content": " for details.\n"}},
+                                ],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert "[our site](https://example.com)" in result["body"]
+            assert "Visit [our site](https://example.com) for details." in result["body"]
+
+    def test_read_link_with_trailing_newline(self, mock_credentials):
+        """Trailing newline on linked text should be preserved outside the markdown link."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Link Newline",
+                "body": {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "elements": [
+                                    {
+                                        "textRun": {
+                                            "content": "click here\n",
+                                            "textStyle": {
+                                                "link": {"url": "https://example.com"}
+                                            },
+                                        }
+                                    },
+                                ],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert result["body"] == "[click here](https://example.com)\n"
+
+    def test_read_escapes_markdown_delimiters_in_links(self, mock_credentials):
+        """Brackets in text and parens in URLs should be escaped."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Escape Doc",
+                "body": {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "elements": [
+                                    {
+                                        "textRun": {
+                                            "content": "foo]bar\n",
+                                            "textStyle": {
+                                                "link": {"url": "https://example.com/a(b)"}
+                                            },
+                                        }
+                                    },
+                                ],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert r"[foo\]bar](https://example.com/a\(b\))" in result["body"]
+
+    def test_read_plain_text_with_empty_textstyle(self, mock_credentials):
+        """Text with textStyle but no link should not get markdown link syntax."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "documentId": "doc123",
+                "title": "Styled Doc",
+                "body": {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "elements": [
+                                    {
+                                        "textRun": {
+                                            "content": "bold text\n",
+                                            "textStyle": {"bold": True},
+                                        }
+                                    },
+                                ],
+                            },
+                        },
+                    ]
+                },
+            }
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.read("doc123")
+
+            assert result["body"] == "bold text\n"
+            assert "[" not in result["body"]
+
+
 class TestDocsCreate:
     """Tests for DocsClient.create method."""
 

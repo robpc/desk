@@ -4,12 +4,119 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from desk.links import format_markdown_link
+
+# Narrow fields mask — only hyperlink metadata, no values or formatting.
+_HYPERLINK_FIELDS = (
+    "sheets.data("
+    "startRow,startColumn,"
+    "rowData(values(hyperlink,textFormatRuns(startIndex,format(link(uri)))))"
+    ")"
+)
+
 
 class SheetsClient:
     """Client for Google Sheets API operations."""
 
     def __init__(self, credentials: Credentials):
         self.service = build("sheets", "v4", credentials=credentials)
+
+    # ------------------------------------------------------------------
+    # Hyperlink helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_text_format_runs(text: str, runs: list[dict]) -> str:
+        """Apply textFormatRuns, converting linked runs to ``[text](url)``."""
+        if not runs:
+            return text
+
+        # Ensure runs are sorted by startIndex
+        runs = sorted(runs, key=lambda r: r.get("startIndex", 0))
+
+        has_any_link = any(
+            r.get("format", {}).get("link", {}).get("uri") for r in runs
+        )
+        if not has_any_link:
+            return text
+
+        parts: list[str] = []
+        for i, run in enumerate(runs):
+            start = run.get("startIndex", 0)
+            end = runs[i + 1].get("startIndex", len(text)) if i + 1 < len(runs) else len(text)
+            segment = text[start:end]
+            link_uri = run.get("format", {}).get("link", {}).get("uri")
+
+            if link_uri and segment:
+                parts.append(format_markdown_link(segment, link_uri))
+            else:
+                parts.append(segment)
+
+        # Handle text before the first run
+        first_start = runs[0].get("startIndex", 0)
+        if first_start > 0:
+            parts.insert(0, text[:first_start])
+
+        return "".join(parts)
+
+    @staticmethod
+    def _extract_cell_hyperlink(cell: dict, display_value: str) -> str:
+        """Return *display_value* with any hyperlinks applied as ``[text](url)``."""
+        if not display_value:
+            return display_value
+
+        # Inline links take precedence (more specific)
+        text_format_runs = cell.get("textFormatRuns")
+        if text_format_runs:
+            return SheetsClient._apply_text_format_runs(display_value, text_format_runs)
+
+        # Whole-cell hyperlink
+        hyperlink = cell.get("hyperlink")
+        if hyperlink:
+            # Skip redundant wrapping when display text is the URL itself
+            if display_value == hyperlink:
+                return display_value
+            return format_markdown_link(display_value, hyperlink)
+
+        return display_value
+
+    @staticmethod
+    def _enrich_values_with_hyperlinks(values: list[list], data_block: dict) -> None:
+        """Merge hyperlink metadata from a grid data block into *values* in-place.
+
+        Both the Values API result and the grid data block are 0-indexed
+        relative to the same requested range, so no startRow/startColumn
+        offset is applied.
+        """
+        for row_idx, row_data in enumerate(data_block.get("rowData", [])):
+            if row_idx >= len(values):
+                break
+            for col_idx, cell in enumerate(row_data.get("values", [])):
+                if col_idx >= len(values[row_idx]):
+                    break
+                original = str(values[row_idx][col_idx])
+                enriched = SheetsClient._extract_cell_hyperlink(cell, original)
+                if enriched != original:
+                    values[row_idx][col_idx] = enriched
+
+    def _fetch_hyperlinks(self, spreadsheet_id: str, ranges: list[str]) -> dict | None:
+        """Best-effort fetch of hyperlink grid data for *ranges*."""
+        try:
+            return (
+                self.service.spreadsheets()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    ranges=ranges,
+                    fields=_HYPERLINK_FIELDS,
+                )
+                .execute()
+            )
+        except HttpError:
+            return None
+
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
 
     def read(
         self,
@@ -25,7 +132,9 @@ class SheetsClient:
             sheet_id: Optional specific sheet ID
 
         Returns:
-            Dict with spreadsheet title, sheet info, and values
+            Dict with spreadsheet title, sheet info, and values.
+            Cell values that contain hyperlinks are emitted as
+            ``[text](url)`` markdown.
         """
         try:
             if ranges:
@@ -38,15 +147,31 @@ class SheetsClient:
                     )
                     .execute()
                 )
+                range_results = [
+                    {
+                        "range": vr.get("range", ""),
+                        "values": vr.get("values", []),
+                    }
+                    for vr in result.get("valueRanges", [])
+                ]
+
+                # Enrich each range individually to avoid ordering
+                # mismatches when ranges span multiple sheets.
+                for rr in range_results:
+                    rng = rr.get("range")
+                    if not rng or not rr.get("values"):
+                        continue
+                    grid = self._fetch_hyperlinks(spreadsheet_id, [rng])
+                    if grid:
+                        for sheet in grid.get("sheets", []):
+                            for block in sheet.get("data", []):
+                                self._enrich_values_with_hyperlinks(
+                                    rr["values"], block
+                                )
+
                 return {
                     "spreadsheetId": spreadsheet_id,
-                    "ranges": [
-                        {
-                            "range": vr.get("range", ""),
-                            "values": vr.get("values", []),
-                        }
-                        for vr in result.get("valueRanges", [])
-                    ],
+                    "ranges": range_results,
                 }
             else:
                 # Get spreadsheet metadata first
@@ -84,6 +209,16 @@ class SheetsClient:
                     .execute()
                 )
 
+                values = result.get("values", [])
+
+                # Enrich with hyperlinks
+                enrich_range = result.get("range", read_range)
+                grid = self._fetch_hyperlinks(spreadsheet_id, [enrich_range])
+                if grid:
+                    for sheet in grid.get("sheets", []):
+                        for block in sheet.get("data", []):
+                            self._enrich_values_with_hyperlinks(values, block)
+
                 return {
                     "spreadsheetId": spreadsheet_id,
                     "title": title,
@@ -92,7 +227,7 @@ class SheetsClient:
                         for s in sheets
                     ],
                     "range": result.get("range", ""),
-                    "values": result.get("values", []),
+                    "values": values,
                 }
         except HttpError as error:
             raise RuntimeError(f"Sheets API error: {error}")
