@@ -628,6 +628,7 @@ def read(message_id: str, as_json: bool) -> None:
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
 @click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
+@click.option("--from", "from_addr", default=None, help="Send from alias (use 'desk mail aliases')")
 @click.option("--idempotency-key", "idempotency_key", default=None, help="Key for safe retries (prevents duplicate sends)")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
@@ -641,6 +642,7 @@ def send(
     body_file: str | None,
     from_stdin: bool,
     is_html: bool,
+    from_addr: str | None,
     idempotency_key: str | None,
     dry_run: bool,
     quiet: bool,
@@ -747,6 +749,7 @@ def send(
         cc=list(cc_addrs) if cc_addrs else None,
         bcc=list(bcc_addrs) if bcc_addrs else None,
         html=is_html,
+        from_addr=from_addr,
     )
 
     receipt = operation_receipt(
@@ -818,6 +821,7 @@ def _get_body(
 @click.option("--body-file", "-f", "body_file", default=None, help="Read body from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read body from stdin")
 @click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
+@click.option("--from", "from_addr", default=None, help="Reply from alias (auto-detected if omitted)")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -828,6 +832,7 @@ def reply(
     body_file: str | None,
     from_stdin: bool,
     is_html: bool,
+    from_addr: str | None,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -860,7 +865,10 @@ def reply(
         return
 
     client = _get_client()
-    result = client.reply(message_id, body=body, reply_all=reply_all, html=is_html)
+    result = client.reply(
+        message_id, body=body, reply_all=reply_all, html=is_html,
+        from_addr=from_addr,
+    )
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -877,6 +885,7 @@ def reply(
 @click.option("--body-file", "-f", "body_file", default=None, help="Read additional message from file")
 @click.option("--stdin", "from_stdin", is_flag=True, help="Read additional message from stdin")
 @click.option("--html", "is_html", is_flag=True, help="Treat body as HTML")
+@click.option("--from", "from_addr", default=None, help="Forward from alias")
 @click.option("--dry-run", is_flag=True, help="Preview without sending")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -887,6 +896,7 @@ def forward(
     body_file: str | None,
     from_stdin: bool,
     is_html: bool,
+    from_addr: str | None,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -918,13 +928,63 @@ def forward(
         return
 
     client = _get_client()
-    result = client.forward(message_id, to=list(to_addrs), body=body, html=is_html)
+    result = client.forward(
+        message_id, to=list(to_addrs), body=body, html=is_html,
+        from_addr=from_addr,
+    )
 
     if as_json:
         print(json.dumps(result, indent=2))
     elif not quiet:
         console.print(f"[green]Forwarded message to {', '.join(to_addrs)}[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
+
+
+@mail.command()
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def aliases(as_json: bool) -> None:
+    """List send-as aliases.
+
+    Shows email addresses you can send from. Use the address with
+    --from on send, reply, and forward commands.
+
+    Examples:
+
+        desk mail aliases
+
+        desk mail aliases --json
+    """
+    client = _get_client(as_json)
+    try:
+        alias_list = client.list_send_as_aliases()
+    except Exception as e:
+        _handle_api_error(e, as_json, {"operation": "list-aliases"})
+
+    if as_json:
+        print(json.dumps(alias_list, indent=2))
+        return
+
+    if not alias_list:
+        console.print("No send-as aliases configured.")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Email", no_wrap=True)
+    table.add_column("Name")
+    table.add_column("Default", width=8)
+    table.add_column("Status")
+
+    for a in alias_list:
+        default = "yes" if a.get("isDefault") else ""
+        status = a.get("verificationStatus", "")
+        table.add_row(
+            a.get("sendAsEmail", ""),
+            a.get("displayName", ""),
+            default,
+            status,
+        )
+
+    console.print(table)
 
 
 # -----------------------------------------------------------------------------
