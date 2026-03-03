@@ -476,6 +476,53 @@ class TestFormsAddQuestion:
                     goto={"A": "section_a"},
                 )
 
+    def test_add_question_default_index_fetches_form(self, mock_credentials):
+        """Should fetch form and set location.index to item count when index is None."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = {
+                "items": [
+                    {"title": "Q1", "questionItem": {"question": {}}},
+                    {"title": "Q2", "questionItem": {"question": {}}},
+                    {"title": "Q3", "questionItem": {"question": {}}},
+                ],
+            }
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.add_question("form_123", "New question")
+
+            assert result["status"] == "ok"
+            forms_mock.get.assert_called_once_with(formId="form_123")
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            location = call_body["requests"][0]["createItem"]["location"]
+            assert location["index"] == 3
+
+    def test_add_question_explicit_index_skips_get(self, mock_credentials):
+        """Should use provided index and not call forms().get() when index is explicit."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.add_question("form_123", "Inserted question", index=5)
+
+            assert result["status"] == "ok"
+            forms_mock.get.assert_not_called()
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            location = call_body["requests"][0]["createItem"]["location"]
+            assert location["index"] == 5
+
 
 class TestFormsAddSection:
     """Tests for FormsClient.add_section method."""
@@ -518,6 +565,52 @@ class TestFormsAddSection:
             call_body = forms_mock.batchUpdate.call_args[1]["body"]
             item = call_body["requests"][0]["createItem"]["item"]
             assert "itemId" not in item
+
+    def test_add_section_default_index_fetches_form(self, mock_credentials):
+        """Should fetch form and set location.index to item count when index is None."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.get.return_value.execute.return_value = {
+                "items": [
+                    {"title": "Q1", "questionItem": {"question": {}}},
+                    {"title": "Section 1", "pageBreakItem": {}},
+                ],
+            }
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.add_section("form_123", "New Section")
+
+            assert result["status"] == "ok"
+            forms_mock.get.assert_called_once_with(formId="form_123")
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            location = call_body["requests"][0]["createItem"]["location"]
+            assert location["index"] == 2
+
+    def test_add_section_explicit_index_skips_get(self, mock_credentials):
+        """Should use provided index and not call forms().get() when index is explicit."""
+        with patch("desk.services.forms.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            forms_mock = mock_service.forms.return_value
+            forms_mock.batchUpdate.return_value.execute.return_value = {}
+
+            from desk.services.forms import FormsClient
+
+            client = FormsClient(mock_credentials)
+            result = client.add_section("form_123", "Inserted Section", index=3)
+
+            assert result["status"] == "ok"
+            forms_mock.get.assert_not_called()
+            call_body = forms_mock.batchUpdate.call_args[1]["body"]
+            location = call_body["requests"][0]["createItem"]["location"]
+            assert location["index"] == 3
 
 
 class TestSimplifyItems:

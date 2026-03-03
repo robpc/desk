@@ -182,17 +182,19 @@ class FormsClient:
             elif question_type == "scale":
                 question["scaleQuestion"] = {"low": 1, "high": 5}
 
+            if index is None:
+                form = self.service.forms().get(formId=form_id).execute()
+                index = len(form.get("items", []))
+
             request: dict = {
                 "createItem": {
                     "item": {
                         "title": title,
                         "questionItem": {"question": question},
                     },
-                    "location": {},
+                    "location": {"index": index},
                 }
             }
-            if index is not None:
-                request["createItem"]["location"]["index"] = index
 
             self.service.forms().batchUpdate(
                 formId=form_id,
@@ -232,14 +234,16 @@ class FormsClient:
             if section_id is not None:
                 item["itemId"] = section_id
 
+            if index is None:
+                form = self.service.forms().get(formId=form_id).execute()
+                index = len(form.get("items", []))
+
             request: dict = {
                 "createItem": {
                     "item": item,
-                    "location": {},
+                    "location": {"index": index},
                 }
             }
-            if index is not None:
-                request["createItem"]["location"]["index"] = index
 
             self.service.forms().batchUpdate(
                 formId=form_id,
