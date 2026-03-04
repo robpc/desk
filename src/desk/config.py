@@ -42,10 +42,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/forms.responses.readonly",
 ]
 
-# Scopes for gcloud ADC (requires cloud-platform)
+# Scopes for gcloud ADC
 GCLOUD_SCOPES = [
     *SCOPES,
-    "https://www.googleapis.com/auth/cloud-platform",
 ]
 
 
