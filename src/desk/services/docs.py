@@ -50,6 +50,61 @@ class DocsClient:
             loc["tabId"] = tab_id
         return loc
 
+    @staticmethod
+    def _find_tab(tabs: list[dict], tab_id: str) -> dict:
+        """Find a tab by exact ID first, then by title (case-insensitive).
+
+        Args:
+            tabs: Flattened list of tab dicts
+            tab_id: Tab title or tab ID to match
+
+        Returns:
+            The matched tab dict
+
+        Raises:
+            RuntimeError: If no tab matches or multiple tabs share the title
+        """
+        # Exact ID match takes priority
+        for tab in tabs:
+            if tab.get("tabProperties", {}).get("tabId") == tab_id:
+                return tab
+        # Fall back to case-insensitive title match
+        matches = [
+            tab for tab in tabs
+            if tab.get("tabProperties", {}).get("title", "").lower() == tab_id.lower()
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            details = [
+                f"  '{t.get('tabProperties', {}).get('title', '')}' (ID: {t.get('tabProperties', {}).get('tabId', '')})"
+                for t in matches
+            ]
+            raise RuntimeError(
+                f"Ambiguous tab title: {tab_id}. Multiple tabs match:\n"
+                + "\n".join(details)
+                + "\nUse the tab ID instead."
+            )
+        tab_names = [t.get("tabProperties", {}).get("title", "") for t in tabs]
+        raise RuntimeError(f"Tab not found: {tab_id}. Available tabs: {', '.join(tab_names)}")
+
+    def _resolve_tab_id(self, document_id: str, tab_id: str) -> str:
+        """Resolve a tab title or ID to the actual tab ID.
+
+        Args:
+            document_id: The document ID
+            tab_id: Tab title or tab ID to resolve
+
+        Returns:
+            The resolved tab ID
+        """
+        doc = self.service.documents().get(
+            documentId=document_id, includeTabsContent=True
+        ).execute()
+        tabs = self._flatten_tabs(doc.get("tabs", []))
+        tab = self._find_tab(tabs, tab_id)
+        return tab.get("tabProperties", {}).get("tabId", tab_id)
+
     def _get_body(self, document_id: str, tab_id: str | None = None) -> tuple[dict, dict]:
         """Get a document and its body, optionally for a specific tab.
 
@@ -60,10 +115,9 @@ class DocsClient:
             doc = self.service.documents().get(
                 documentId=document_id, includeTabsContent=True
             ).execute()
-            for tab in self._flatten_tabs(doc.get("tabs", [])):
-                if tab.get("tabProperties", {}).get("tabId") == tab_id:
-                    return doc, tab.get("documentTab", {}).get("body", {})
-            raise RuntimeError(f"Tab not found: {tab_id}")
+            tabs = self._flatten_tabs(doc.get("tabs", []))
+            tab = self._find_tab(tabs, tab_id)
+            return doc, tab.get("documentTab", {}).get("body", {})
         else:
             doc = self.service.documents().get(documentId=document_id).execute()
             return doc, doc.get("body", {})
@@ -153,12 +207,13 @@ class DocsClient:
 
         Args:
             document_id: The document ID
-            tab_id: The tab ID to delete
+            tab_id: The tab name or ID to delete
 
         Returns:
             Dict with documentId and status
         """
         try:
+            tab_id = self._resolve_tab_id(document_id, tab_id)
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{"deleteTab": {"tabId": tab_id}}]},
@@ -173,13 +228,14 @@ class DocsClient:
 
         Args:
             document_id: The document ID
-            tab_id: The tab ID to rename
+            tab_id: The tab name or ID to rename
             title: New title for the tab
 
         Returns:
             Dict with tabId and title
         """
         try:
+            tab_id = self._resolve_tab_id(document_id, tab_id)
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -277,6 +333,8 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             if mode == "replace":
                 _, body = self._get_body(document_id, tab_id)
                 content = body.get("content", [])
@@ -334,6 +392,8 @@ class DocsClient:
             Dict with documentId, occurrences_changed, and status
         """
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             request: dict = {
                 "containsText": {
                     "text": find_text,
@@ -419,6 +479,8 @@ class DocsClient:
 
         text = normalize_text(text)
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             if index is None:
                 request = {"insertText": {
                     "endOfSegmentLocation": self._end_of_segment(tab_id),
@@ -455,6 +517,8 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -534,6 +598,8 @@ class DocsClient:
             return {"documentId": document_id, "status": "ok", "note": "no styles specified"}
 
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -588,6 +654,8 @@ class DocsClient:
             return {"documentId": document_id, "status": "ok", "note": "no styles specified"}
 
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -620,6 +688,8 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             if index is None:
                 location = {"endOfSegmentLocation": self._end_of_segment(tab_id)}
             else:
@@ -659,6 +729,8 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             if index is None:
                 location = {"endOfSegmentLocation": self._end_of_segment(tab_id)}
             else:
@@ -702,6 +774,8 @@ class DocsClient:
         from desk.services.markdown_to_docs import markdown_to_requests
 
         try:
+            if tab_id:
+                tab_id = self._resolve_tab_id(document_id, tab_id)
             if replace:
                 _, body = self._get_body(document_id, tab_id)
                 content = body.get("content", [])

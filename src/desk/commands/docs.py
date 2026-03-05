@@ -203,7 +203,7 @@ def create(
 
 @docs.command()
 @click.argument("document_id")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to read from")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to read from")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def read(document_id: str, tab_id: str | None, as_json: bool) -> None:
     """Read a document's content.
@@ -231,7 +231,7 @@ def read(document_id: str, tab_id: str | None, as_json: bool) -> None:
 
 @docs.command("inspect")
 @click.argument("document_id")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to inspect")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to inspect")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def inspect_cmd(document_id: str, tab_id: str | None, quiet: bool, as_json: bool) -> None:
@@ -371,7 +371,7 @@ def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) ->
     help="Find and replace: TEXT replaces all occurrences of FIND",
 )
 @click.option("--ignore-case", is_flag=True, help="Case-insensitive find (use with --find)")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
@@ -465,7 +465,7 @@ def update(
 )
 @click.option("--file", "-f", "file_path", help="Read content from file")
 @click.option("--stdin", is_flag=True, help="Read content from stdin")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_cmd(
@@ -565,7 +565,7 @@ def insert_cmd(
 @click.argument("document_id")
 @click.option("--start", required=True, type=int, help="Start index (inclusive)")
 @click.option("--end", required=True, type=int, help="End index (exclusive)")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def delete_range_cmd(
@@ -622,7 +622,7 @@ def delete_range_cmd(
 @click.option("--link", default=None, help="Set hyperlink URL")
 @click.option("--font-size", type=float, default=None, help="Font size in points")
 @click.option("--font", default=None, help="Font family name")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def style_cmd(
@@ -705,7 +705,7 @@ def style_cmd(
     default=None,
     help="Text alignment",
 )
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def paragraph_style_cmd(
@@ -769,7 +769,7 @@ def paragraph_style_cmd(
 @click.option("--stdin", is_flag=True, help="Read markdown from stdin")
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--replace", is_flag=True, help="Replace entire document content")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def write_markdown_cmd(
@@ -830,7 +830,7 @@ def write_markdown_cmd(
 @click.option("--rows", required=True, type=int, help="Number of rows")
 @click.option("--cols", required=True, type=int, help="Number of columns")
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_table_cmd(
@@ -877,7 +877,7 @@ def insert_table_cmd(
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--width", type=float, default=None, help="Image width in points")
 @click.option("--height", type=float, default=None, help="Image height in points")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab name or ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_image_cmd(
@@ -1001,7 +1001,7 @@ def add_tab(
 
 @docs.command("delete-tab")
 @click.argument("document_id")
-@click.option("--tab", "tab_id", required=True, help="Tab ID to delete")
+@click.option("--tab", "tab_id", required=True, help="Tab name or ID to delete")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -1051,7 +1051,7 @@ def delete_tab(
 
 @docs.command("rename-tab")
 @click.argument("document_id")
-@click.option("--tab", "tab_id", required=True, help="Tab ID to rename")
+@click.option("--tab", "tab_id", required=True, help="Tab name or ID to rename")
 @click.option("--title", "-t", required=True, help="New title for the tab")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
