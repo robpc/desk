@@ -979,7 +979,8 @@ class DocsClient:
         """Extract text from a paragraph element.
 
         Hyperlinked text is emitted as ``[text](url)`` so that URLs
-        are preserved in the output.
+        are preserved in the output.  Smart chips (person mentions,
+        rich links) are rendered inline.
         """
         parts = []
         for pe in paragraph.get("elements", []):
@@ -994,6 +995,20 @@ class DocsClient:
                     parts.append(f"{format_markdown_link(text, link_url)}{trailing}")
                 else:
                     parts.append(content)
+            elif "person" in pe:
+                props = pe["person"].get("personProperties", {})
+                name = props.get("name", "").strip()
+                email = props.get("email", "")
+                display = name or email or "someone"
+                parts.append(f"@{display}")
+            elif "richLink" in pe:
+                props = pe["richLink"].get("richLinkProperties", {})
+                uri = props.get("uri", "")
+                title = props.get("title", "").strip()
+                if uri and title:
+                    parts.append(format_markdown_link(title, uri))
+                elif uri:
+                    parts.append(uri)
         return "".join(parts)
 
     def _extract_table_text(self, table: dict) -> str:

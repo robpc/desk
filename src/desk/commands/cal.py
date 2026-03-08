@@ -648,16 +648,20 @@ def _print_events(events: list[dict], title: str) -> None:
     table.add_column("Time", width=25)
     table.add_column("Event", width=40)
     table.add_column("Location", width=25)
+    table.add_column("\U0001F4CE", width=3)
 
     for event in events:
         start = event.get("start", "")
         # Strip seconds from datetime for readability
         if "T" in start:
             start = start[:16].replace("T", " ")
+        attachments = event.get("attachments", [])
+        att_indicator = str(len(attachments)) if attachments else ""
         table.add_row(
             start,
             event.get("summary", "(no title)"),
             event.get("location", ""),
+            att_indicator,
         )
 
     console.print(table)

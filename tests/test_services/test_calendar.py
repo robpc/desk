@@ -388,3 +388,76 @@ class TestParseEventAttendees:
         })
         assert event["attendees"] == []
         assert event["attendeeCount"] == 0
+
+
+class TestParseEventAttachments:
+    """Tests for attachment extraction in _parse_event."""
+
+    def _make_client_with_event(self, mock_credentials, raw_event):
+        with patch("desk.services.calendar.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            from desk.services.calendar import CalendarClient
+
+            client = CalendarClient(mock_credentials)
+            return client._parse_event(raw_event)
+
+    def test_event_with_attachments(self, mock_credentials):
+        """Attachments should be included in parsed event."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev1",
+            "summary": "Review Meeting",
+            "start": {"dateTime": "2024-01-15T09:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T10:00:00-05:00"},
+            "attachments": [
+                {
+                    "title": "Meeting Notes",
+                    "fileUrl": "https://docs.google.com/document/d/abc",
+                    "mimeType": "application/vnd.google-apps.document",
+                },
+                {
+                    "title": "Slides",
+                    "fileUrl": "https://docs.google.com/presentation/d/xyz",
+                    "mimeType": "application/vnd.google-apps.presentation",
+                },
+            ],
+        })
+        assert len(event["attachments"]) == 2
+        assert event["attachments"][0]["title"] == "Meeting Notes"
+        assert event["attachments"][1]["fileUrl"] == "https://docs.google.com/presentation/d/xyz"
+
+    def test_event_without_attachments_key(self, mock_credentials):
+        """Events with no attachments key should have empty list."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev2",
+            "summary": "Quick Sync",
+            "start": {"dateTime": "2024-01-15T11:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T11:30:00-05:00"},
+        })
+        assert event["attachments"] == []
+
+    def test_event_with_empty_attachments(self, mock_credentials):
+        """Events with empty attachments array should have empty list."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev3",
+            "summary": "Standup",
+            "start": {"dateTime": "2024-01-15T10:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T10:15:00-05:00"},
+            "attachments": [],
+        })
+        assert event["attachments"] == []
+
+    def test_attachment_with_missing_fields(self, mock_credentials):
+        """Attachments with missing fields should default to empty strings."""
+        event = self._make_client_with_event(mock_credentials, {
+            "id": "ev4",
+            "summary": "Planning",
+            "start": {"dateTime": "2024-01-15T14:00:00-05:00"},
+            "end": {"dateTime": "2024-01-15T15:00:00-05:00"},
+            "attachments": [{"fileUrl": "https://example.com/file"}],
+        })
+        assert len(event["attachments"]) == 1
+        assert event["attachments"][0]["title"] == ""
+        assert event["attachments"][0]["mimeType"] == ""
+        assert event["attachments"][0]["fileUrl"] == "https://example.com/file"

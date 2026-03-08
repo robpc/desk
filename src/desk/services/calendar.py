@@ -163,7 +163,12 @@ class CalendarClient:
         try:
             event = (
                 self.service.events()
-                .insert(calendarId=calendar_id, body=body, sendUpdates="all")
+                .insert(
+                    calendarId=calendar_id,
+                    body=body,
+                    sendUpdates="all",
+                    supportsAttachments=True,
+                )
                 .execute()
             )
             return self._parse_event(event)
@@ -181,7 +186,9 @@ class CalendarClient:
             Event dict
         """
         try:
-            event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            event = self.service.events().get(
+                calendarId=calendar_id, eventId=event_id
+            ).execute()
             return self._parse_event(event)
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
@@ -227,7 +234,9 @@ class CalendarClient:
             Updated event dict
         """
         try:
-            event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            event = self.service.events().get(
+                calendarId=calendar_id, eventId=event_id
+            ).execute()
 
             if summary is not None:
                 event["summary"] = summary
@@ -262,6 +271,7 @@ class CalendarClient:
                     eventId=event_id,
                     body=event,
                     sendUpdates="all",
+                    supportsAttachments=True,
                 )
                 .execute()
             )
@@ -367,6 +377,14 @@ class CalendarClient:
                 for a in attendees
             ],
             "attendeeCount": len(attendees),
+            "attachments": [
+                {
+                    "title": att.get("title", ""),
+                    "fileUrl": att.get("fileUrl", ""),
+                    "mimeType": att.get("mimeType", ""),
+                }
+                for att in event.get("attachments", [])
+            ],
         }
 
     def _parse_time_input(self, time_str: str) -> dict:
@@ -449,7 +467,9 @@ class CalendarClient:
 
         try:
             # Get the event
-            event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            event = self.service.events().get(
+                calendarId=calendar_id, eventId=event_id
+            ).execute()
 
             # Find self in attendees and update response
             attendees = event.get("attendees", [])
@@ -471,6 +491,7 @@ class CalendarClient:
                     eventId=event_id,
                     body=event,
                     sendUpdates="all",
+                    supportsAttachments=True,
                 )
                 .execute()
             )
