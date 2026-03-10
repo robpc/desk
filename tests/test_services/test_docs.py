@@ -6,16 +6,6 @@ from unittest.mock import MagicMock, patch
 from googleapiclient.errors import HttpError
 
 
-def _mock_tab_doc(*tab_ids):
-    """Return a mock document dict with tabs for _resolve_tab_id."""
-    return {
-        "tabs": [
-            {"tabProperties": {"tabId": tid, "title": f"Tab {tid}"}}
-            for tid in tab_ids
-        ]
-    }
-
-
 class TestDocsClientInit:
     """Tests for DocsClient initialization."""
 
@@ -1466,7 +1456,7 @@ class TestDocsDeleteTab:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1489,7 +1479,7 @@ class TestDocsRenameTab:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.0")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1515,7 +1505,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1535,7 +1525,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1554,7 +1544,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1572,7 +1562,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1590,7 +1580,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1608,7 +1598,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1680,7 +1670,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1698,7 +1688,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.1")
+
             documents_mock.batchUpdate.return_value.execute.return_value = {
                 "replies": [{"replaceAllText": {"occurrencesChanged": 1}}],
             }
@@ -1736,132 +1726,6 @@ class TestDocsTabIdOnExistingMethods:
                 mock_m2r.return_value = [{"insertText": {"location": {"index": 9, "tabId": "t.1"}, "text": "hello"}}]
                 client.write_markdown("doc123", "hello", tab_id="t.1")
                 mock_m2r.assert_called_once_with("hello", base_index=9, tab_id="t.1")
-
-
-class TestDocsTabTitleResolution:
-    """Tests for resolving tab titles to tab IDs."""
-
-    def test_resolve_by_title(self, mock_credentials):
-        """Should match tab by title and use the resolved ID."""
-        with patch("desk.services.docs.build") as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-            documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = {
-                "tabs": [
-                    {"tabProperties": {"tabId": "t.0", "title": "Research Brief"}},
-                    {"tabProperties": {"tabId": "t.1", "title": "Study 1: Interviews"}},
-                ],
-            }
-            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
-
-            from desk.services.docs import DocsClient
-
-            client = DocsClient(mock_credentials)
-            client.delete_range("doc123", 1, 10, tab_id="Study 1: Interviews")
-
-            req = documents_mock.batchUpdate.call_args[1]["body"]["requests"][0]
-            assert req["deleteContentRange"]["range"]["tabId"] == "t.1"
-
-    def test_resolve_by_title_case_insensitive(self, mock_credentials):
-        """Should match tab title case-insensitively."""
-        with patch("desk.services.docs.build") as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-            documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = {
-                "tabs": [
-                    {"tabProperties": {"tabId": "t.0", "title": "My Tab"}},
-                ],
-            }
-            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
-
-            from desk.services.docs import DocsClient
-
-            client = DocsClient(mock_credentials)
-            client.delete_range("doc123", 1, 10, tab_id="my tab")
-
-            req = documents_mock.batchUpdate.call_args[1]["body"]["requests"][0]
-            assert req["deleteContentRange"]["range"]["tabId"] == "t.0"
-
-    def test_resolve_falls_back_to_id(self, mock_credentials):
-        """Should fall back to matching by ID when title doesn't match."""
-        with patch("desk.services.docs.build") as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-            documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = _mock_tab_doc("t.0", "t.1")
-            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
-
-            from desk.services.docs import DocsClient
-
-            client = DocsClient(mock_credentials)
-            client.delete_range("doc123", 1, 10, tab_id="t.1")
-
-            req = documents_mock.batchUpdate.call_args[1]["body"]["requests"][0]
-            assert req["deleteContentRange"]["range"]["tabId"] == "t.1"
-
-    def test_resolve_not_found_shows_available(self, mock_credentials):
-        """Should list available tabs when tab not found."""
-        with patch("desk.services.docs.build") as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-            documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = {
-                "tabs": [
-                    {"tabProperties": {"tabId": "t.0", "title": "Tab A"}},
-                    {"tabProperties": {"tabId": "t.1", "title": "Tab B"}},
-                ],
-            }
-
-            from desk.services.docs import DocsClient
-
-            client = DocsClient(mock_credentials)
-            with pytest.raises(RuntimeError, match="Available tabs: Tab A, Tab B"):
-                client.delete_range("doc123", 1, 10, tab_id="nonexistent")
-
-    def test_id_takes_priority_over_title(self, mock_credentials):
-        """When input matches a tab ID, use that even if another tab's title matches."""
-        with patch("desk.services.docs.build") as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-            documents_mock = mock_service.documents.return_value
-            # Tab "t.1" has title "t.0" — a title collision with the other tab's ID
-            documents_mock.get.return_value.execute.return_value = {
-                "tabs": [
-                    {"tabProperties": {"tabId": "t.0", "title": "First Tab"}},
-                    {"tabProperties": {"tabId": "t.1", "title": "t.0"}},
-                ],
-            }
-            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
-
-            from desk.services.docs import DocsClient
-
-            client = DocsClient(mock_credentials)
-            client.delete_range("doc123", 1, 10, tab_id="t.0")
-
-            req = documents_mock.batchUpdate.call_args[1]["body"]["requests"][0]
-            # Should match the ID "t.0", not the title "t.0"
-            assert req["deleteContentRange"]["range"]["tabId"] == "t.0"
-
-    def test_ambiguous_title_raises_error(self, mock_credentials):
-        """Should error when multiple tabs share the same title."""
-        with patch("desk.services.docs.build") as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-            documents_mock = mock_service.documents.return_value
-            documents_mock.get.return_value.execute.return_value = {
-                "tabs": [
-                    {"tabProperties": {"tabId": "t.0", "title": "Draft"}},
-                    {"tabProperties": {"tabId": "t.1", "title": "Draft"}},
-                ],
-            }
-
-            from desk.services.docs import DocsClient
-
-            client = DocsClient(mock_credentials)
-            with pytest.raises(RuntimeError, match="Ambiguous tab title"):
-                client.delete_range("doc123", 1, 10, tab_id="Draft")
 
 
 class TestExtractParagraphText:

@@ -648,7 +648,7 @@ def _print_events(events: list[dict], title: str) -> None:
     table.add_column("Time", width=25)
     table.add_column("Event", width=40)
     table.add_column("Location", width=25)
-    table.add_column("\U0001F4CE", width=3)
+    table.add_column("Att", width=3)
 
     for event in events:
         start = event.get("start", "")
