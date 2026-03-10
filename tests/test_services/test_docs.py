@@ -1456,6 +1456,7 @@ class TestDocsDeleteTab:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1478,6 +1479,7 @@ class TestDocsRenameTab:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1503,6 +1505,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1522,6 +1525,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1540,6 +1544,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1557,6 +1562,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1574,6 +1580,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1591,6 +1598,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1662,6 +1670,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
 
             from desk.services.docs import DocsClient
@@ -1679,6 +1688,7 @@ class TestDocsTabIdOnExistingMethods:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
             documents_mock = mock_service.documents.return_value
+
             documents_mock.batchUpdate.return_value.execute.return_value = {
                 "replies": [{"replaceAllText": {"occurrencesChanged": 1}}],
             }
@@ -1716,3 +1726,115 @@ class TestDocsTabIdOnExistingMethods:
                 mock_m2r.return_value = [{"insertText": {"location": {"index": 9, "tabId": "t.1"}, "text": "hello"}}]
                 client.write_markdown("doc123", "hello", tab_id="t.1")
                 mock_m2r.assert_called_once_with("hello", base_index=9, tab_id="t.1")
+
+
+class TestExtractParagraphText:
+    """Tests for smart chip rendering in _extract_paragraph_text."""
+
+    def _make_client(self, mock_credentials):
+        with patch("desk.services.docs.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.docs import DocsClient
+
+            return DocsClient(mock_credentials)
+
+    def test_text_run_only(self, mock_credentials):
+        """Baseline: textRun elements render as before."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [{"textRun": {"content": "Hello World\n"}}]
+        }
+        assert client._extract_paragraph_text(paragraph) == "Hello World\n"
+
+    def test_person_chip_with_name(self, mock_credentials):
+        """Person chip with name renders as @Name."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {"person": {"personProperties": {"name": "Alice", "email": "alice@co.com"}}},
+            ]
+        }
+        assert client._extract_paragraph_text(paragraph) == "@Alice"
+
+    def test_person_chip_email_only(self, mock_credentials):
+        """Person chip without name falls back to @email."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {"person": {"personProperties": {"email": "bob@co.com"}}},
+            ]
+        }
+        assert client._extract_paragraph_text(paragraph) == "@bob@co.com"
+
+    def test_person_chip_no_properties(self, mock_credentials):
+        """Person chip with no name or email renders as @someone."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {"person": {"personProperties": {}}},
+            ]
+        }
+        assert client._extract_paragraph_text(paragraph) == "@someone"
+
+    def test_rich_link_chip_with_title_and_uri(self, mock_credentials):
+        """Rich link chip renders as markdown link."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {
+                    "richLink": {
+                        "richLinkProperties": {
+                            "title": "Meeting Notes",
+                            "uri": "https://docs.google.com/document/d/abc",
+                        }
+                    }
+                },
+            ]
+        }
+        result = client._extract_paragraph_text(paragraph)
+        assert "[Meeting Notes]" in result
+        assert "https://docs.google.com/document/d/abc" in result
+
+    def test_rich_link_chip_uri_only(self, mock_credentials):
+        """Rich link chip without title renders as bare URL."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {"richLink": {"richLinkProperties": {"uri": "https://example.com"}}},
+            ]
+        }
+        assert client._extract_paragraph_text(paragraph) == "https://example.com"
+
+    def test_rich_link_chip_no_uri(self, mock_credentials):
+        """Rich link chip with no URI renders as empty."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {"richLink": {"richLinkProperties": {}}},
+            ]
+        }
+        assert client._extract_paragraph_text(paragraph) == ""
+
+    def test_mixed_elements(self, mock_credentials):
+        """Paragraph with text, person, and rich link interleaved."""
+        client = self._make_client(mock_credentials)
+        paragraph = {
+            "elements": [
+                {"textRun": {"content": "Meeting with "}},
+                {"person": {"personProperties": {"name": "Alice"}}},
+                {"textRun": {"content": " about "}},
+                {
+                    "richLink": {
+                        "richLinkProperties": {
+                            "title": "Project Plan",
+                            "uri": "https://docs.google.com/document/d/xyz",
+                        }
+                    }
+                },
+                {"textRun": {"content": "\n"}},
+            ]
+        }
+        result = client._extract_paragraph_text(paragraph)
+        assert result.startswith("Meeting with @Alice about ")
+        assert "[Project Plan]" in result
+        assert result.endswith("\n")

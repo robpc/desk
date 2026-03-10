@@ -277,6 +277,7 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+
             if mode == "replace":
                 _, body = self._get_body(document_id, tab_id)
                 content = body.get("content", [])
@@ -334,6 +335,7 @@ class DocsClient:
             Dict with documentId, occurrences_changed, and status
         """
         try:
+
             request: dict = {
                 "containsText": {
                     "text": find_text,
@@ -419,6 +421,7 @@ class DocsClient:
 
         text = normalize_text(text)
         try:
+
             if index is None:
                 request = {"insertText": {
                     "endOfSegmentLocation": self._end_of_segment(tab_id),
@@ -455,6 +458,7 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -534,6 +538,7 @@ class DocsClient:
             return {"documentId": document_id, "status": "ok", "note": "no styles specified"}
 
         try:
+
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -588,6 +593,7 @@ class DocsClient:
             return {"documentId": document_id, "status": "ok", "note": "no styles specified"}
 
         try:
+
             self.service.documents().batchUpdate(
                 documentId=document_id,
                 body={"requests": [{
@@ -620,6 +626,7 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+
             if index is None:
                 location = {"endOfSegmentLocation": self._end_of_segment(tab_id)}
             else:
@@ -659,6 +666,7 @@ class DocsClient:
             Dict with documentId and status
         """
         try:
+
             if index is None:
                 location = {"endOfSegmentLocation": self._end_of_segment(tab_id)}
             else:
@@ -702,6 +710,7 @@ class DocsClient:
         from desk.services.markdown_to_docs import markdown_to_requests
 
         try:
+
             if replace:
                 _, body = self._get_body(document_id, tab_id)
                 content = body.get("content", [])
@@ -905,7 +914,8 @@ class DocsClient:
         """Extract text from a paragraph element.
 
         Hyperlinked text is emitted as ``[text](url)`` so that URLs
-        are preserved in the output.
+        are preserved in the output.  Smart chips (person mentions,
+        rich links) are rendered inline.
         """
         parts = []
         for pe in paragraph.get("elements", []):
@@ -920,6 +930,20 @@ class DocsClient:
                     parts.append(f"{format_markdown_link(text, link_url)}{trailing}")
                 else:
                     parts.append(content)
+            elif "person" in pe:
+                props = pe["person"].get("personProperties", {})
+                name = props.get("name", "").strip()
+                email = props.get("email", "")
+                display = name or email or "someone"
+                parts.append(f"@{display}")
+            elif "richLink" in pe:
+                props = pe["richLink"].get("richLinkProperties", {})
+                uri = props.get("uri", "")
+                title = props.get("title", "").strip()
+                if uri and title:
+                    parts.append(format_markdown_link(title, uri))
+                elif uri:
+                    parts.append(uri)
         return "".join(parts)
 
     def _extract_table_text(self, table: dict) -> str:
