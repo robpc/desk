@@ -117,7 +117,7 @@ class DriveClient:
                 "q": query,
                 "pageSize": max_results,
                 "fields": (
-                    "nextPageToken, files(id, name, mimeType, modifiedTime, size, owners, webViewLink)"
+                    "nextPageToken, files(id, name, mimeType, modifiedTime, viewedByMeTime, size, owners, webViewLink)"
                 ),
                 "orderBy": "modifiedTime desc",
             }
@@ -200,7 +200,7 @@ class DriveClient:
             return (
                 self._files_get(
                     fileId=file_id,
-                    fields="id, name, mimeType, modifiedTime, createdTime, size, owners, "
+                    fields="id, name, mimeType, modifiedTime, viewedByMeTime, createdTime, size, owners, "
                     "parents, webViewLink, description, starred, driveId",
                 )
                 .execute()
@@ -229,7 +229,7 @@ class DriveClient:
         try:
             request_kwargs = {
                 "pageSize": max_results,
-                "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, webViewLink)",
+                "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, viewedByMeTime, webViewLink)",
                 "orderBy": "modifiedTime desc",
             }
             if page_token:
@@ -788,7 +788,7 @@ class DriveClient:
                 "q": query,
                 "pageSize": min(max_results, 100),
                 "fields": (
-                    "nextPageToken, files(id, name, mimeType, modifiedTime, size)"
+                    "nextPageToken, files(id, name, mimeType, modifiedTime, viewedByMeTime, size)"
                 ),
                 "orderBy": "modifiedTime desc",
             }
