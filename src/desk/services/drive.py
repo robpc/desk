@@ -66,13 +66,11 @@ class DriveClient:
         return self.service.files().copy(**kwargs)
 
     def _files_export(self, **kwargs):
-        """Wrap files().export() with Shared Drive support."""
-        kwargs["supportsAllDrives"] = True
+        """Wrap files().export() — export does not accept supportsAllDrives."""
         return self.service.files().export(**kwargs)
 
     def _files_export_media(self, **kwargs):
-        """Wrap files().export_media() with Shared Drive support."""
-        kwargs["supportsAllDrives"] = True
+        """Wrap files().export_media() — export does not accept supportsAllDrives."""
         return self.service.files().export_media(**kwargs)
 
     def _permissions_create(self, **kwargs):
