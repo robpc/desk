@@ -19,6 +19,12 @@ from desk.auth import (
     login,
     login_with_gcloud,
 )
+from desk.auth import (
+    clear as auth_clear_action,
+)
+from desk.auth import (
+    logout as auth_logout_action,
+)
 from desk.config import CONFIG_DIR, CREDENTIALS_FILE, migrate_legacy_config
 
 console = Console()
@@ -333,8 +339,22 @@ def auth_set_client(client_id: str, client_secret: str, project_id: str | None) 
     if project_id:
         credentials["installed"]["project_id"] = project_id
 
+    # If the new client_id differs from the existing token's client_id, the
+    # stored token can no longer refresh. Auto-invalidate it so the user lands
+    # in a clean state on the next login.
+    existing_token = keyring_store.get_token()
+    invalidated_token = False
+    if existing_token:
+        existing_client_id = existing_token.get("client_id")
+        if existing_client_id and existing_client_id != client_id:
+            invalidated_token = keyring_store.delete_token()
+
     keyring_store.set_client_credentials(credentials)
     console.print("Client credentials stored in keychain.")
+    if invalidated_token:
+        console.print(
+            "Cleared stored token (was issued for a different client_id)."
+        )
 
 
 @auth.command("login")
@@ -386,6 +406,28 @@ def auth_status(as_json: bool, verify: bool) -> None:
 
         console.print(f"[green]Authenticated[/green] via {method_display}")
 
+        # Show OAuth client + token diagnostics so users can spot stale state.
+        client_id = info.get("client_id")
+        token_client_id = info.get("token_client_id")
+        token_source = info.get("token_source")
+        scopes = info.get("scopes") or []
+
+        if client_id:
+            console.print(f"  client_id: {escape(client_id)}", soft_wrap=True)
+        if token_client_id and token_client_id != client_id:
+            console.print(
+                f"  [yellow]token client_id: {escape(token_client_id)} "
+                "(does not match configured client — "
+                "run `desk auth login` to refresh)[/yellow]",
+                soft_wrap=True,
+            )
+        if token_source and token_source != "none":
+            console.print(f"  token source: {token_source}")
+        if scopes:
+            console.print(f"  scopes ({len(scopes)}):")
+            for scope in scopes:
+                console.print(f"    {escape(scope)}")
+
         # Show service access if verified
         if info.get("services"):
             console.print()
@@ -415,6 +457,105 @@ def auth_status(as_json: bool, verify: bool) -> None:
             console.print("Quick setup: [cyan]desk setup --gcloud[/cyan]")
         else:
             console.print("Run: [cyan]desk setup[/cyan] for setup instructions")
+
+
+@auth.command("logout")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def auth_logout(as_json: bool) -> None:
+    """Sign out by removing the stored OAuth token.
+
+    Removes the OAuth token from the OS keychain (and scrubs any legacy
+    ~/.desk/token.json secrets). Stored client credentials are preserved so
+    you can run `desk auth login` again without re-provisioning the client.
+
+    Idempotent: succeeds even if no token is stored.
+    """
+    result = auth_logout_action()
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+
+    if result["keyring_token_removed"] or result["token_file_scrubbed"]:
+        if result["keyring_token_removed"]:
+            console.print("[green]Removed OAuth token from keychain.[/green]")
+        if result["token_file_scrubbed"]:
+            console.print("[green]Scrubbed legacy token file.[/green]")
+        console.print("Run [cyan]desk auth login[/cyan] to sign in again.")
+    else:
+        console.print("[dim]No stored OAuth token to remove.[/dim]")
+
+
+@auth.command("clear")
+@click.option("--token", "clear_token", is_flag=True, help="Clear only the OAuth token")
+@click.option(
+    "--client", "clear_client_flag", is_flag=True, help="Clear only the client credentials"
+)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def auth_clear(
+    clear_token: bool, clear_client_flag: bool, yes: bool, as_json: bool
+) -> None:
+    """Remove stored credentials from the OS keychain.
+
+    By default, clears both the OAuth token and the stored client credentials.
+    Use --token to clear only the token, or --client to clear only the client
+    credentials. Passing both flags is equivalent to passing neither.
+
+    This is the recovery hatch when the keychain state is stale (e.g. the
+    stored token was minted against a different OAuth client than the one
+    currently configured, or scopes have drifted).
+    """
+    # Default: both. Both flags: both. Otherwise honor the explicit flag.
+    if clear_token == clear_client_flag:
+        do_token = True
+        do_client = True
+    else:
+        do_token = clear_token
+        do_client = clear_client_flag
+
+    targets = []
+    if do_token:
+        targets.append("OAuth token")
+    if do_client:
+        targets.append("client credentials")
+    target_label = " and ".join(targets)
+
+    if not yes:
+        if not sys.stdin.isatty():
+            if as_json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "Non-interactive mode requires --yes flag",
+                            "targets": targets,
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+            sys.exit(1)
+        if not click.confirm(f"Remove {target_label} from keychain?"):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    result = auth_clear_action(token=do_token, client=do_client)
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+
+    if result["keyring_token_removed"]:
+        console.print("[green]Removed OAuth token from keychain.[/green]")
+    if result["token_file_scrubbed"]:
+        console.print("[green]Scrubbed legacy token file.[/green]")
+    if result["keyring_client_removed"]:
+        console.print("[green]Removed client credentials from keychain.[/green]")
+    if not any(result.values()):
+        console.print("[dim]Nothing to remove.[/dim]")
+    else:
+        console.print("Run [cyan]desk setup[/cyan] to re-authenticate.")
 
 
 # --- Register subcommand groups ---

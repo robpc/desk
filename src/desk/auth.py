@@ -141,9 +141,7 @@ def _get_oauth_credentials() -> Credentials | None:
             return None
         except Exception as e:
             _logger.debug(f"Unexpected error loading token file: {type(e).__name__}: {e}")
-            _last_auth_failure["reason"] = (
-                f"Could not load token file: {type(e).__name__}: {e}"
-            )
+            _last_auth_failure["reason"] = f"Could not load token file: {type(e).__name__}: {e}"
             _last_auth_failure["error_code"] = "AUTH_INVALID"
             return None
         # Migrate to keyring
@@ -185,8 +183,7 @@ def _get_oauth_credentials() -> Credentials | None:
 
     if not creds.refresh_token:
         _last_auth_failure["reason"] = (
-            "Token expired and no refresh token."
-            " Run `desk auth login` to re-authenticate."
+            "Token expired and no refresh token. Run `desk auth login` to re-authenticate."
         )
         _last_auth_failure["error_code"] = "AUTH_EXPIRED"
     else:
@@ -360,6 +357,112 @@ def _save_credentials(creds: Credentials) -> None:
     TOKEN_FILE.write_text(json_module.dumps(scrubbed))
 
 
+def _get_configured_client_id() -> str | None:
+    """Return the client_id of the OAuth client desk is currently configured to use.
+
+    Resolution order matches login():
+    1. Keyring client credentials
+    2. ~/.desk/credentials.json (file)
+    3. Bundled credentials
+    """
+    keyring_creds = keyring_store.get_client_credentials()
+    if keyring_creds:
+        return keyring_creds.get("installed", {}).get("client_id")
+
+    if CREDENTIALS_FILE.exists():
+        try:
+            data = json_module.loads(CREDENTIALS_FILE.read_text())
+            return data.get("installed", {}).get("client_id")
+        except (json_module.JSONDecodeError, OSError):
+            pass
+
+    bundled = get_bundled_credentials()
+    if bundled:
+        return bundled.get("installed", {}).get("client_id")
+
+    return None
+
+
+def _get_token_source_and_data() -> tuple[str, dict | None]:
+    """Return (source, token_dict) for the active OAuth token.
+
+    source is one of: "keyring", "file", "none".
+    token_dict is the raw JSON dict, useful for surfacing client_id/scopes.
+    """
+    keyring_token = keyring_store.get_token()
+    if keyring_token:
+        return ("keyring", keyring_token)
+
+    if TOKEN_FILE.exists():
+        try:
+            data = json_module.loads(TOKEN_FILE.read_text())
+        except (json_module.JSONDecodeError, OSError):
+            return ("none", None)
+        if "token" in data or "refresh_token" in data:
+            return ("file", data)
+    return ("none", None)
+
+
+def _normalize_scopes(raw: object) -> list[str]:
+    """Normalize a `scopes` field which may be None, a string, or a list."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        # Google sometimes serializes scopes as a space-delimited string.
+        return [s for s in raw.split() if s]
+    if isinstance(raw, list):
+        return [str(s) for s in raw]
+    return []
+
+
+def logout() -> dict:
+    """Remove the OAuth token from the keychain (and legacy file).
+
+    Idempotent. Preserves stored client credentials. Returns a dict describing
+    what was removed: {"keyring_token_removed": bool, "token_file_scrubbed": bool}.
+    """
+    keyring_removed = keyring_store.delete_token()
+
+    file_scrubbed = False
+    if TOKEN_FILE.exists():
+        try:
+            data = json_module.loads(TOKEN_FILE.read_text())
+        except (json_module.JSONDecodeError, OSError):
+            data = None
+        if isinstance(data, dict) and any(field in data for field in _TOKEN_SENSITIVE_FIELDS):
+            scrubbed = {k: v for k, v in data.items() if k not in _TOKEN_SENSITIVE_FIELDS}
+            TOKEN_FILE.write_text(json_module.dumps(scrubbed))
+            file_scrubbed = True
+
+    return {
+        "keyring_token_removed": keyring_removed,
+        "token_file_scrubbed": file_scrubbed,
+    }
+
+
+def clear(token: bool = True, client: bool = True) -> dict:
+    """Remove credentials from the keychain.
+
+    Args:
+        token: If True, remove the OAuth token.
+        client: If True, remove the stored OAuth client credentials.
+
+    Returns a dict describing what was removed.
+    """
+    result: dict[str, bool] = {
+        "keyring_token_removed": False,
+        "token_file_scrubbed": False,
+        "keyring_client_removed": False,
+    }
+    if token:
+        token_result = logout()
+        result["keyring_token_removed"] = token_result["keyring_token_removed"]
+        result["token_file_scrubbed"] = token_result["token_file_scrubbed"]
+    if client:
+        result["keyring_client_removed"] = keyring_store.delete_client_credentials()
+    return result
+
+
 def get_auth_status(verify: bool = False) -> dict:
     """Get current authentication status.
 
@@ -367,6 +470,10 @@ def get_auth_status(verify: bool = False) -> dict:
         verify: If True, test actual API access for each service (slower but accurate)
     """
     gcloud_available = _gcloud_available()
+    configured_client_id = _get_configured_client_id()
+    token_source, token_data = _get_token_source_and_data()
+    token_client_id = token_data.get("client_id") if token_data else None
+    token_scopes = _normalize_scopes(token_data.get("scopes")) if token_data else []
 
     status = {
         "method": AuthMethod.NONE,
@@ -378,6 +485,10 @@ def get_auth_status(verify: bool = False) -> dict:
         "token_file": TOKEN_FILE.exists(),
         "token_in_keyring": keyring_store.get_token() is not None,
         "token_path": str(TOKEN_FILE),
+        "client_id": configured_client_id,
+        "token_client_id": token_client_id,
+        "token_source": token_source,
+        "scopes": token_scopes,
         "email": None,
         "services": None,  # Populated if verify=True
     }
@@ -396,6 +507,10 @@ def get_auth_status(verify: bool = False) -> dict:
     if creds:
         status["authenticated"] = True
         status["method"] = AuthMethod.GCLOUD_ADC
+        # When ADC is the working source and no other token exists, attribute
+        # the token source accordingly so users can tell where auth is coming from.
+        if status["token_source"] == "none":
+            status["token_source"] = "gcloud_adc"
         if verify:
             status["services"] = verify_service_access(creds)
         return status
