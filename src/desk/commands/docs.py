@@ -694,6 +694,15 @@ def style_cmd(
     output_result(receipt, as_json, quiet)
 
 
+def _emit_invalid_input(msg: str, as_json: bool) -> None:
+    if as_json:
+        error = structured_error(ErrorCode.INVALID_INPUT, msg)
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {msg}[/red]")
+    sys.exit(1)
+
+
 @docs.command("paragraph-style")
 @click.argument("document_id")
 @click.option("--start", required=True, type=int, help="Start index")
@@ -705,6 +714,15 @@ def style_cmd(
     default=None,
     help="Text alignment",
 )
+@click.option("--space-above", type=int, default=None, help="Space above paragraph in points")
+@click.option("--space-below", type=int, default=None, help="Space below paragraph in points")
+@click.option(
+    "--line-spacing", type=int, default=None,
+    help="Line spacing as integer percentage (100=single, 115=1.15x, 150=1.5x)",
+)
+@click.option("--indent-start", type=int, default=None, help="Left indent in points")
+@click.option("--indent-end", type=int, default=None, help="Right indent in points")
+@click.option("--indent-first-line", type=int, default=None, help="First-line indent in points")
 @click.option("--tab", "tab_id", default=None, help="Tab ID to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -714,6 +732,12 @@ def paragraph_style_cmd(
     end: int,
     heading: int | None,
     alignment: str | None,
+    space_above: int | None,
+    space_below: int | None,
+    line_spacing: int | None,
+    indent_start: int | None,
+    indent_end: int | None,
+    indent_first_line: int | None,
     tab_id: str | None,
     quiet: bool,
     as_json: bool,
@@ -725,15 +749,16 @@ def paragraph_style_cmd(
         desk docs paragraph-style <id> --start 1 --end 20 --heading 1
 
         desk docs paragraph-style <id> --start 1 --end 50 --alignment CENTER
+
+        desk docs paragraph-style <id> --start 1 --end 999 --space-below 8
+
+        desk docs paragraph-style <id> --start 1 --end 999 --line-spacing 150
     """
     if heading is not None and (heading < 0 or heading > 6):
-        msg = f"Invalid heading level: {heading}. Must be 0 (normal) or 1-6."
-        if as_json:
-            error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
-        else:
-            console.print(f"[red]Error: {msg}[/red]")
-        sys.exit(1)
+        _emit_invalid_input(
+            f"Invalid heading level: {heading}. Must be 0 (normal) or 1-6.",
+            as_json,
+        )
 
     client = _get_client(as_json)
     try:
@@ -741,16 +766,36 @@ def paragraph_style_cmd(
             document_id, start, end,
             heading=heading,
             alignment=alignment,
+            space_above=space_above,
+            space_below=space_below,
+            line_spacing=line_spacing,
+            indent_start=indent_start,
+            indent_end=indent_end,
+            indent_first_line=indent_first_line,
             tab_id=tab_id,
         )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
 
-    applied_styles = {"start": start, "end": end}
+    applied_styles: dict = {"start": start, "end": end}
     if heading is not None:
         applied_styles["heading"] = heading
     if alignment is not None:
         applied_styles["alignment"] = alignment
+    if space_above is not None:
+        applied_styles["space_above"] = space_above
+    if space_below is not None:
+        applied_styles["space_below"] = space_below
+    if line_spacing is not None:
+        applied_styles["line_spacing"] = line_spacing
+    if indent_start is not None:
+        applied_styles["indent_start"] = indent_start
+    if indent_end is not None:
+        applied_styles["indent_end"] = indent_end
+    if indent_first_line is not None:
+        applied_styles["indent_first_line"] = indent_first_line
 
     receipt = operation_receipt(
         operation="paragraph_style",
@@ -770,6 +815,30 @@ def paragraph_style_cmd(
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--replace", is_flag=True, help="Replace entire document content")
 @click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option(
+    "--space-above", type=int, default=None,
+    help="Space above body paragraphs in points (excludes headings/lists/code)",
+)
+@click.option(
+    "--space-below", type=int, default=None,
+    help="Space below body paragraphs in points (excludes headings/lists/code)",
+)
+@click.option(
+    "--line-spacing", type=int, default=None,
+    help="Line spacing on body paragraphs as integer percentage (100=single, 150=1.5x)",
+)
+@click.option(
+    "--indent-start", type=int, default=None,
+    help="Left indent on body paragraphs in points",
+)
+@click.option(
+    "--indent-end", type=int, default=None,
+    help="Right indent on body paragraphs in points",
+)
+@click.option(
+    "--indent-first-line", type=int, default=None,
+    help="First-line indent on body paragraphs in points",
+)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def write_markdown_cmd(
@@ -780,13 +849,21 @@ def write_markdown_cmd(
     at: str,
     replace: bool,
     tab_id: str | None,
+    space_above: int | None,
+    space_below: int | None,
+    line_spacing: int | None,
+    indent_start: int | None,
+    indent_end: int | None,
+    indent_first_line: int | None,
     quiet: bool,
     as_json: bool,
 ) -> None:
     """Write markdown content with native Google Docs formatting.
 
     Converts markdown headings, bold, italic, code, and links to native
-    Google Docs styles.
+    Google Docs styles. Optional spacing/indent flags apply to body
+    paragraphs only — headings, list items, and fenced code blocks keep
+    their inherited styling.
 
     Examples:
 
@@ -794,7 +871,9 @@ def write_markdown_cmd(
 
         desk docs write-markdown <id> --file appendix.md --at end
 
-        desk docs write-markdown <id> --file report.md --replace
+        desk docs write-markdown <id> --file report.md --replace --space-below 8
+
+        desk docs write-markdown <id> --file report.md --line-spacing 115
     """
     try:
         content = _read_content(body, file_path, stdin)
@@ -810,17 +889,40 @@ def write_markdown_cmd(
     client = _get_client(as_json)
     try:
         client.write_markdown(
-            document_id, content, index=index, replace=replace, tab_id=tab_id,
+            document_id, content,
+            index=index, replace=replace, tab_id=tab_id,
+            space_above=space_above,
+            space_below=space_below,
+            line_spacing=line_spacing,
+            indent_start=indent_start,
+            indent_end=indent_end,
+            indent_first_line=indent_first_line,
         )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
     except Exception as e:
         _handle_api_error(
             e, as_json, {"document_id": document_id, "replace": replace, "at": at}
         )
 
+    changes: dict = {"replace": replace, "at": at, "text_length": len(content)}
+    if space_above is not None:
+        changes["space_above"] = space_above
+    if space_below is not None:
+        changes["space_below"] = space_below
+    if line_spacing is not None:
+        changes["line_spacing"] = line_spacing
+    if indent_start is not None:
+        changes["indent_start"] = indent_start
+    if indent_end is not None:
+        changes["indent_end"] = indent_end
+    if indent_first_line is not None:
+        changes["indent_first_line"] = indent_first_line
+
     receipt = operation_receipt(
         operation="write_markdown",
         target={"id": document_id},
-        changes={"replace": replace, "at": at, "text_length": len(content)},
+        changes=changes,
     )
     output_result(receipt, as_json, quiet)
 

@@ -554,6 +554,52 @@ class DocsClient:
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
+    @staticmethod
+    def _build_paragraph_style_fields(
+        space_above: int | None,
+        space_below: int | None,
+        line_spacing: int | None,
+        indent_start: int | None,
+        indent_end: int | None,
+        indent_first_line: int | None,
+    ) -> tuple[dict, list[str]]:
+        """Translate spacing/indent options into a paragraphStyle dict + fields list."""
+        style: dict = {}
+        fields_list: list[str] = []
+
+        if space_above is not None:
+            if space_above < 0:
+                raise ValueError("space_above must be >= 0")
+            style["spaceAbove"] = {"magnitude": space_above, "unit": "PT"}
+            fields_list.append("spaceAbove")
+        if space_below is not None:
+            if space_below < 0:
+                raise ValueError("space_below must be >= 0")
+            style["spaceBelow"] = {"magnitude": space_below, "unit": "PT"}
+            fields_list.append("spaceBelow")
+        if line_spacing is not None:
+            if line_spacing < 50:
+                raise ValueError("line_spacing must be >= 50 (percentage)")
+            style["lineSpacing"] = line_spacing
+            fields_list.append("lineSpacing")
+        if indent_start is not None:
+            if indent_start < 0:
+                raise ValueError("indent_start must be >= 0")
+            style["indentStart"] = {"magnitude": indent_start, "unit": "PT"}
+            fields_list.append("indentStart")
+        if indent_end is not None:
+            if indent_end < 0:
+                raise ValueError("indent_end must be >= 0")
+            style["indentEnd"] = {"magnitude": indent_end, "unit": "PT"}
+            fields_list.append("indentEnd")
+        if indent_first_line is not None:
+            if indent_first_line < 0:
+                raise ValueError("indent_first_line must be >= 0")
+            style["indentFirstLine"] = {"magnitude": indent_first_line, "unit": "PT"}
+            fields_list.append("indentFirstLine")
+
+        return style, fields_list
+
     def update_paragraph_style(
         self,
         document_id: str,
@@ -561,6 +607,12 @@ class DocsClient:
         end_index: int,
         heading: int | None = None,
         alignment: str | None = None,
+        space_above: int | None = None,
+        space_below: int | None = None,
+        line_spacing: int | None = None,
+        indent_start: int | None = None,
+        indent_end: int | None = None,
+        indent_first_line: int | None = None,
         tab_id: str | None = None,
     ) -> dict:
         """Apply paragraph styling to a range.
@@ -571,13 +623,21 @@ class DocsClient:
             end_index: End of range
             heading: Heading level 1-6, or 0 for normal text
             alignment: "START", "CENTER", "END", "JUSTIFIED"
+            space_above: Points of space above the paragraph
+            space_below: Points of space below the paragraph
+            line_spacing: Line spacing as percentage (100 = single, 150 = 1.5x)
+            indent_start: Points of left indent
+            indent_end: Points of right indent
+            indent_first_line: Points of first-line indent
             tab_id: Optional tab ID to target
 
         Returns:
             Dict with documentId and status
         """
-        style: dict = {}
-        fields_list: list[str] = []
+        style, fields_list = self._build_paragraph_style_fields(
+            space_above, space_below, line_spacing,
+            indent_start, indent_end, indent_first_line,
+        )
 
         if heading is not None:
             if heading == 0:
@@ -694,6 +754,12 @@ class DocsClient:
         self, document_id: str, markdown: str,
         index: int | None = None, replace: bool = False,
         tab_id: str | None = None,
+        space_above: int | None = None,
+        space_below: int | None = None,
+        line_spacing: int | None = None,
+        indent_start: int | None = None,
+        indent_end: int | None = None,
+        indent_first_line: int | None = None,
     ) -> dict:
         """Write markdown content with native Docs formatting.
 
@@ -703,11 +769,28 @@ class DocsClient:
             index: Insert at this index, or None for end of document
             replace: If True, replace entire document content
             tab_id: Optional tab ID to target
+            space_above/space_below: Optional opt-in spacing (points)
+                applied to body paragraphs only. Headings, list items, and
+                fenced code blocks are excluded.
+            line_spacing: Optional line spacing as integer percentage.
+            indent_start/indent_end/indent_first_line: Optional indents (points)
+                applied to body paragraphs only.
 
         Returns:
             Dict with documentId and status
         """
         from desk.services.markdown_to_docs import markdown_to_requests
+
+        body_style_dict, body_style_fields = self._build_paragraph_style_fields(
+            space_above, space_below, line_spacing,
+            indent_start, indent_end, indent_first_line,
+        )
+        body_paragraph_style: dict | None = None
+        if body_style_fields:
+            body_paragraph_style = {
+                "style": body_style_dict,
+                "fields": ",".join(body_style_fields),
+            }
 
         try:
 
@@ -723,15 +806,24 @@ class DocsClient:
                             "range": self._range(1, end_index - 1, tab_id)
                         }
                     })
-                requests.extend(markdown_to_requests(markdown, base_index=1, tab_id=tab_id))
+                requests.extend(markdown_to_requests(
+                    markdown, base_index=1, tab_id=tab_id,
+                    body_paragraph_style=body_paragraph_style,
+                ))
             elif index is not None:
-                requests = markdown_to_requests(markdown, base_index=index, tab_id=tab_id)
+                requests = markdown_to_requests(
+                    markdown, base_index=index, tab_id=tab_id,
+                    body_paragraph_style=body_paragraph_style,
+                )
             else:
                 _, body = self._get_body(document_id, tab_id)
                 content = body.get("content", [])
                 end_index = content[-1]["endIndex"] if content else 1
                 insert_index = max(1, end_index - 1)
-                requests = markdown_to_requests(markdown, base_index=insert_index, tab_id=tab_id)
+                requests = markdown_to_requests(
+                    markdown, base_index=insert_index, tab_id=tab_id,
+                    body_paragraph_style=body_paragraph_style,
+                )
 
             if requests:
                 self.service.documents().batchUpdate(

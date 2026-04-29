@@ -118,7 +118,7 @@ desk (CLI entry point)
 │   ├── insert         → Insert text at a specific index
 │   ├── delete-range   → Delete content between indices
 │   ├── style          → Apply text styling (bold, italic, code, etc.)
-│   ├── paragraph-style → Apply paragraph styling (headings, alignment)
+│   ├── paragraph-style → Apply paragraph styling (headings, alignment, spacing, indent)
 │   ├── write-markdown → Write markdown with native Docs formatting
 │   ├── insert-table   → Insert a table
 │   ├── insert-image   → Insert an inline image

@@ -1071,6 +1071,81 @@ class TestDocsUpdateParagraphStyle:
             assert result["note"] == "no styles specified"
             documents_mock.batchUpdate.assert_not_called()
 
+    def test_spacing_and_line_spacing(self, mock_credentials):
+        """Should send updateParagraphStyle with spacing fields."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            result = client.update_paragraph_style(
+                "doc123", 1, 99,
+                space_above=4,
+                space_below=8,
+                line_spacing=115,
+            )
+
+            assert result["status"] == "ok"
+            req = documents_mock.batchUpdate.call_args[1]["body"]["requests"][0][
+                "updateParagraphStyle"
+            ]
+            assert req["paragraphStyle"]["spaceAbove"] == {"magnitude": 4, "unit": "PT"}
+            assert req["paragraphStyle"]["spaceBelow"] == {"magnitude": 8, "unit": "PT"}
+            assert req["paragraphStyle"]["lineSpacing"] == 115
+            fields = req["fields"].split(",")
+            assert "spaceAbove" in fields
+            assert "spaceBelow" in fields
+            assert "lineSpacing" in fields
+
+    def test_indent_fields(self, mock_credentials):
+        """Should send updateParagraphStyle with indent fields."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.batchUpdate.return_value.execute.return_value = {"replies": []}
+
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            client.update_paragraph_style(
+                "doc123", 1, 99,
+                indent_start=36,
+                indent_end=18,
+                indent_first_line=24,
+            )
+
+            req = documents_mock.batchUpdate.call_args[1]["body"]["requests"][0][
+                "updateParagraphStyle"
+            ]
+            assert req["paragraphStyle"]["indentStart"] == {"magnitude": 36, "unit": "PT"}
+            assert req["paragraphStyle"]["indentEnd"] == {"magnitude": 18, "unit": "PT"}
+            assert req["paragraphStyle"]["indentFirstLine"] == {"magnitude": 24, "unit": "PT"}
+
+    def test_negative_spacing_rejected(self, mock_credentials):
+        """Should raise ValueError on negative spacing values."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            with pytest.raises(ValueError, match="space_below"):
+                client.update_paragraph_style("doc123", 1, 10, space_below=-1)
+
+    def test_line_spacing_floor_rejected(self, mock_credentials):
+        """Should raise ValueError when line_spacing below the 50% floor."""
+        with patch("desk.services.docs.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            with pytest.raises(ValueError, match="line_spacing"):
+                client.update_paragraph_style("doc123", 1, 10, line_spacing=10)
+
 
 class TestDocsInsertImage:
     """Tests for DocsClient.insert_image method."""
@@ -1725,7 +1800,9 @@ class TestDocsTabIdOnExistingMethods:
             with patch("desk.services.markdown_to_docs.markdown_to_requests") as mock_m2r:
                 mock_m2r.return_value = [{"insertText": {"location": {"index": 9, "tabId": "t.1"}, "text": "hello"}}]
                 client.write_markdown("doc123", "hello", tab_id="t.1")
-                mock_m2r.assert_called_once_with("hello", base_index=9, tab_id="t.1")
+                mock_m2r.assert_called_once_with(
+                    "hello", base_index=9, tab_id="t.1", body_paragraph_style=None,
+                )
 
 
 class TestExtractParagraphText:

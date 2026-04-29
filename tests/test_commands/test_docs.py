@@ -383,6 +383,58 @@ class TestDocsWriteMarkdown:
         assert output["success"] is True
         assert output["operation"] == "write_markdown"
 
+    def test_write_markdown_with_spacing_flags(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """Should plumb spacing flags through to write_markdown."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.write_markdown.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, [
+                "write-markdown", "doc123",
+                "--body", "Hello.\n\nWorld.",
+                "--space-below", "8",
+                "--line-spacing", "115",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["space_below"] == 8
+        assert output["changes"]["line_spacing"] == 115
+        kwargs = mock_client.write_markdown.call_args.kwargs
+        assert kwargs["space_below"] == 8
+        assert kwargs["line_spacing"] == 115
+
+    def test_write_markdown_invalid_spacing_value(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """Should surface ValueError from service as INVALID_INPUT."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.write_markdown.side_effect = ValueError("space_below must be >= 0")
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, [
+                "write-markdown", "doc123",
+                "--body", "Hello.",
+                "--space-below", "-3",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert output["error"]["code"] == "INVALID_INPUT"
+
 
 class TestDocsInsertTable:
     """Tests for desk docs insert-table command."""
@@ -450,7 +502,11 @@ class TestDocsParagraphStyle:
         assert output["success"] is True
         assert output["changes"]["heading"] == 2
         mock_client.update_paragraph_style.assert_called_once_with(
-            "doc123", 1, 20, heading=2, alignment=None, tab_id=None
+            "doc123", 1, 20,
+            heading=2, alignment=None,
+            space_above=None, space_below=None, line_spacing=None,
+            indent_start=None, indent_end=None, indent_first_line=None,
+            tab_id=None,
         )
 
     def test_alignment_style(self, runner, mock_get_credentials, mock_docs_client_class):
@@ -493,6 +549,60 @@ class TestDocsParagraphStyle:
         assert result.exit_code != 0
         output = json.loads(result.output)
         assert output["success"] is False
+
+    def test_spacing_flags(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should pass spacing/indent flags to update_paragraph_style."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_paragraph_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, [
+                "paragraph-style", "doc123",
+                "--start", "1", "--end", "99",
+                "--space-above", "4",
+                "--space-below", "8",
+                "--line-spacing", "115",
+                "--indent-first-line", "24",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["space_above"] == 4
+        assert output["changes"]["space_below"] == 8
+        assert output["changes"]["line_spacing"] == 115
+        assert output["changes"]["indent_first_line"] == 24
+        kwargs = mock_client.update_paragraph_style.call_args.kwargs
+        assert kwargs["space_above"] == 4
+        assert kwargs["space_below"] == 8
+        assert kwargs["line_spacing"] == 115
+        assert kwargs["indent_first_line"] == 24
+
+    def test_invalid_spacing_value(self, runner, mock_get_credentials, mock_docs_client_class):
+        """Should surface ValueError from service as INVALID_INPUT."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.update_paragraph_style.side_effect = ValueError("space_below must be >= 0")
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, [
+                "paragraph-style", "doc123",
+                "--start", "1", "--end", "10",
+                "--space-below", "-5",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert output["error"]["code"] == "INVALID_INPUT"
 
 
 class TestDocsInsertImage:
@@ -732,7 +842,10 @@ class TestDocsTabOption:
 
         assert result.exit_code == 0
         mock_client.write_markdown.assert_called_once_with(
-            "doc123", "# Hello", index=None, replace=False, tab_id="t.1"
+            "doc123", "# Hello",
+            index=None, replace=False, tab_id="t.1",
+            space_above=None, space_below=None, line_spacing=None,
+            indent_start=None, indent_end=None, indent_first_line=None,
         )
 
     def test_update_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):
@@ -795,7 +908,11 @@ class TestDocsTabOption:
 
         assert result.exit_code == 0
         mock_client.update_paragraph_style.assert_called_once_with(
-            "doc123", 1, 20, heading=2, alignment=None, tab_id="t.1"
+            "doc123", 1, 20,
+            heading=2, alignment=None,
+            space_above=None, space_below=None, line_spacing=None,
+            indent_start=None, indent_end=None, indent_first_line=None,
+            tab_id="t.1",
         )
 
     def test_insert_table_with_tab(self, runner, mock_get_credentials, mock_docs_client_class):

@@ -342,6 +342,112 @@ class TestMarkdownToRequests:
         assert "tabId" not in style["range"]
 
 
+class TestMarkdownBodyParagraphStyle:
+    """Tests for opt-in per-write body-paragraph styling."""
+
+    BODY_STYLE = {
+        "style": {"spaceBelow": {"magnitude": 8, "unit": "PT"}},
+        "fields": "spaceBelow",
+    }
+
+    def test_no_styling_when_config_absent(self):
+        """Without body_paragraph_style, no per-paragraph requests are emitted."""
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        result = markdown_to_requests(
+            "First paragraph.\n\nSecond paragraph.", base_index=1,
+        )
+        spacing = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and "spaceBelow" in r["updateParagraphStyle"]["paragraphStyle"]
+        ]
+        assert spacing == []
+
+    def test_body_paragraph_styling_emitted(self):
+        """With config, each body paragraph gets an updateParagraphStyle."""
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        result = markdown_to_requests(
+            "First paragraph.\n\nSecond paragraph.",
+            base_index=10,
+            body_paragraph_style=self.BODY_STYLE,
+        )
+        spacing = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and "spaceBelow" in r["updateParagraphStyle"]["paragraphStyle"]
+        ]
+        assert len(spacing) == 2
+        first = spacing[0]["updateParagraphStyle"]
+        assert first["paragraphStyle"]["spaceBelow"] == {"magnitude": 8, "unit": "PT"}
+        assert first["fields"] == "spaceBelow"
+        assert first["range"]["startIndex"] == 10
+
+    def test_no_styling_on_headings(self):
+        """Headings should not be touched by body-paragraph styling."""
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        result = markdown_to_requests(
+            "# Title", base_index=1, body_paragraph_style=self.BODY_STYLE,
+        )
+        spacing = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and "spaceBelow" in r["updateParagraphStyle"]["paragraphStyle"]
+        ]
+        assert spacing == []
+
+    def test_no_styling_inside_list_items(self):
+        """List item paragraphs should not get body-paragraph styling."""
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        result = markdown_to_requests(
+            "- one\n\n- two", base_index=1, body_paragraph_style=self.BODY_STYLE,
+        )
+        spacing = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and "spaceBelow" in r["updateParagraphStyle"]["paragraphStyle"]
+        ]
+        assert spacing == []
+
+    def test_no_styling_on_code_blocks(self):
+        """Fenced code blocks should not get body-paragraph styling."""
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        result = markdown_to_requests(
+            "```\nprint('hi')\n```", base_index=1,
+            body_paragraph_style=self.BODY_STYLE,
+        )
+        spacing = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and "spaceBelow" in r["updateParagraphStyle"]["paragraphStyle"]
+        ]
+        assert spacing == []
+
+    def test_mixed_content_only_body_paragraphs(self):
+        """In a mixed doc, only body paragraphs get spacing."""
+        from desk.services.markdown_to_docs import markdown_to_requests
+
+        markdown = (
+            "# Heading\n\n"
+            "Body paragraph one.\n\n"
+            "- list item\n\n"
+            "Body paragraph two.\n"
+        )
+        result = markdown_to_requests(
+            markdown, base_index=1, body_paragraph_style=self.BODY_STYLE,
+        )
+        spacing = [
+            r for r in result
+            if "updateParagraphStyle" in r
+            and "spaceBelow" in r["updateParagraphStyle"]["paragraphStyle"]
+        ]
+        assert len(spacing) == 2
+
+
 class TestDocsEditingUtils:
     """Tests for the docs_editing utility functions."""
 

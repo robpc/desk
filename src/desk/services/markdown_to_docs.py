@@ -17,8 +17,10 @@ class StyleAnnotation:
 
     start: int  # UTF-16 offset from start of inserted text
     end: int  # UTF-16 offset from start of inserted text
-    style_type: str  # "bold", "italic", "code", "link", "heading_N"
+    style_type: str  # "bold", "italic", "code", "link", "heading_N", "body_paragraph_style"
     url: str | None = None  # For links
+    paragraph_style: dict | None = None  # For body_paragraph_style: paragraphStyle dict
+    paragraph_style_fields: str | None = None  # For body_paragraph_style: comma-joined field mask
 
 
 @dataclass
@@ -88,6 +90,11 @@ def _cell_empty_index(table_start: int, row: int, col: int, num_cols: int) -> in
 class MarkdownConverter:
     """Converts markdown to Google Docs batchUpdate requests."""
 
+    # Optional opt-in body-paragraph styling. Caller passes a precomputed
+    # payload {"style": <paragraphStyle dict>, "fields": <comma-joined mask>}
+    # which is attached to body paragraphs only (not headings/lists/code).
+    body_paragraph_style: dict | None = None
+
     text_parts: list[str] = field(default_factory=list)
     annotations: list[StyleAnnotation] = field(default_factory=list)
     _current_utf16_offset: int = 0
@@ -102,6 +109,11 @@ class MarkdownConverter:
     _in_header: bool = False
     _current_row_cells: list[str] = field(default_factory=list)
     _current_row_annotations: list[list[StyleAnnotation]] = field(default_factory=list)
+
+    # Body-paragraph tracking (only used when body_paragraph_style is set)
+    _list_item_depth: int = 0
+    _paragraph_start: int | None = None
+    _paragraph_in_list_item: bool = False
 
     # Segments output
     _segments: list[ContentSegment] = field(default_factory=list)
@@ -161,6 +173,9 @@ class MarkdownConverter:
         self._in_table = False
         self._current_table = None
         self._segments = []
+        self._list_item_depth = 0
+        self._paragraph_start = None
+        self._paragraph_in_list_item = False
 
         for token in tokens:
             self._process_token(token)
@@ -268,9 +283,27 @@ class MarkdownConverter:
                     )
                 )
         elif token.type == "paragraph_open":
-            pass  # Nothing to do on open
+            if self.body_paragraph_style is not None:
+                self._paragraph_start = self._current_utf16_offset
+                self._paragraph_in_list_item = self._list_item_depth > 0
         elif token.type == "paragraph_close":
             self._add_text("\n")
+            if (
+                self.body_paragraph_style is not None
+                and self._paragraph_start is not None
+                and not self._paragraph_in_list_item
+            ):
+                self.annotations.append(
+                    StyleAnnotation(
+                        start=self._paragraph_start,
+                        end=self._current_utf16_offset,
+                        style_type="body_paragraph_style",
+                        paragraph_style=self.body_paragraph_style["style"],
+                        paragraph_style_fields=self.body_paragraph_style["fields"],
+                    )
+                )
+            self._paragraph_start = None
+            self._paragraph_in_list_item = False
         elif token.type == "inline":
             if token.children:
                 for child in token.children:
@@ -340,8 +373,10 @@ class MarkdownConverter:
                         style_type="ordered_list",
                     )
                 )
-        elif token.type in ("list_item_open", "list_item_close"):
-            pass
+        elif token.type == "list_item_open":
+            self._list_item_depth += 1
+        elif token.type == "list_item_close":
+            self._list_item_depth = max(0, self._list_item_depth - 1)
 
     def _process_inline_token(self, token) -> None:
         """Process an inline token (child of an inline token)."""
@@ -565,6 +600,18 @@ def _annotation_to_requests(
                 }
             }
         ]
+    elif ann.style_type == "body_paragraph_style":
+        if not ann.paragraph_style or not ann.paragraph_style_fields:
+            return []
+        return [
+            {
+                "updateParagraphStyle": {
+                    "range": range_obj,
+                    "paragraphStyle": ann.paragraph_style,
+                    "fields": ann.paragraph_style_fields,
+                }
+            }
+        ]
     return []
 
 
@@ -700,6 +747,7 @@ def markdown_to_requests(
     markdown: str,
     base_index: int,
     tab_id: str | None = None,
+    body_paragraph_style: dict | None = None,
 ) -> list[dict]:
     """Convert markdown to Google Docs batchUpdate requests.
 
@@ -709,12 +757,15 @@ def markdown_to_requests(
                    Callers must resolve the concrete index before calling
                    (e.g. by fetching the document length for appends).
         tab_id: Optional tab ID to inject into all location/range objects.
+        body_paragraph_style: Optional opt-in styling applied to body
+                   paragraphs only (skips headings, list items, code blocks).
+                   Format: {"style": <paragraphStyle dict>, "fields": <mask>}.
 
     Returns:
         List of batchUpdate request dicts ready for the API.
     """
     markdown = normalize_text(markdown)
-    converter = MarkdownConverter()
+    converter = MarkdownConverter(body_paragraph_style=body_paragraph_style)
     segments = converter.convert_to_segments(markdown)
 
     if not segments:
