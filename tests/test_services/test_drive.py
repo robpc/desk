@@ -586,7 +586,7 @@ class TestDriveReadMimeRouting:
 
             assert result == "Exported text"
             files_mock.export.assert_called_once_with(
-                fileId="gdoc123", mimeType="text/plain", supportsAllDrives=True
+                fileId="gdoc123", mimeType="text/plain"
             )
 
 
