@@ -27,7 +27,10 @@ permissions:
 
 jobs:
   dependency-review:
-    if: ${{ (inputs.skip-dependency-review == false) && (github.event_name == 'pull_request') }}
+    # Dependency Review and CodeQL require GitHub Advanced Security on
+    # private repos. Skip on private; they run normally once the repo is
+    # public. Harmless on public repos (the condition is always true).
+    if: ${{ (inputs.skip-dependency-review == false) && (github.event_name == 'pull_request') && (github.event.repository.private == false) }}
     name: Dependency Review
     runs-on: ubuntu-latest
     steps:
@@ -42,7 +45,7 @@ jobs:
           deny-licenses: AGPL-1.0-or-later, EUPL-1.0, EUPL-1.1, EUPL-1.2, OSL-1.0, OSL-1.1, OSL-2.0, OSL-2.1, OSL-3.0
 
   codeql:
-    if: ${{ inputs.skip-codeql == false }}
+    if: ${{ (inputs.skip-codeql == false) && (github.event.repository.private == false) }}
     name: CodeQL
     runs-on: ubuntu-latest
     strategy:
