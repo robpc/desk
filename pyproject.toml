@@ -19,7 +19,7 @@ dependencies = [
     "google-auth-oauthlib>=1.0",
     "rich>=15.0.0",
     "markdown-it-py>=3.0",
-    "keyring>=25.0",
+    "keyring>=25.7.0",
     "openpyxl>=3.1.5",
     "python-docx>=1.2.0",
 ]
