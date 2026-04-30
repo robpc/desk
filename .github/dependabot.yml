@@ -8,3 +8,14 @@ updates:
         time: "11:00"
       allow:
         - dependency-type: all
+
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+        interval: weekly
+        day: wednesday
+        time: "11:00"
+      groups:
+        actions:
+          patterns:
+            - "*"
