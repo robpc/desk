@@ -20,7 +20,7 @@ dependencies = [
     "rich>=15.0.0",
     "markdown-it-py>=3.0",
     "keyring>=25.0",
-    "openpyxl>=3.1",
+    "openpyxl>=3.1.5",
     "python-docx>=1.2.0",
 ]
 
