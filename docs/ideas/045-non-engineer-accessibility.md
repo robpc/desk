@@ -30,7 +30,7 @@ Non-engineers hit walls at every step. Even developers find it tedious.
 
 ## Deferred
 
-- **install.sh** — standalone installer deferred because parent-suite-installer already provides suite-wide install. Revisit for open-source context.
+- **install.sh** — standalone installer deferred because the parent agent-tool suite already provides suite-wide install. Revisit for open-source context.
 - **CalVer versioning** — deferred to stay aligned with suite-wide SemVer convention. Revisit when desk is standalone.
 - **Agent install prompt doc** — deferred; CLAUDE.md first-run check covers the agent use case.
 

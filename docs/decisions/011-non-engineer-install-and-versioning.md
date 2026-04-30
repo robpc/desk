@@ -44,9 +44,9 @@ Additionally:
 
 A POSIX `install.sh` with a uv > pipx > venv cascade was prototyped but deferred. Rationale:
 
-- The parent-suite-installer repo already provides a suite-wide installer that installs uv and all tools (desk, cafe, buzz, relay, tape, dial) via a single curl command
+- A parent agent-tool suite already provides a suite-wide installer that installs uv and all tools (desk, cafe, buzz, relay, tape, dial) via a single curl command
 - Adding a desk-specific installer would create two competing install paths that drift
-- When desk is open-sourced (outside the parent suite context), a standalone installer pushing uv-only would be appropriate
+- When desk is published standalone (outside the parent suite context), a standalone installer pushing uv-only would be appropriate
 
 ### Deferred: CalVer versioning
 
@@ -91,5 +91,5 @@ Minimal change — just swap README to say `pipx install`. Rejected: doesn't hel
 ## References
 
 - [PEP 668 — Externally Managed Environments](https://peps.python.org/pep-0668/)
-- parent-suite-installer — suite-wide bootstrap installer
+- Parent agent-tool suite — suite-wide bootstrap installer
 - Idea 045 graduated to this ADR

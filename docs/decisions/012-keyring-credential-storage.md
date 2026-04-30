@@ -7,7 +7,7 @@
 
 Desk stores OAuth client credentials (`credentials.json`) and tokens (`token.json`) as plaintext JSON files in `~/.desk/`. This means secrets like `client_secret`, `token`, and `refresh_token` are readable by any process running as the user. This was flagged as a security concern in desk #11.
 
-Dial (another tool in the parent suite) already uses the `keyring` library for OS keychain storage, proving the pattern works on macOS (Keychain), Linux (SecretService/KWallet), and Windows (Credential Locker).
+A sibling tool in the parent suite already uses the `keyring` library for OS keychain storage, proving the pattern works on macOS (Keychain), Linux (SecretService/KWallet), and Windows (Credential Locker).
 
 ## Decision
 
@@ -34,7 +34,7 @@ Transparent, on first access:
 
 ### CLI interface
 
-`desk auth set-client --client-id X --client-secret Y [--project-id Z]` constructs the full Google `{"installed": {...}}` credentials block with standard defaults and stores it in keyring. Used by the parent suite install script.
+`desk auth set-client --client-id X --client-secret Y [--project-id Z]` constructs the full Google `{"installed": {...}}` credentials block with standard defaults and stores it in keyring. Used by the parent suite's install script.
 
 ### gcloud ADC path
 
@@ -55,4 +55,4 @@ If the keyring backend is unavailable (null/fail backend), operations fail with 
 - Depends on `keyring>=25.0` (adds ~50KB, pure Python with native backend adapters)
 - Existing users are migrated transparently on first command invocation
 - Install scripts use `auth set-client` instead of writing files to disk
-- Prior art: `dial/src/dial/auth.py` KeyringTokenStorage pattern
+- Prior art: KeyringTokenStorage pattern from a sibling tool in the parent suite
