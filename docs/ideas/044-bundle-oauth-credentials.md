@@ -26,7 +26,7 @@ OAuth client IDs are not secrets — they identify the application, not the user
 
 Proposal:
 
-1. Create a dedicated GCP project (e.g., `desk-agent-tools`) for the parent agent-tool suite
+1. Create a dedicated GCP project for the parent agent-tool suite
 2. Configure OAuth consent screen, enable Gmail/Drive/Sheets/Docs/Calendar/Forms APIs
 3. Bundle `credentials.json` as package data inside `src/desk/data/credentials.json`
 4. Update `auth.py` to use bundled credentials by default, with `--credentials` flag to override
@@ -45,7 +45,7 @@ Users who want their own GCP project can still provide `--credentials path/to/cr
 
 ## Value Signal
 
-This is the #1 onboarding blocker. Every new user hits it. Part of the broader parent suite onboarding initiative to make all agent-first tools installable and runnable in minutes.
+This is the #1 onboarding blocker. Every new user hits it. Part of the broader parent-suite onboarding initiative to make all agent-first tools installable and runnable in minutes.
 
 ## Effort Guess
 
@@ -53,6 +53,6 @@ M — Mostly config and packaging work. The auth flow itself doesn't change much
 
 ## Notes
 
-- Companion to cafe idea 024 (bundle Slack app credentials)
+- Companion to a sibling Slack-CLI idea (bundle Slack app credentials)
 - Part of the parent suite onboarding initiative
-- `uv tool install git+https://github.com/robpc/desk` already works — this idea removes the post-install auth friction
+- The standard `uv tool install` install path already works — this idea removes the post-install auth friction
