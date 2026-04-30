@@ -9,7 +9,6 @@ import re
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlparse
 
-
 # ------------------------------------------------------------------
 # Markdown link escaping
 # ------------------------------------------------------------------

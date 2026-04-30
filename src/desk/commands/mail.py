@@ -712,7 +712,7 @@ def send(
             )
             print(json.dumps(preview, indent=2))
         elif not quiet:
-            console.print(f"[yellow]Would send message:[/yellow]")
+            console.print("[yellow]Would send message:[/yellow]")
             console.print(f"  To: {', '.join(to_addrs)}")
             if cc_addrs:
                 console.print(f"  CC: {', '.join(cc_addrs)}")
@@ -720,7 +720,7 @@ def send(
                 console.print(f"  BCC: {', '.join(bcc_addrs)}")
             console.print(f"  Subject: {subject}")
             console.print(f"  Body: {len(body)} characters")
-            console.print(f"\n[yellow]Warning: This action cannot be undone[/yellow]")
+            console.print("\n[yellow]Warning: This action cannot be undone[/yellow]")
         return
 
     # Check idempotency key before sending
@@ -1092,7 +1092,7 @@ def create(
     if as_json:
         print(json.dumps(result, indent=2))
     elif not quiet:
-        console.print(f"[green]Created draft[/green]")
+        console.print("[green]Created draft[/green]")
         console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
 
 
@@ -1140,7 +1140,7 @@ def draft_send(draft_id: str, quiet: bool, as_json: bool) -> None:
     if as_json:
         print(json.dumps(result, indent=2))
     elif not quiet:
-        console.print(f"[green]Sent draft[/green]")
+        console.print("[green]Sent draft[/green]")
         console.print(f"[dim]Message ID: {result.get('id', 'unknown')}[/dim]")
 
 
@@ -1218,7 +1218,7 @@ def update(
     if as_json:
         print(json.dumps(result, indent=2))
     elif not quiet:
-        console.print(f"[green]Updated draft[/green]")
+        console.print("[green]Updated draft[/green]")
         console.print(f"[dim]Draft ID: {result.get('id', 'unknown')}[/dim]")
 
 
@@ -1929,7 +1929,7 @@ def trash(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: boo
                     console.print(f"  - {t['id']}")
             if len(ids) > 5:
                 console.print(f"  ... and {len(ids) - 5} more")
-            console.print(f"\n[yellow]Warning: Messages in trash are auto-deleted after 30 days[/yellow]")
+            console.print("\n[yellow]Warning: Messages in trash are auto-deleted after 30 days[/yellow]")
             console.print(f"[dim]Undo would be: {undo_cmd}[/dim]")
         return
 
@@ -2556,7 +2556,7 @@ def create_filter(
     if as_json:
         print(json.dumps(f, indent=2))
     elif not quiet:
-        console.print(f"[green]Created filter[/green]")
+        console.print("[green]Created filter[/green]")
         console.print(f"[dim]Filter ID: {f['id']}[/dim]")
 
 
@@ -2652,7 +2652,7 @@ def vacation_status(as_json: bool) -> None:
         if settings.get("subject"):
             console.print(f"[bold]Subject:[/bold] {settings['subject']}")
         if settings.get("message"):
-            console.print(f"[bold]Message:[/bold]")
+            console.print("[bold]Message:[/bold]")
             console.print(settings["message"][:500])
         if settings.get("startTime"):
             from datetime import datetime

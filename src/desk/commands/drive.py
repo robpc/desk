@@ -577,7 +577,7 @@ def share(file_id: str, email: str, role: str, dry_run: bool, quiet: bool, as_js
         return
 
     try:
-        result = client.share(file_id, email, role=role)
+        client.share(file_id, email, role=role)
     except Exception as e:
         _handle_api_error(e, as_json, {"file_id": file_id, "email": email, "role": role})
 

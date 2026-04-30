@@ -2,7 +2,6 @@
 
 import base64
 import re
-import socket
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -462,7 +461,7 @@ class GmailClient:
                 userId=self.user_id, id=label_id
             ).execute()
             self._labels_cache = None
-        except socket.timeout as e:
+        except TimeoutError as e:
             raise TimeoutError(
                 f"Label deletion timed out (labels with many messages can take a while): {e}"
             )

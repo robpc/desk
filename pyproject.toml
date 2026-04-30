@@ -39,10 +39,17 @@ packages = ["src/desk"]
 
 [tool.ruff]
 src = ["src"]
-line-length = 100
+line-length = 140
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py and commands/mail.py have intentionally long lines:
+# tabular capability dicts and inline click-decorator help strings.
+# Breaking them across lines hurts readability more than the limit helps.
+"src/desk/cli.py" = ["E501"]
+"src/desk/commands/mail.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

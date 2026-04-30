@@ -659,16 +659,12 @@ class DriveClient:
                 .execute()
             )
 
-            result = (
-                self.service.comments()
-                .update(
-                    fileId=file_id,
-                    commentId=comment_id,
-                    body={"content": current.get("content", "")},
-                    fields="id, content, resolved",
-                )
-                .execute()
-            )
+            self.service.comments().update(
+                fileId=file_id,
+                commentId=comment_id,
+                body={"content": current.get("content", "")},
+                fields="id, content, resolved",
+            ).execute()
 
             # Resolve/reopen by updating via replies if needed
             # The comments API resolves via the resolved field
