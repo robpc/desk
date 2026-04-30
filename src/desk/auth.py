@@ -23,7 +23,6 @@ from desk.config import (
     SCOPES,
     TOKEN_FILE,
     ensure_config_dir,
-    get_bundled_credentials,
 )
 
 # Fields safe to keep in plaintext metadata files (no secrets)
@@ -239,8 +238,7 @@ def login(verbose: bool = False, credentials_path: str | None = None) -> Credent
     1. Explicit credentials_path argument
     2. Keyring client credentials
     3. User-provided ~/.desk/credentials.json (migrates to keyring)
-    4. Bundled package credentials
-    5. Error with instructions
+    4. Error with instructions
     """
     from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -269,15 +267,7 @@ def login(verbose: bool = False, credentials_path: str | None = None) -> Credent
         flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
         _migrate_credentials_to_keyring()
 
-    # 4. Bundled credentials
-    if flow is None:
-        bundled = get_bundled_credentials()
-        if bundled:
-            if verbose:
-                print("Using bundled credentials")
-            flow = InstalledAppFlow.from_client_config(bundled, SCOPES)
-
-    # 5. Error with instructions
+    # 4. Error with instructions
     if flow is None:
         print("Error: No credentials available.")
         print()

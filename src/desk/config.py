@@ -1,32 +1,12 @@
 """Configuration and path management."""
 
 import os
-from importlib import resources
 from pathlib import Path
 
 # Config directory
 CONFIG_DIR = Path.home() / ".desk"
 CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
 TOKEN_FILE = CONFIG_DIR / "token.json"
-
-
-def get_bundled_credentials() -> dict | None:
-    """Load bundled OAuth client credentials from package data.
-
-    Returns the parsed credentials dict, or None if not available or placeholder.
-    """
-    import json
-
-    try:
-        ref = resources.files("desk.data").joinpath("client.json")
-        data = json.loads(ref.read_text(encoding="utf-8"))
-        # Check it's not the placeholder
-        installed = data.get("installed", {})
-        if "REPLACE" in installed.get("client_id", ""):
-            return None
-        return data
-    except (ModuleNotFoundError, FileNotFoundError, TypeError, json.JSONDecodeError):
-        return None
 
 # Legacy config (for migration)
 LEGACY_CONFIG_DIR = Path.home() / ".gmail-cli"

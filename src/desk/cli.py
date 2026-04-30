@@ -274,20 +274,7 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
 
     status = get_auth_status()
 
-    # Check if bundled credentials are available
-    from desk.config import get_bundled_credentials
-
-    has_bundled = get_bundled_credentials() is not None
-
-    if has_bundled:
-        console.print("Bundled credentials detected. Running authentication flow...")
-        try:
-            login(verbose=verbose)
-        except Exception as e:
-            console.print(f"[red]Authentication failed: {e}[/red]")
-            sys.exit(1)
-        console.print("[green]Authentication successful![/green]")
-    elif status["gcloud_available"]:
+    if status["gcloud_available"]:
         console.print("Choose setup method:")
         console.print()
         console.print("  [bold]1.[/bold] gcloud (simplest, for personal use)")

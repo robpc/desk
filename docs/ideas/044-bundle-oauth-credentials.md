@@ -1,15 +1,28 @@
 ---
 id: 044
 title: Bundle OAuth Client Credentials for Zero-Friction Onboarding
-status: idea
+status: rejected
 effort: M
 value: Users can install and auth without touching GCP — just `desk auth login` and a browser consent
 created: 2026-02-20
-updated: 2026-02-20
+updated: 2026-04-30
 adr: null
 ---
 
 # Idea 044: Bundle OAuth Client Credentials for Zero-Friction Onboarding
+
+## Status: rejected
+
+For a personal-attribution open-source release, bundling shared OAuth
+credentials would require the maintainer to own and operate a Google
+Cloud project on behalf of every user (consent screen, quotas,
+ownership of any abuse). That's a meaningful ongoing commitment that
+doesn't match the model of this project. Users self-serve via
+`desk auth login --gcloud` (their own project, no friction once
+gcloud is set up) or by providing their own `credentials.json`.
+
+The scaffolding code (`get_bundled_credentials()`, `src/desk/data/client.json`)
+that anticipated this idea has been removed.
 
 ## Problem
 
