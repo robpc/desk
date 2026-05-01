@@ -102,6 +102,118 @@ def _read_content(text: str | None, file: str | None, stdin: bool) -> str:
     raise click.UsageError("Provide text, --file, or --stdin")
 
 
+def _looks_like_tab_error(error: Exception) -> bool:
+    """Heuristic: did this error come from a missing/invalid tab?
+
+    Covers the read-path RuntimeError("Tab not found: ...") and the batchUpdate
+    HttpError wrapped as RuntimeError("Docs API error: ...") whose payload
+    typically mentions "tabId" / "tab" with "invalid" or "not found."
+    """
+    msg = str(error).lower()
+    if "tab not found" in msg:
+        return True
+    return "tab" in msg and ("not found" in msg or "invalid" in msg)
+
+
+def _emit_tab_ambiguous(
+    document_id: str, value: str, matches: list[dict], as_json: bool,
+) -> None:
+    details = {
+        "document_id": document_id,
+        "value": value,
+        "matches": [
+            {"tabId": t.get("tabId", ""), "title": t.get("title", "")} for t in matches
+        ],
+    }
+    error = structured_error(
+        ErrorCode.TAB_NAME_AMBIGUOUS,
+        f"Multiple tabs match '{value}'.",
+        details=details,
+    )
+    if as_json:
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {error['error']['message']}[/red]")
+        console.print("[dim]Matching tabs:[/dim]")
+        for t in matches:
+            console.print(f"  [cyan]{t.get('tabId', '')}[/cyan]  {t.get('title', '')}")
+        console.print("[dim]Re-run with --tab <tabId>.[/dim]")
+    sys.exit(1)
+
+
+def _emit_tab_not_found(
+    document_id: str, value: str, tabs: list[dict], as_json: bool,
+) -> None:
+    details = {
+        "document_id": document_id,
+        "value": value,
+        "available_tabs": [
+            {"tabId": t.get("tabId", ""), "title": t.get("title", "")} for t in tabs
+        ],
+    }
+    error = structured_error(
+        ErrorCode.TAB_NOT_FOUND,
+        f"No tab matches '{value}'.",
+        details=details,
+    )
+    if as_json:
+        print(json.dumps(error, indent=2))
+    else:
+        console.print(f"[red]Error: {error['error']['message']}[/red]")
+        if tabs:
+            console.print("[dim]Available tabs:[/dim]")
+            for t in tabs:
+                console.print(f"  [cyan]{t.get('tabId', '')}[/cyan]  {t.get('title', '')}")
+        else:
+            console.print("[dim]Document has no tabs.[/dim]")
+    sys.exit(1)
+
+
+def _with_tab_resolution(
+    client: DocsClient,
+    document_id: str,
+    value: str | None,
+    as_json: bool,
+    fn,
+):
+    """Run fn(tab_id) optimistically. On a tab-shaped failure, list tabs and
+    retry with the title-resolved ID. Returns (result, resolved_tab_id).
+
+    See ADR-018. The optimistic call preserves zero overhead for valid IDs;
+    only the title path pays the extra round-trips.
+    """
+    if value is None:
+        return fn(None), None
+
+    try:
+        return fn(value), value
+    except Exception as original_error:
+        if not _looks_like_tab_error(original_error):
+            raise
+
+        try:
+            tabs = client.get_tabs_cached(document_id)
+        except Exception:
+            raise original_error from None
+
+        # If value was a real tabId, the original error was about something
+        # else and we shouldn't mask it.
+        if any(t.get("tabId") == value for t in tabs):
+            raise original_error
+
+        needle = value.strip().lower()
+        matches = [t for t in tabs if t.get("title", "").strip().lower() == needle]
+
+        if len(matches) == 1:
+            resolved = matches[0]["tabId"]
+            return fn(resolved), resolved
+
+        if len(matches) > 1:
+            _emit_tab_ambiguous(document_id, value, matches, as_json)
+
+        _emit_tab_not_found(document_id, value, tabs, as_json)
+
+
 def _parse_at(at: str, as_json: bool = False) -> int | None:
     """Parse --at value: 'end' returns None, otherwise integer index >= 1.
 
@@ -203,7 +315,7 @@ def create(
 
 @docs.command()
 @click.argument("document_id")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to read from")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to read from")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def read(document_id: str, tab_id: str | None, as_json: bool) -> None:
     """Read a document's content.
@@ -216,7 +328,10 @@ def read(document_id: str, tab_id: str | None, as_json: bool) -> None:
     """
     client = _get_client(as_json)
     try:
-        result = client.read(document_id, tab_id=tab_id)
+        result, _ = _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.read(document_id, tab_id=tid),
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id})
 
@@ -231,7 +346,7 @@ def read(document_id: str, tab_id: str | None, as_json: bool) -> None:
 
 @docs.command("inspect")
 @click.argument("document_id")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to inspect")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to inspect")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def inspect_cmd(document_id: str, tab_id: str | None, quiet: bool, as_json: bool) -> None:
@@ -248,7 +363,10 @@ def inspect_cmd(document_id: str, tab_id: str | None, quiet: bool, as_json: bool
     """
     client = _get_client(as_json)
     try:
-        result = client.inspect(document_id, tab_id=tab_id)
+        result, _ = _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.inspect(document_id, tab_id=tid),
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id})
 
@@ -371,7 +489,7 @@ def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) ->
     help="Find and replace: TEXT replaces all occurrences of FIND",
 )
 @click.option("--ignore-case", is_flag=True, help="Case-insensitive find (use with --find)")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
@@ -413,9 +531,12 @@ def update(
 
     if find:
         try:
-            result = client.find_and_replace(
-                document_id, find_text=find, replace_text=text,
-                match_case=not ignore_case, tab_id=tab_id,
+            result, _ = _with_tab_resolution(
+                client, document_id, tab_id, as_json,
+                lambda tid: client.find_and_replace(
+                    document_id, find_text=find, replace_text=text,
+                    match_case=not ignore_case, tab_id=tid,
+                ),
             )
         except Exception as e:
             _handle_api_error(e, as_json, {"document_id": document_id, "find": find})
@@ -434,7 +555,10 @@ def update(
         return
 
     try:
-        result = client.update(document_id, text, mode=mode, tab_id=tab_id)
+        result, _ = _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.update(document_id, text, mode=mode, tab_id=tid),
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "mode": mode})
 
@@ -465,7 +589,7 @@ def update(
 )
 @click.option("--file", "-f", "file_path", help="Read content from file")
 @click.option("--stdin", is_flag=True, help="Read content from stdin")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_cmd(
@@ -528,17 +652,24 @@ def insert_cmd(
 
     client = _get_client(as_json)
 
-    # Resolve paragraph-aware index
+    # Resolve paragraph-aware index. The first tab-using call resolves the
+    # tab_id (if a title was given); the resolved value is reused below.
     if after_paragraph is not None or before_paragraph is not None:
         try:
             if after_paragraph is not None:
-                index = client.find_paragraph_boundary(
-                    document_id, after_paragraph, position="after", tab_id=tab_id,
+                index, tab_id = _with_tab_resolution(
+                    client, document_id, tab_id, as_json,
+                    lambda tid: client.find_paragraph_boundary(
+                        document_id, after_paragraph, position="after", tab_id=tid,
+                    ),
                 )
                 at_label = f"after-paragraph({after_paragraph})->index({index})"
             else:
-                index = client.find_paragraph_boundary(
-                    document_id, before_paragraph, position="before", tab_id=tab_id,
+                index, tab_id = _with_tab_resolution(
+                    client, document_id, tab_id, as_json,
+                    lambda tid: client.find_paragraph_boundary(
+                        document_id, before_paragraph, position="before", tab_id=tid,
+                    ),
                 )
                 at_label = f"before-paragraph({before_paragraph})->index({index})"
         except Exception as e:
@@ -549,7 +680,15 @@ def insert_cmd(
         at_label = at
 
     try:
-        client.insert_at(document_id, content, index=index, tab_id=tab_id)
+        if after_paragraph is None and before_paragraph is None:
+            _, tab_id = _with_tab_resolution(
+                client, document_id, tab_id, as_json,
+                lambda tid: client.insert_at(
+                    document_id, content, index=index, tab_id=tid,
+                ),
+            )
+        else:
+            client.insert_at(document_id, content, index=index, tab_id=tab_id)
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "at": at_label})
 
@@ -565,7 +704,7 @@ def insert_cmd(
 @click.argument("document_id")
 @click.option("--start", required=True, type=int, help="Start index (inclusive)")
 @click.option("--end", required=True, type=int, help="End index (exclusive)")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def delete_range_cmd(
@@ -596,7 +735,10 @@ def delete_range_cmd(
 
     client = _get_client(as_json)
     try:
-        client.delete_range(document_id, start, end, tab_id=tab_id)
+        _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.delete_range(document_id, start, end, tab_id=tid),
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
 
@@ -622,7 +764,7 @@ def delete_range_cmd(
 @click.option("--link", default=None, help="Set hyperlink URL")
 @click.option("--font-size", type=float, default=None, help="Font size in points")
 @click.option("--font", default=None, help="Font family name")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def style_cmd(
@@ -653,17 +795,20 @@ def style_cmd(
     """
     client = _get_client(as_json)
     try:
-        client.update_text_style(
-            document_id, start, end,
-            bold=bold,
-            italic=italic,
-            code=code or None,
-            link_url=link,
-            font_size=font_size,
-            underline=underline,
-            strikethrough=strikethrough,
-            font_family=font,
-            tab_id=tab_id,
+        _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.update_text_style(
+                document_id, start, end,
+                bold=bold,
+                italic=italic,
+                code=code or None,
+                link_url=link,
+                font_size=font_size,
+                underline=underline,
+                strikethrough=strikethrough,
+                font_family=font,
+                tab_id=tid,
+            ),
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
@@ -723,7 +868,7 @@ def _emit_invalid_input(msg: str, as_json: bool) -> None:
 @click.option("--indent-start", type=int, default=None, help="Left indent in points")
 @click.option("--indent-end", type=int, default=None, help="Right indent in points")
 @click.option("--indent-first-line", type=int, default=None, help="First-line indent in points")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def paragraph_style_cmd(
@@ -762,17 +907,20 @@ def paragraph_style_cmd(
 
     client = _get_client(as_json)
     try:
-        client.update_paragraph_style(
-            document_id, start, end,
-            heading=heading,
-            alignment=alignment,
-            space_above=space_above,
-            space_below=space_below,
-            line_spacing=line_spacing,
-            indent_start=indent_start,
-            indent_end=indent_end,
-            indent_first_line=indent_first_line,
-            tab_id=tab_id,
+        _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.update_paragraph_style(
+                document_id, start, end,
+                heading=heading,
+                alignment=alignment,
+                space_above=space_above,
+                space_below=space_below,
+                line_spacing=line_spacing,
+                indent_start=indent_start,
+                indent_end=indent_end,
+                indent_first_line=indent_first_line,
+                tab_id=tid,
+            ),
         )
     except ValueError as e:
         _emit_invalid_input(str(e), as_json)
@@ -814,7 +962,7 @@ def paragraph_style_cmd(
 @click.option("--stdin", is_flag=True, help="Read markdown from stdin")
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--replace", is_flag=True, help="Replace entire document content")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option(
     "--space-above", type=int, default=None,
     help="Space above body paragraphs in points (excludes headings/lists/code)",
@@ -888,15 +1036,18 @@ def write_markdown_cmd(
     index = _parse_at(at, as_json) if not replace else None
     client = _get_client(as_json)
     try:
-        client.write_markdown(
-            document_id, content,
-            index=index, replace=replace, tab_id=tab_id,
-            space_above=space_above,
-            space_below=space_below,
-            line_spacing=line_spacing,
-            indent_start=indent_start,
-            indent_end=indent_end,
-            indent_first_line=indent_first_line,
+        _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.write_markdown(
+                document_id, content,
+                index=index, replace=replace, tab_id=tid,
+                space_above=space_above,
+                space_below=space_below,
+                line_spacing=line_spacing,
+                indent_start=indent_start,
+                indent_end=indent_end,
+                indent_first_line=indent_first_line,
+            ),
         )
     except ValueError as e:
         _emit_invalid_input(str(e), as_json)
@@ -932,7 +1083,7 @@ def write_markdown_cmd(
 @click.option("--rows", required=True, type=int, help="Number of rows")
 @click.option("--cols", required=True, type=int, help="Number of columns")
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_table_cmd(
@@ -959,7 +1110,12 @@ def insert_table_cmd(
     index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
-        client.insert_table(document_id, rows, cols, index=index, tab_id=tab_id)
+        _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.insert_table(
+                document_id, rows, cols, index=index, tab_id=tid,
+            ),
+        )
     except Exception as e:
         _handle_api_error(
             e, as_json, {"document_id": document_id, "rows": rows, "cols": cols, "at": at}
@@ -979,7 +1135,7 @@ def insert_table_cmd(
 @click.option("--at", default="end", help="Index to insert at (integer or 'end')")
 @click.option("--width", type=float, default=None, help="Image width in points")
 @click.option("--height", type=float, default=None, help="Image height in points")
-@click.option("--tab", "tab_id", default=None, help="Tab ID to target")
+@click.option("--tab", "tab_id", default=None, help="Tab ID or title to target")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_image_cmd(
@@ -1005,8 +1161,11 @@ def insert_image_cmd(
     index = _parse_at(at, as_json)
     client = _get_client(as_json)
     try:
-        client.insert_image(
-            document_id, uri, index=index, width=width, height=height, tab_id=tab_id,
+        _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.insert_image(
+                document_id, uri, index=index, width=width, height=height, tab_id=tid,
+            ),
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "uri": uri, "at": at})
@@ -1103,7 +1262,7 @@ def add_tab(
 
 @docs.command("delete-tab")
 @click.argument("document_id")
-@click.option("--tab", "tab_id", required=True, help="Tab ID to delete")
+@click.option("--tab", "tab_id", required=True, help="Tab ID or title to delete")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -1116,7 +1275,7 @@ def delete_tab(
 
         desk docs delete-tab <id> --tab <tab-id>
 
-        desk docs delete-tab <id> --tab <tab-id> --yes
+        desk docs delete-tab <id> --tab "Notes" --yes
     """
     client = _get_client(as_json)
 
@@ -1137,7 +1296,10 @@ def delete_tab(
             return
 
     try:
-        client.delete_tab(document_id, tab_id)
+        _, resolved_tab_id = _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.delete_tab(document_id, tid),
+        )
     except Exception as e:
         _handle_api_error(e, as_json, {"document_id": document_id, "tab_id": tab_id})
 
@@ -1145,7 +1307,7 @@ def delete_tab(
         operation="delete-tab",
         target={
             "document_id": document_id,
-            "tab_id": tab_id,
+            "tab_id": resolved_tab_id,
         },
     )
     output_result(receipt, as_json, quiet)
@@ -1153,7 +1315,7 @@ def delete_tab(
 
 @docs.command("rename-tab")
 @click.argument("document_id")
-@click.option("--tab", "tab_id", required=True, help="Tab ID to rename")
+@click.option("--tab", "tab_id", required=True, help="Tab ID or title to rename")
 @click.option("--title", "-t", required=True, help="New title for the tab")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -1165,10 +1327,15 @@ def rename_tab(
     Examples:
 
         desk docs rename-tab <id> --tab <tab-id> --title "New Name"
+
+        desk docs rename-tab <id> --tab "Old Name" --title "New Name"
     """
     client = _get_client(as_json)
     try:
-        result = client.rename_tab(document_id, tab_id, title)
+        result, _ = _with_tab_resolution(
+            client, document_id, tab_id, as_json,
+            lambda tid: client.rename_tab(document_id, tid, title),
+        )
     except Exception as e:
         _handle_api_error(
             e, as_json, {"document_id": document_id, "tab_id": tab_id, "title": title}

@@ -806,6 +806,7 @@ class TestDocsTabOption:
             "title": "Test",
             "body": "Tab content",
         }
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(docs, ["read", "doc123", "--tab", "t.1", "--json"])
@@ -819,6 +820,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.insert_at.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -834,6 +836,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.write_markdown.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -854,6 +857,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.update.return_value = {"documentId": "doc123", "mode": "append", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -869,6 +873,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.delete_range.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -884,6 +889,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.update_text_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -900,6 +906,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.update_paragraph_style.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -921,6 +928,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.insert_table.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -936,6 +944,7 @@ class TestDocsTabOption:
 
         mock_client = MagicMock()
         mock_client.insert_image.return_value = {"documentId": "doc123", "status": "ok"}
+        mock_client.get_tabs_cached.return_value = [{"tabId": "t.1", "title": "Tab 1"}]
         mock_docs_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -946,3 +955,278 @@ class TestDocsTabOption:
         mock_client.insert_image.assert_called_once_with(
             "doc123", "https://example.com/img.png", index=None, width=None, height=None, tab_id="t.1"
         )
+
+
+class TestWithTabResolution:
+    """Tests for the _with_tab_resolution wrapper (ADR-018, optimistic-then-fallback)."""
+
+    def test_none_passes_through_with_no_lookup(self):
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        called_with = []
+        result, resolved = _with_tab_resolution(
+            client, "doc123", None, False, lambda tid: called_with.append(tid) or "ok",
+        )
+        assert result == "ok"
+        assert resolved is None
+        assert called_with == [None]
+        client.get_tabs_cached.assert_not_called()
+
+    def test_id_happy_path_skips_list_tabs(self):
+        """Valid ID path: no list_tabs round-trip — fn called once with the value."""
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        result, resolved = _with_tab_resolution(
+            client, "doc123", "t.abc", False, lambda tid: ("body", tid),
+        )
+        assert result == ("body", "t.abc")
+        assert resolved == "t.abc"
+        client.get_tabs_cached.assert_not_called()
+
+    def test_non_tab_error_reraises_without_listing(self):
+        """A non-tab-shaped error should propagate untouched."""
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+
+        def fn(_tid):
+            raise RuntimeError("Document not found: doc123")
+
+        with pytest.raises(RuntimeError, match="Document not found"):
+            _with_tab_resolution(client, "doc123", "t.abc", False, fn)
+        client.get_tabs_cached.assert_not_called()
+
+    def test_tab_error_with_real_id_reraises_original(self):
+        """If error is tab-shaped but value matches a real tab ID, reraise."""
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        client.get_tabs_cached.return_value = [
+            {"tabId": "t.abc", "title": "Transcript"},
+        ]
+
+        def fn(_tid):
+            raise RuntimeError("Tab not found: t.abc — this came from somewhere weird")
+
+        # The ID is real, so we should not mask the original error with a TAB_NOT_FOUND.
+        with pytest.raises(RuntimeError, match="came from somewhere weird"):
+            _with_tab_resolution(client, "doc123", "t.abc", False, fn)
+        client.get_tabs_cached.assert_called_once_with("doc123")
+
+    def test_title_resolves_and_retries(self):
+        """Tab-shaped error + valid title → list once + retry with resolved ID."""
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        client.get_tabs_cached.return_value = [
+            {"tabId": "t.xyz", "title": "Transcript"},
+        ]
+
+        calls = []
+
+        def fn(tid):
+            calls.append(tid)
+            if tid == "Transcript":
+                raise RuntimeError("Tab not found: Transcript")
+            return f"body-of-{tid}"
+
+        result, resolved = _with_tab_resolution(
+            client, "doc123", "Transcript", False, fn,
+        )
+        assert result == "body-of-t.xyz"
+        assert resolved == "t.xyz"
+        assert calls == ["Transcript", "t.xyz"]
+
+    def test_title_match_is_case_insensitive_and_trimmed(self):
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        client.get_tabs_cached.return_value = [
+            {"tabId": "t.xyz", "title": "Transcript"},
+        ]
+
+        def fn(tid):
+            if tid != "t.xyz":
+                raise RuntimeError("Tab not found")
+            return "ok"
+
+        for value in ("TRANSCRIPT", "  transcript  ", "Transcript"):
+            client.get_tabs_cached.reset_mock()
+            result, resolved = _with_tab_resolution(client, "doc123", value, False, fn)
+            assert result == "ok"
+            assert resolved == "t.xyz"
+
+    def test_ambiguous_title_emits_structured_error(self, capsys):
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        client.get_tabs_cached.return_value = [
+            {"tabId": "t.1", "title": "Notes"},
+            {"tabId": "t.2", "title": "Notes"},
+        ]
+
+        def fn(_tid):
+            raise RuntimeError("Tab not found: Notes")
+
+        with pytest.raises(SystemExit) as exc:
+            _with_tab_resolution(client, "doc123", "Notes", True, fn)
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error"]["code"] == "TAB_NAME_AMBIGUOUS"
+        assert {m["tabId"] for m in payload["error"]["details"]["matches"]} == {"t.1", "t.2"}
+
+    def test_no_match_emits_structured_error_with_available_tabs(self, capsys):
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        client.get_tabs_cached.return_value = [
+            {"tabId": "t.1", "title": "Notes"},
+            {"tabId": "t.2", "title": "Drafts"},
+        ]
+
+        def fn(_tid):
+            raise RuntimeError("Tab not found: Transcript")
+
+        with pytest.raises(SystemExit) as exc:
+            _with_tab_resolution(client, "doc123", "Transcript", True, fn)
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error"]["code"] == "TAB_NOT_FOUND"
+        assert {t["tabId"] for t in payload["error"]["details"]["available_tabs"]} == {"t.1", "t.2"}
+
+    def test_list_tabs_failure_reraises_original(self):
+        """If list_tabs itself fails, surface the original operation error."""
+        from desk.commands.docs import _with_tab_resolution
+
+        client = MagicMock()
+        client.get_tabs_cached.side_effect = RuntimeError("list_tabs blew up")
+
+        def fn(_tid):
+            raise RuntimeError("Tab not found: foo")
+
+        with pytest.raises(RuntimeError, match="Tab not found: foo"):
+            _with_tab_resolution(client, "doc123", "foo", False, fn)
+
+
+class TestTabResolutionEndToEnd:
+    """End-to-end CLI tests for tab name resolution (ADR-018)."""
+
+    def test_read_resolves_title_to_id(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_tabs_cached.return_value = [
+            {"tabId": "t.xyz", "title": "Transcript"},
+            {"tabId": "t.abc", "title": "Notes"},
+        ]
+
+        body_result = {"documentId": "doc123", "title": "Test", "body": "x"}
+
+        def read_side_effect(_doc_id, tab_id=None):
+            if tab_id == "Transcript":
+                raise RuntimeError("Tab not found: Transcript")
+            return body_result
+
+        mock_client.read.side_effect = read_side_effect
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["read", "doc123", "--tab", "Transcript", "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        # Two calls: optimistic with title, retry with resolved ID
+        assert mock_client.read.call_count == 2
+        assert mock_client.read.call_args_list[1].kwargs["tab_id"] == "t.xyz"
+
+    def test_read_with_id_does_not_call_list_tabs(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        """Optimistic path: a valid ID should not trigger list_tabs."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "documentId": "doc123", "title": "Test", "body": "x",
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["read", "doc123", "--tab", "t.xyz", "--json"])
+        assert result.exit_code == 0
+        mock_client.get_tabs_cached.assert_not_called()
+        mock_client.read.assert_called_once_with("doc123", tab_id="t.xyz")
+
+    def test_read_with_unknown_title_errors_with_available_tabs(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_tabs_cached.return_value = [
+            {"tabId": "t.xyz", "title": "Transcript"},
+        ]
+        mock_client.read.side_effect = RuntimeError("Tab not found: DoesNotExist")
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["read", "doc123", "--tab", "DoesNotExist", "--json"]
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["error"]["code"] == "TAB_NOT_FOUND"
+
+    def test_delete_tab_accepts_title(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        """delete-tab should resolve a title to an ID like the content commands."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_tabs_cached.return_value = [
+            {"tabId": "t.kill", "title": "Drafts"},
+            {"tabId": "t.keep", "title": "Notes"},
+        ]
+
+        def delete_side_effect(_doc_id, tab_id):
+            if tab_id == "Drafts":
+                raise RuntimeError("Tab not found: Drafts")
+            return {"documentId": "doc123", "status": "ok"}
+
+        mock_client.delete_tab.side_effect = delete_side_effect
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["delete-tab", "doc123", "--tab", "Drafts", "--yes", "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_client.delete_tab.call_count == 2
+        assert mock_client.delete_tab.call_args_list[1].args == ("doc123", "t.kill")
+
+    def test_rename_tab_accepts_title(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_tabs_cached.return_value = [
+            {"tabId": "t.abc", "title": "Old Name"},
+        ]
+
+        def rename_side_effect(_doc_id, tab_id, title):
+            if tab_id == "Old Name":
+                raise RuntimeError("Tab not found: Old Name")
+            return {"tabId": tab_id, "title": title}
+
+        mock_client.rename_tab.side_effect = rename_side_effect
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs,
+            ["rename-tab", "doc123", "--tab", "Old Name", "--title", "New Name", "--json"],
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_client.rename_tab.call_count == 2
+        assert mock_client.rename_tab.call_args_list[1].args == ("doc123", "t.abc", "New Name")

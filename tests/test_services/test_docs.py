@@ -1915,3 +1915,89 @@ class TestExtractParagraphText:
         assert result.startswith("Meeting with @Alice about ")
         assert "[Project Plan]" in result
         assert result.endswith("\n")
+
+
+class TestDocsGetTabsCached:
+    """Tests for DocsClient.get_tabs_cached caching behavior."""
+
+    def _make_client_with_tabs(self, mock_credentials):
+        from desk.services.docs import DocsClient
+
+        patcher = patch("desk.services.docs.build")
+        mock_build = patcher.start()
+        mock_service = MagicMock()
+        mock_build.return_value = mock_service
+        documents_mock = mock_service.documents.return_value
+        documents_mock.get.return_value.execute.return_value = {
+            "documentId": "doc123",
+            "tabs": [
+                {
+                    "tabProperties": {"tabId": "t.0", "title": "Tab 1", "index": 0},
+                    "documentTab": {"body": {"content": []}},
+                    "childTabs": [],
+                },
+            ],
+        }
+        client = DocsClient(mock_credentials)
+        return client, documents_mock, patcher
+
+    def test_caches_tabs_within_instance(self, mock_credentials):
+        """Repeated calls for the same document should hit the API once."""
+        client, documents_mock, patcher = self._make_client_with_tabs(mock_credentials)
+        try:
+            client.get_tabs_cached("doc123")
+            client.get_tabs_cached("doc123")
+            client.get_tabs_cached("doc123")
+            assert documents_mock.get.call_count == 1
+        finally:
+            patcher.stop()
+
+    def test_cache_is_per_document(self, mock_credentials):
+        """Different document IDs should each trigger a fetch."""
+        client, documents_mock, patcher = self._make_client_with_tabs(mock_credentials)
+        try:
+            client.get_tabs_cached("doc123")
+            client.get_tabs_cached("doc456")
+            assert documents_mock.get.call_count == 2
+        finally:
+            patcher.stop()
+
+    def test_add_tab_invalidates_cache(self, mock_credentials):
+        """Mutating tabs should drop the cache so the next read sees the new state."""
+        client, documents_mock, patcher = self._make_client_with_tabs(mock_credentials)
+        try:
+            client.get_tabs_cached("doc123")
+            documents_mock.batchUpdate.return_value.execute.return_value = {
+                "replies": [{
+                    "createTab": {
+                        "tab": {"tabProperties": {"tabId": "t.new", "title": "New"}},
+                    }
+                }],
+            }
+            client.add_tab("doc123", "New")
+            client.get_tabs_cached("doc123")
+            assert documents_mock.get.call_count == 2
+        finally:
+            patcher.stop()
+
+    def test_delete_tab_invalidates_cache(self, mock_credentials):
+        client, documents_mock, patcher = self._make_client_with_tabs(mock_credentials)
+        try:
+            client.get_tabs_cached("doc123")
+            documents_mock.batchUpdate.return_value.execute.return_value = {}
+            client.delete_tab("doc123", "t.0")
+            client.get_tabs_cached("doc123")
+            assert documents_mock.get.call_count == 2
+        finally:
+            patcher.stop()
+
+    def test_rename_tab_invalidates_cache(self, mock_credentials):
+        client, documents_mock, patcher = self._make_client_with_tabs(mock_credentials)
+        try:
+            client.get_tabs_cached("doc123")
+            documents_mock.batchUpdate.return_value.execute.return_value = {}
+            client.rename_tab("doc123", "t.0", "Renamed")
+            client.get_tabs_cached("doc123")
+            assert documents_mock.get.call_count == 2
+        finally:
+            patcher.stop()
