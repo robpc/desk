@@ -17,6 +17,10 @@ class DocsClient:
         # since Docs API doesn't provide these operations.
         # Lazy-loaded: read() and update() don't need it.
         self.__drive = None
+        # Per-instance cache of (document_id -> tabs list) so a single CLI
+        # invocation that resolves tabs by name pays one list_tabs round-trip.
+        # Mirrors the labels cache pattern in services/gmail.py.
+        self._tabs_cache: dict[str, list[dict]] = {}
 
     @property
     def _drive(self):
@@ -106,6 +110,18 @@ class DocsClient:
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
+    def get_tabs_cached(self, document_id: str) -> list[dict]:
+        """Return the document's tabs, fetching once per instance.
+
+        Used by name-based --tab resolution to avoid a per-call list_tabs
+        round-trip when multiple operations target the same document.
+        """
+        cached = self._tabs_cache.get(document_id)
+        if cached is None:
+            cached = self.list_tabs(document_id)
+            self._tabs_cache[document_id] = cached
+        return cached
+
     def add_tab(
         self, document_id: str, title: str,
         index: int | None = None, parent_tab_id: str | None = None,
@@ -132,6 +148,8 @@ class DocsClient:
                 documentId=document_id,
                 body={"requests": [{"createTab": request}]},
             ).execute()
+
+            self._tabs_cache.pop(document_id, None)
 
             # Extract the new tab info from the reply
             replies = result.get("replies", [{}])
@@ -164,6 +182,8 @@ class DocsClient:
                 body={"requests": [{"deleteTab": {"tabId": tab_id}}]},
             ).execute()
 
+            self._tabs_cache.pop(document_id, None)
+
             return {"documentId": document_id, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
@@ -192,6 +212,8 @@ class DocsClient:
                     }
                 }]},
             ).execute()
+
+            self._tabs_cache.pop(document_id, None)
 
             return {"tabId": tab_id, "title": title}
         except HttpError as error:

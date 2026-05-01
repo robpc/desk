@@ -62,6 +62,8 @@ class ErrorCode(str, Enum):
     INDEX_OUT_OF_RANGE = "INDEX_OUT_OF_RANGE"
     INVALID_RANGE = "INVALID_RANGE"
     MARKDOWN_PARSE_ERROR = "MARKDOWN_PARSE_ERROR"
+    TAB_NOT_FOUND = "TAB_NOT_FOUND"
+    TAB_NAME_AMBIGUOUS = "TAB_NAME_AMBIGUOUS"
 
 
 
@@ -152,6 +154,14 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
     ErrorCode.MARKDOWN_PARSE_ERROR: [
         "Check that the markdown content is valid",
         "Ensure the file is UTF-8 encoded",
+    ],
+    ErrorCode.TAB_NOT_FOUND: [
+        "Run `desk docs list-tabs <document-id>` to see available tabs",
+        "--tab accepts either a tab ID or a tab title (case-insensitive)",
+    ],
+    ErrorCode.TAB_NAME_AMBIGUOUS: [
+        "Multiple tabs share that title — re-run with --tab <tabId> from the matches list",
+        "Run `desk docs list-tabs <document-id>` to see all tabs with their IDs",
     ],
     ErrorCode.INSUFFICIENT_SCOPES: [
         "Your credentials don't include the required permissions",
