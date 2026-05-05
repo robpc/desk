@@ -1,5 +1,5 @@
 ---
-id: 017
+id: 019
 title: Auth logout/clear commands and stale-token detection
 status: accepted
 date: 2026-04-27
@@ -8,7 +8,7 @@ superseded_by: null
 tags: [auth, cli, recoverability, keyring]
 ---
 
-# ADR-017: Auth logout/clear commands and stale-token detection
+# ADR-019: Auth logout/clear commands and stale-token detection
 
 ## Context
 
