@@ -19,6 +19,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.console import error_console
 from desk.services.drive import DriveClient
 
 console = Console()
@@ -35,13 +36,13 @@ def _get_client(as_json: bool = False) -> DriveClient:
                 code,
                 reason or "Not authenticated",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Not authenticated.[/red]")
+            error_console.print("[red]Not authenticated.[/red]")
             if reason:
-                console.print(f"[yellow]{escape(reason)}[/yellow]")
+                error_console.print(f"[yellow]{escape(reason)}[/yellow]")
             else:
-                console.print("Run: [cyan]desk setup[/cyan]")
+                error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return DriveClient(creds)
 
@@ -83,13 +84,13 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error_msg}[/red]")
+        error_console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
-            console.print("[dim]Suggestions:[/dim]")
+            error_console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
-                console.print(f"  [cyan]- {s}[/cyan]")
+                error_console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
 
@@ -198,9 +199,9 @@ def read(file_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
     if not ids:
         msg = "No file IDs provided"
         if as_json:
-            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2))
+            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -240,7 +241,7 @@ def read(file_ids: tuple[str, ...], stdin: bool, as_json: bool) -> None:
                 content = client.read(fid)
                 console.print(content)
             except Exception as e:
-                console.print(f"[red]Error reading {fid}: {e}[/red]")
+                error_console.print(f"[red]Error reading {fid}: {e}[/red]")
             if i < len(ids) - 1:
                 console.print()
 
@@ -780,9 +781,9 @@ def unshare(file_id: str, email: str, dry_run: bool, quiet: bool, as_json: bool)
                 str(e),
                 suggestions=["Run `desk drive permissions <file-id>` to see who has access"],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except Exception as e:
         _handle_api_error(e, as_json, {"file_id": file_id, "email": email})

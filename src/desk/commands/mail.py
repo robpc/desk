@@ -20,6 +20,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.console import error_console
 from desk.idempotency import check_idempotency, record_idempotency
 from desk.links import filter_links_not_in_text
 from desk.services.gmail import GmailClient
@@ -41,13 +42,13 @@ def _get_client(as_json: bool = False) -> GmailClient:
                 code,
                 reason or "Not authenticated",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Not authenticated.[/red]")
+            error_console.print("[red]Not authenticated.[/red]")
             if reason:
-                console.print(f"[yellow]{escape(reason)}[/yellow]")
+                error_console.print(f"[yellow]{escape(reason)}[/yellow]")
             else:
-                console.print("Run: [cyan]desk setup[/cyan]")
+                error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return GmailClient(creds)
 
@@ -150,13 +151,13 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error_msg}[/red]")
+        error_console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
-            console.print("[dim]Suggestions:[/dim]")
+            error_console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
-                console.print(f"  [cyan]- {s}[/cyan]")
+                error_console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
 
@@ -296,7 +297,7 @@ def _query_bulk_operate(
             f"[green]{operation}: processed {total_processed} message(s) matching '{query}'[/green]"
         )
         if total_failed:
-            console.print(f"[red]Failed: {total_failed}[/red]")
+            error_console.print(f"[red]Failed: {total_failed}[/red]")
 
 
 def _resolve_query_or_ids(
@@ -316,17 +317,17 @@ def _resolve_query_or_ids(
     if query and message_ids:
         msg = "--query and message IDs are mutually exclusive"
         if as_json:
-            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2))
+            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     if query and stdin:
         msg = "--query and --stdin are mutually exclusive"
         if as_json:
-            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2))
+            print(json.dumps(structured_error(ErrorCode.INVALID_INPUT, msg), indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     if query:
@@ -334,7 +335,7 @@ def _resolve_query_or_ids(
             # Check count and tell the user to add --yes
             creds = get_credentials()
             if not creds:
-                console.print("[red]Not authenticated.[/red]")
+                error_console.print("[red]Not authenticated.[/red]")
                 sys.exit(1)
             client = GmailClient(creds)
             count = client.count_messages(query)
@@ -347,9 +348,9 @@ def _resolve_query_or_ids(
                     ErrorCode.INVALID_INPUT,
                     msg,
                     suggestions=[f"Add --yes flag: desk mail {operation} --query '{query}' --yes"],
-                ), indent=2))
+                ), indent=2), file=sys.stderr)
             else:
-                console.print(f"[yellow]{msg}[/yellow]")
+                error_console.print(f"[yellow]{msg}[/yellow]")
             sys.exit(1)
         return None, query
 
@@ -671,10 +672,10 @@ def send(
     # Determine body source
     body_sources = sum([body_text is not None, body_file is not None, from_stdin])
     if body_sources == 0:
-        console.print("[red]Error: Must provide body via --body, --body-file, or --stdin[/red]")
+        error_console.print("[red]Error: Must provide body via --body, --body-file, or --stdin[/red]")
         sys.exit(1)
     if body_sources > 1:
-        console.print("[red]Error: Use only one of --body, --body-file, or --stdin[/red]")
+        error_console.print("[red]Error: Use only one of --body, --body-file, or --stdin[/red]")
         sys.exit(1)
 
     # Get body content
@@ -685,10 +686,10 @@ def send(
             with open(body_file) as f:
                 body = f.read()
         except FileNotFoundError:
-            console.print(f"[red]Error: File not found: {body_file}[/red]")
+            error_console.print(f"[red]Error: File not found: {body_file}[/red]")
             sys.exit(1)
         except OSError as e:
-            console.print(f"[red]Error reading file: {e}[/red]")
+            error_console.print(f"[red]Error reading file: {e}[/red]")
             sys.exit(1)
     else:  # from_stdin
         body = sys.stdin.read()
@@ -790,12 +791,12 @@ def _get_body(
 
     if body_sources == 0:
         if required:
-            console.print("[red]Error: Must provide body via --body, --body-file, or --stdin[/red]")
+            error_console.print("[red]Error: Must provide body via --body, --body-file, or --stdin[/red]")
             sys.exit(1)
         return ""
 
     if body_sources > 1:
-        console.print("[red]Error: Use only one of --body, --body-file, or --stdin[/red]")
+        error_console.print("[red]Error: Use only one of --body, --body-file, or --stdin[/red]")
         sys.exit(1)
 
     if body_text is not None:
@@ -805,10 +806,10 @@ def _get_body(
             with open(body_file) as f:
                 return f.read()
         except FileNotFoundError:
-            console.print(f"[red]Error: File not found: {body_file}[/red]")
+            error_console.print(f"[red]Error: File not found: {body_file}[/red]")
             sys.exit(1)
         except OSError as e:
-            console.print(f"[red]Error reading file: {e}[/red]")
+            error_console.print(f"[red]Error reading file: {e}[/red]")
             sys.exit(1)
     else:  # from_stdin
         return sys.stdin.read()
@@ -1295,7 +1296,7 @@ def attachment(message_id: str, filename: str, output_path: str | None) -> None:
     try:
         data = client.get_attachment_by_filename(message_id, filename)
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     if output_path:
@@ -1305,7 +1306,7 @@ def attachment(message_id: str, filename: str, output_path: str | None) -> None:
             console.print(f"[green]Saved {filename} to {output_path}[/green]")
             console.print(f"[dim]{len(data)} bytes[/dim]")
         except OSError as e:
-            console.print(f"[red]Error writing file: {e}[/red]")
+            error_console.print(f"[red]Error writing file: {e}[/red]")
             sys.exit(1)
     else:
         # Write to stdout as binary
@@ -1407,7 +1408,7 @@ def create_label(name: str, color: str | None, quiet: bool, as_json: bool) -> No
     try:
         label = client.create_label(name, color=color)
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     if as_json:
@@ -1477,7 +1478,7 @@ def delete_label(name: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool
                 )
                 output_result(error, as_json, quiet)
             else:
-                console.print(f"[red]Error: {msg}[/red]")
+                error_console.print(f"[red]Error: {msg}[/red]")
             sys.exit(1)
         if not click.confirm(f"Delete label '{name}'? (~{msg_count} messages will be unlabeled)"):
             console.print("[yellow]Cancelled[/yellow]")
@@ -1572,7 +1573,7 @@ def rename_label(old_name: str, new_name: str, quiet: bool, as_json: bool) -> No
     try:
         label = client.rename_label(old_name, new_name)
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     if as_json:
@@ -2550,7 +2551,7 @@ def create_filter(
             never_spam=never_spam,
         )
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     if as_json:
@@ -2584,7 +2585,7 @@ def delete_filter(filter_id: str, yes: bool, quiet: bool, as_json: bool) -> None
                 )
                 output_result(error, as_json, quiet)
             else:
-                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+                error_console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
         if not click.confirm(f"Delete filter {filter_id}?"):
             console.print("[yellow]Cancelled[/yellow]")
@@ -2706,7 +2707,7 @@ def vacation(
         desk mail vacation --disable
     """
     if enable and disable:
-        console.print("[red]Error: Cannot use both --enable and --disable[/red]")
+        error_console.print("[red]Error: Cannot use both --enable and --disable[/red]")
         sys.exit(1)
 
     if not enable and not disable and not message and not subject:

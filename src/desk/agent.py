@@ -600,12 +600,17 @@ def output_result(
         quiet: Whether to suppress human-readable output
         formatter: Custom formatter for human output (auto-detected if None)
     """
+    import sys
+
     from rich.console import Console
 
-    console = Console()
+    from desk.console import error_console
+
+    is_error = "error" in result
 
     if as_json:
-        print(json.dumps(result, indent=2))
+        stream = sys.stderr if is_error else sys.stdout
+        print(json.dumps(result, indent=2), file=stream)
         return
 
     if quiet:
@@ -613,7 +618,7 @@ def output_result(
 
     # Auto-detect formatter based on result structure
     if formatter is None:
-        if "error" in result:
+        if is_error:
             formatter = format_error_for_human
         elif "dry_run" in result:
             formatter = format_dry_run_for_human
@@ -624,4 +629,5 @@ def output_result(
             print(json.dumps(result, indent=2))
             return
 
-    console.print(formatter(result))
+    target = error_console if is_error else Console()
+    target.print(formatter(result))

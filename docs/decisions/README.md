@@ -31,6 +31,7 @@ proposed → accepted → [deprecated | superseded]
 |----|-------|--------|------|
 | 001 | [OAuth and Credential Strategy](001-oauth-credential-strategy.md) | accepted | 2025-02-06 |
 | 002 | [Command Composability via Generic Modify](002-command-composability.md) | accepted | 2025-02-06 |
+| 019 | [Errors to stderr](019-errors-to-stderr.md) | accepted | 2026-05-06 |
 
 ## Creating a New ADR
 

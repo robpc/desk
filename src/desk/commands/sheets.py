@@ -17,6 +17,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.console import error_console
 from desk.services.sheets import SheetsClient
 
 console = Console()
@@ -33,13 +34,13 @@ def _get_client(as_json: bool = False) -> SheetsClient:
                 code,
                 reason or "Not authenticated",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Not authenticated.[/red]")
+            error_console.print("[red]Not authenticated.[/red]")
             if reason:
-                console.print(f"[yellow]{escape(reason)}[/yellow]")
+                error_console.print(f"[yellow]{escape(reason)}[/yellow]")
             else:
-                console.print("Run: [cyan]desk setup[/cyan]")
+                error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return SheetsClient(creds)
 
@@ -72,13 +73,13 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error_msg}[/red]")
+        error_console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
-            console.print("[dim]Suggestions:[/dim]")
+            error_console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
-                console.print(f"  [cyan]- {s}[/cyan]")
+                error_console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
 
@@ -224,9 +225,9 @@ def write(spreadsheet_id: str, range_: str, values_json: str, quiet: bool, as_js
                 "Invalid JSON. Expected a 2D array like '[[\"a\",\"b\"]]'",
                 suggestions=["Ensure values are a JSON 2D array", "Check for proper escaping of quotes"],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
+            error_console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
         sys.exit(1)
 
     try:
@@ -270,9 +271,9 @@ def append(spreadsheet_id: str, range_: str, values_json: str, quiet: bool, as_j
                 "Invalid JSON. Expected a 2D array like '[[\"a\",\"b\"]]'",
                 suggestions=["Ensure values are a JSON 2D array", "Check for proper escaping of quotes"],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
+            error_console.print('[red]Invalid JSON. Expected a 2D array like \'[[]["a","b"]]\'[/red]')
         sys.exit(1)
 
     try:
@@ -420,9 +421,9 @@ def delete_sheet(spreadsheet_id: str, sheet_id: int, yes: bool, quiet: bool, as_
                     "Non-interactive mode requires --yes flag",
                     suggestions=["Use --yes to confirm deletion in non-interactive mode"],
                 )
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+                error_console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
         import click as click_module
         if not click_module.confirm(f"Delete sheet {sheet_id}? This cannot be undone."):

@@ -16,6 +16,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.console import error_console
 from desk.services.forms import FormsClient
 
 console = Console()
@@ -32,13 +33,13 @@ def _get_client(as_json: bool = False) -> FormsClient:
                 code,
                 reason or "Not authenticated",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Not authenticated.[/red]")
+            error_console.print("[red]Not authenticated.[/red]")
             if reason:
-                console.print(f"[yellow]{escape(reason)}[/yellow]")
+                error_console.print(f"[yellow]{escape(reason)}[/yellow]")
             else:
-                console.print("Run: [cyan]desk setup[/cyan]")
+                error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return FormsClient(creds)
 
@@ -71,13 +72,13 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error_msg}[/red]")
+        error_console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
-            console.print("[dim]Suggestions:[/dim]")
+            error_console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
-                console.print(f"  [cyan]- {s}[/cyan]")
+                error_console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
 
@@ -275,9 +276,9 @@ def add_question(
             msg = "Branching (--goto) is only supported for choice and dropdown types"
             if as_json:
                 error = structured_error(ErrorCode.INVALID_INPUT, msg)
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print(f"[red]Error: {msg}[/red]")
+                error_console.print(f"[red]Error: {msg}[/red]")
             sys.exit(1)
         goto_map = {}
         for pair in goto:
@@ -285,9 +286,9 @@ def add_question(
                 msg = f"Invalid --goto format: '{pair}' (expected CHOICE=SECTION_ID)"
                 if as_json:
                     error = structured_error(ErrorCode.INVALID_INPUT, msg)
-                    print(json.dumps(error, indent=2))
+                    print(json.dumps(error, indent=2), file=sys.stderr)
                 else:
-                    console.print(f"[red]Error: {msg}[/red]")
+                    error_console.print(f"[red]Error: {msg}[/red]")
                 sys.exit(1)
             key, value = pair.split("=", 1)
             key, value = key.strip(), value.strip()
@@ -295,9 +296,9 @@ def add_question(
                 msg = f"Invalid --goto format: '{pair}' (choice and section ID must not be empty)"
                 if as_json:
                     error = structured_error(ErrorCode.INVALID_INPUT, msg)
-                    print(json.dumps(error, indent=2))
+                    print(json.dumps(error, indent=2), file=sys.stderr)
                 else:
-                    console.print(f"[red]Error: {msg}[/red]")
+                    error_console.print(f"[red]Error: {msg}[/red]")
                 sys.exit(1)
             goto_map[key] = value
 
@@ -314,9 +315,9 @@ def add_question(
     except ValueError as e:
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except Exception as e:
         _handle_api_error(e, as_json, {"form_id": form_id, "title": title})
@@ -371,9 +372,9 @@ def _parse_goto(goto: tuple[str, ...], as_json: bool) -> dict[str, str] | None:
             msg = f"Invalid --goto format: '{pair}' (expected CHOICE=SECTION_ID)"
             if as_json:
                 error = structured_error(ErrorCode.INVALID_INPUT, msg)
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print(f"[red]Error: {msg}[/red]")
+                error_console.print(f"[red]Error: {msg}[/red]")
             sys.exit(1)
         key, value = pair.split("=", 1)
         key, value = key.strip(), value.strip()
@@ -381,9 +382,9 @@ def _parse_goto(goto: tuple[str, ...], as_json: bool) -> dict[str, str] | None:
             msg = f"Invalid --goto format: '{pair}' (choice and section ID must not be empty)"
             if as_json:
                 error = structured_error(ErrorCode.INVALID_INPUT, msg)
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print(f"[red]Error: {msg}[/red]")
+                error_console.print(f"[red]Error: {msg}[/red]")
             sys.exit(1)
         goto_map[key] = value
     return goto_map
@@ -412,9 +413,9 @@ def update(
         msg = "At least one of --title or --description is required"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -488,9 +489,9 @@ def update_question(
     except ValueError as e:
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except Exception as e:
         _handle_api_error(e, as_json, {"form_id": form_id, "item_id": item_id})
@@ -529,9 +530,9 @@ def update_section(
         msg = "At least one of --title or --description is required"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -540,9 +541,9 @@ def update_section(
     except ValueError as e:
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except Exception as e:
         _handle_api_error(e, as_json, {"form_id": form_id, "item_id": item_id})
@@ -575,9 +576,9 @@ def delete_item(form_id: str, item_id: str, yes: bool, quiet: bool, as_json: boo
                 ErrorCode.INVALID_INPUT,
                 "Confirmation required: pass --yes to confirm deletion",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Error: Confirmation required: pass --yes to confirm deletion[/red]")
+            error_console.print("[red]Error: Confirmation required: pass --yes to confirm deletion[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -586,9 +587,9 @@ def delete_item(form_id: str, item_id: str, yes: bool, quiet: bool, as_json: boo
     except ValueError as e:
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except Exception as e:
         _handle_api_error(e, as_json, {"form_id": form_id, "item_id": item_id})
