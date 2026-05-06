@@ -17,6 +17,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.console import error_console
 from desk.services.docs import DocsClient
 
 console = Console()
@@ -33,13 +34,13 @@ def _get_client(as_json: bool = False) -> DocsClient:
                 code,
                 reason or "Not authenticated",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Not authenticated.[/red]")
+            error_console.print("[red]Not authenticated.[/red]")
             if reason:
-                console.print(f"[yellow]{escape(reason)}[/yellow]")
+                error_console.print(f"[yellow]{escape(reason)}[/yellow]")
             else:
-                console.print("Run: [cyan]desk setup[/cyan]")
+                error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return DocsClient(creds)
 
@@ -72,13 +73,13 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error_msg}[/red]")
+        error_console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
-            console.print("[dim]Suggestions:[/dim]")
+            error_console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
-                console.print(f"  [cyan]- {s}[/cyan]")
+                error_console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
 
@@ -131,13 +132,13 @@ def _emit_tab_ambiguous(
         details=details,
     )
     if as_json:
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error['error']['message']}[/red]")
-        console.print("[dim]Matching tabs:[/dim]")
+        error_console.print(f"[red]Error: {error['error']['message']}[/red]")
+        error_console.print("[dim]Matching tabs:[/dim]")
         for t in matches:
-            console.print(f"  [cyan]{t.get('tabId', '')}[/cyan]  {t.get('title', '')}")
-        console.print("[dim]Re-run with --tab <tabId>.[/dim]")
+            error_console.print(f"  [cyan]{t.get('tabId', '')}[/cyan]  {t.get('title', '')}")
+        error_console.print("[dim]Re-run with --tab <tabId>.[/dim]")
     sys.exit(1)
 
 
@@ -157,15 +158,15 @@ def _emit_tab_not_found(
         details=details,
     )
     if as_json:
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error['error']['message']}[/red]")
+        error_console.print(f"[red]Error: {error['error']['message']}[/red]")
         if tabs:
-            console.print("[dim]Available tabs:[/dim]")
+            error_console.print("[dim]Available tabs:[/dim]")
             for t in tabs:
-                console.print(f"  [cyan]{t.get('tabId', '')}[/cyan]  {t.get('title', '')}")
+                error_console.print(f"  [cyan]{t.get('tabId', '')}[/cyan]  {t.get('title', '')}")
         else:
-            console.print("[dim]Document has no tabs.[/dim]")
+            error_console.print("[dim]Document has no tabs.[/dim]")
     sys.exit(1)
 
 
@@ -227,17 +228,17 @@ def _parse_at(at: str, as_json: bool = False) -> int | None:
         msg = f"--at must be an integer or 'end', got '{at}'"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
     if val < 1:
         msg = "--at index must be >= 1 (Google Docs indices are 1-based)"
         if as_json:
             error = structured_error(ErrorCode.INDEX_OUT_OF_RANGE, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
     return val
 
@@ -289,9 +290,9 @@ def create(
         except (click.UsageError, OSError) as e:
             if as_json:
                 error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print(f"[red]Error: {e}[/red]")
+                error_console.print(f"[red]Error: {e}[/red]")
             sys.exit(1)
 
     client = _get_client(as_json)
@@ -456,9 +457,9 @@ def export(document_id: str, dest: str, fmt: str, quiet: bool, as_json: bool) ->
                 f"Failed to write file: {e}",
                 suggestions=["Check that the destination path is writable", "Check disk space"],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error writing file: {e}[/red]")
+            error_console.print(f"[red]Error writing file: {e}[/red]")
         sys.exit(1)
 
     receipt = operation_receipt(
@@ -522,9 +523,9 @@ def update(
                     "Use --mode alone for insert/replace",
                 ],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Error: --find and --mode cannot be used together[/red]")
+            error_console.print("[red]Error: --find and --mode cannot be used together[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -627,17 +628,17 @@ def insert_cmd(
         msg = "Use only one of --after-paragraph or --before-paragraph"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
     if para_opts == 1 and at != "end":
         msg = "--after-paragraph and --before-paragraph cannot be used with --at"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     try:
@@ -645,9 +646,9 @@ def insert_cmd(
     except (click.UsageError, OSError) as e:
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -728,9 +729,9 @@ def delete_range_cmd(
                 msg,
                 suggestions=["Use desk docs inspect <id> to see document indices"],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     client = _get_client(as_json)
@@ -842,9 +843,9 @@ def style_cmd(
 def _emit_invalid_input(msg: str, as_json: bool) -> None:
     if as_json:
         error = structured_error(ErrorCode.INVALID_INPUT, msg)
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {msg}[/red]")
+        error_console.print(f"[red]Error: {msg}[/red]")
     sys.exit(1)
 
 
@@ -1028,9 +1029,9 @@ def write_markdown_cmd(
     except (click.UsageError, OSError) as e:
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, str(e))
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     index = _parse_at(at, as_json) if not replace else None
@@ -1102,9 +1103,9 @@ def insert_table_cmd(
         msg = f"Invalid table dimensions: rows={rows}, cols={cols}. Both must be >= 1."
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {msg}[/red]")
+            error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     index = _parse_at(at, as_json)
@@ -1287,9 +1288,9 @@ def delete_tab(
                     "Non-interactive mode requires --yes flag",
                     suggestions=["Use --yes to confirm deletion in non-interactive mode"],
                 )
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
+                error_console.print("[red]Error: Non-interactive mode requires --yes flag[/red]")
             sys.exit(1)
         if not click.confirm(f"Delete tab {tab_id}? This cannot be undone."):
             console.print("[yellow]Cancelled[/yellow]")

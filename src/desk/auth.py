@@ -269,21 +269,21 @@ def login(verbose: bool = False, credentials_path: str | None = None) -> Credent
 
     # 4. Error with instructions
     if flow is None:
-        print("Error: No credentials available.")
-        print()
-        print("Options:")
-        print()
-        print("  Option 1 - Use gcloud (simplest):")
-        print("    desk auth login --gcloud")
-        print()
-        print("  Option 2 - Use team credentials:")
-        print("    desk auth set-client --client-id X --client-secret Y")
-        print()
-        print("  Option 3 - Use credentials file:")
-        print("    1. Get credentials.json from your team")
-        print(f"    2. Copy to {CREDENTIALS_FILE}")
-        print("    3. Run: desk auth login")
-        print()
+        print("Error: No credentials available.", file=sys.stderr)
+        print(file=sys.stderr)
+        print("Options:", file=sys.stderr)
+        print(file=sys.stderr)
+        print("  Option 1 - Use gcloud (simplest):", file=sys.stderr)
+        print("    desk auth login --gcloud", file=sys.stderr)
+        print(file=sys.stderr)
+        print("  Option 2 - Use team credentials:", file=sys.stderr)
+        print("    desk auth set-client --client-id X --client-secret Y", file=sys.stderr)
+        print(file=sys.stderr)
+        print("  Option 3 - Use credentials file:", file=sys.stderr)
+        print("    1. Get credentials.json from your team", file=sys.stderr)
+        print(f"    2. Copy to {CREDENTIALS_FILE}", file=sys.stderr)
+        print("    3. Run: desk auth login", file=sys.stderr)
+        print(file=sys.stderr)
         sys.exit(1)
 
     if verbose:
@@ -306,7 +306,7 @@ def login_with_gcloud(verbose: bool = False) -> Credentials | None:
     # Check if gcloud is available
     if not _gcloud_available():
         if verbose:
-            print("gcloud CLI not found")
+            print("gcloud CLI not found", file=sys.stderr)
         return None
 
     if verbose:
@@ -326,7 +326,7 @@ def login_with_gcloud(verbose: bool = False) -> Credentials | None:
 
     if result.returncode != 0:
         if verbose:
-            print("gcloud authentication failed")
+            print("gcloud authentication failed", file=sys.stderr)
         return None
 
     # Now try to get the credentials

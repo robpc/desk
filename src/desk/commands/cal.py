@@ -18,6 +18,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.console import error_console
 from desk.services.calendar import CalendarClient
 
 console = Console()
@@ -34,13 +35,13 @@ def _get_client(as_json: bool = False) -> CalendarClient:
                 code,
                 reason or "Not authenticated",
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print("[red]Not authenticated.[/red]")
+            error_console.print("[red]Not authenticated.[/red]")
             if reason:
-                console.print(f"[yellow]{escape(reason)}[/yellow]")
+                error_console.print(f"[yellow]{escape(reason)}[/yellow]")
             else:
-                console.print("Run: [cyan]desk setup[/cyan]")
+                error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return CalendarClient(creds)
 
@@ -73,13 +74,13 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
             retryable=code == ErrorCode.RATE_LIMITED,
             details=context,
         )
-        print(json.dumps(error, indent=2))
+        print(json.dumps(error, indent=2), file=sys.stderr)
     else:
-        console.print(f"[red]Error: {error_msg}[/red]")
+        error_console.print(f"[red]Error: {error_msg}[/red]")
         if suggestions:
-            console.print("[dim]Suggestions:[/dim]")
+            error_console.print("[dim]Suggestions:[/dim]")
             for s in suggestions:
-                console.print(f"  [cyan]- {s}[/cyan]")
+                error_console.print(f"  [cyan]- {s}[/cyan]")
 
     sys.exit(1)
 
@@ -345,9 +346,9 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
                     suggestions=["Use --dry-run to preview the operation", "Use --yes to skip confirmation"],
                     details={"event_id": event_id, "attendees": attendee_count},
                 )
-                print(json.dumps(error, indent=2))
+                print(json.dumps(error, indent=2), file=sys.stderr)
             else:
-                console.print("[red]Error: This event has attendees. Use --yes to confirm deletion in non-interactive mode.[/red]")
+                error_console.print("[red]Error: This event has attendees. Use --yes to confirm deletion in non-interactive mode.[/red]")
                 console.print(f"[yellow]Event: {event.get('summary', '(no title)')}[/yellow]")
                 console.print(f"[yellow]Attendees: {attendee_count}[/yellow]")
             sys.exit(1)
@@ -573,9 +574,9 @@ def respond(event_id: str, status: str, quiet: bool, as_json: bool) -> None:
                 str(e),
                 suggestions=["Use --status accepted, declined, or tentative"],
             )
-            print(json.dumps(error, indent=2))
+            print(json.dumps(error, indent=2), file=sys.stderr)
         else:
-            console.print(f"[red]Error: {e}[/red]")
+            error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except Exception as e:
         _handle_api_error(e, as_json, {"event_id": event_id, "status": status})

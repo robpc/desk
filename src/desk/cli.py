@@ -20,6 +20,7 @@ from desk.auth import (
     login_with_gcloud,
 )
 from desk.config import CONFIG_DIR, CREDENTIALS_FILE, migrate_legacy_config
+from desk.console import error_console
 
 console = Console()
 
@@ -29,11 +30,11 @@ def _get_credentials_or_exit():
     creds = get_credentials()
     if not creds:
         reason, _error_code = get_last_auth_failure()
-        console.print("[red]Not authenticated.[/red]")
+        error_console.print("[red]Not authenticated.[/red]")
         if reason:
-            console.print(f"[yellow]{escape(reason)}[/yellow]")
+            error_console.print(f"[yellow]{escape(reason)}[/yellow]")
         else:
-            console.print("Run: [cyan]desk setup[/cyan]")
+            error_console.print("Run: [cyan]desk setup[/cyan]")
         sys.exit(1)
     return creds
 
@@ -199,8 +200,8 @@ def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) ->
             print(json.dumps(filtered, indent=2))
         elif capabilities_service not in ("all", ""):
             # Unknown service
-            console.print(f"[red]Unknown service: {capabilities_service}[/red]")
-            console.print(f"[dim]Available: all, {', '.join(caps['services'].keys())}[/dim]")
+            error_console.print(f"[red]Unknown service: {capabilities_service}[/red]")
+            error_console.print(f"[dim]Available: all, {', '.join(caps['services'].keys())}[/dim]")
             ctx.exit(1)
         else:
             print(json.dumps(caps, indent=2))
@@ -248,8 +249,8 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
             console.print("[green]Authentication successful![/green]")
             console.print("You can now use desk commands.")
         else:
-            console.print("[red]gcloud authentication failed.[/red]")
-            console.print("Make sure gcloud is installed and try again.")
+            error_console.print("[red]gcloud authentication failed.[/red]")
+            error_console.print("Make sure gcloud is installed and try again.")
             sys.exit(1)
         return
 
@@ -263,7 +264,7 @@ def setup(ctx: click.Context, credentials: Path | None, use_gcloud: bool) -> Non
         try:
             login(verbose=verbose, credentials_path=str(credentials))
         except Exception as e:
-            console.print(f"[red]Authentication failed: {e}[/red]")
+            error_console.print(f"[red]Authentication failed: {e}[/red]")
             sys.exit(1)
         console.print("[green]Authentication successful![/green]")
         return
@@ -315,7 +316,7 @@ def auth_set_client(client_id: str, client_secret: str, project_id: str | None) 
     try:
         check_keyring_backend()
     except KeyringUnavailableError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
     from desk import keyring_store
@@ -352,13 +353,13 @@ def auth_login(ctx: click.Context, use_gcloud: bool) -> None:
         if creds:
             console.print("[green]Authentication successful![/green]")
         else:
-            console.print("[red]gcloud authentication failed.[/red]")
+            error_console.print("[red]gcloud authentication failed.[/red]")
             sys.exit(1)
     else:
         try:
             login(verbose=verbose)
         except Exception as e:
-            console.print(f"[red]Authentication failed: {e}[/red]")
+            error_console.print(f"[red]Authentication failed: {e}[/red]")
             sys.exit(1)
         console.print("[green]Authentication successful![/green]")
 

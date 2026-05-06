@@ -1073,7 +1073,7 @@ class TestWithTabResolution:
         with pytest.raises(SystemExit) as exc:
             _with_tab_resolution(client, "doc123", "Notes", True, fn)
         assert exc.value.code == 1
-        payload = json.loads(capsys.readouterr().out)
+        payload = json.loads(capsys.readouterr().err)
         assert payload["error"]["code"] == "TAB_NAME_AMBIGUOUS"
         assert {m["tabId"] for m in payload["error"]["details"]["matches"]} == {"t.1", "t.2"}
 
@@ -1092,7 +1092,7 @@ class TestWithTabResolution:
         with pytest.raises(SystemExit) as exc:
             _with_tab_resolution(client, "doc123", "Transcript", True, fn)
         assert exc.value.code == 1
-        payload = json.loads(capsys.readouterr().out)
+        payload = json.loads(capsys.readouterr().err)
         assert payload["error"]["code"] == "TAB_NOT_FOUND"
         assert {t["tabId"] for t in payload["error"]["details"]["available_tabs"]} == {"t.1", "t.2"}
 
@@ -1230,3 +1230,51 @@ class TestTabResolutionEndToEnd:
         assert result.exit_code == 0, result.output
         assert mock_client.rename_tab.call_count == 2
         assert mock_client.rename_tab.call_args_list[1].args == ("doc123", "t.abc", "New Name")
+
+
+class TestErrorStreamDiscipline:
+    """ADR-019: errors land on stderr, stdout stays empty on failure.
+
+    Regression coverage for issue #18: `desk docs read --tab <bad>` was
+    writing its error to stdout, which broke `A || B` shell fallback chains.
+    """
+
+    def test_unknown_tab_human_mode_writes_to_stderr_not_stdout(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_tabs_cached.return_value = [
+            {"tabId": "t.notes", "title": "Notes"},
+        ]
+        mock_client.read.side_effect = RuntimeError("Tab not found: Transcript")
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(docs, ["read", "doc123", "--tab", "Transcript"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "No tab matches 'Transcript'" in result.stderr
+        assert "Notes" in result.stderr
+
+    def test_unknown_tab_json_mode_writes_envelope_to_stderr(
+        self, runner, mock_get_credentials, mock_docs_client_class,
+    ):
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_tabs_cached.return_value = [
+            {"tabId": "t.notes", "title": "Notes"},
+        ]
+        mock_client.read.side_effect = RuntimeError("Tab not found: Transcript")
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs, ["read", "doc123", "--tab", "Transcript", "--json"]
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        payload = json.loads(result.stderr)
+        assert payload["error"]["code"] == "TAB_NOT_FOUND"

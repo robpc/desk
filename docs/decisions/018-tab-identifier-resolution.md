@@ -238,5 +238,6 @@ For no match, `code` is `TAB_NOT_FOUND` and `matches` is replaced by `available_
 - ADR-010: Google Docs Tab Support — this ADR amends Alternative 2's rejection
 - ADR-002: No Invented Vocabulary — tab titles are Google's vocabulary, not ours
 - ADR-004: Agent-First CLI Design — round-trip cost reduction; structured errors with available-tabs context
+- ADR-019: Errors to stderr — binds the structured error payloads introduced here to stderr (issue #18 follow-up)
 - `src/desk/services/gmail.py`: `_resolve_label`, `_get_label_id`, `get_attachment_by_filename` — established name→ID resolution pattern
 - [Google Docs API: tabs](https://developers.google.com/docs/api/concepts/tabs)
