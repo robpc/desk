@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from desk import __version__
+from desk.audit import get_audit_logger
 from desk.auth import (
     AuthMethod,
     get_auth_status,
@@ -186,6 +187,11 @@ def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) ->
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
 
+    # Audit logging — see ADR-020 + atrium ADR-004.
+    # Skip for --capabilities (introspection-only, no user-visible side effects).
+    if capabilities_service is None:
+        ctx.obj["audit"] = get_audit_logger(CONFIG_DIR)
+
     if capabilities_service is not None:
         caps = _get_capabilities()
         if capabilities_service not in ("all", "") and capabilities_service in caps["services"]:
@@ -215,6 +221,17 @@ def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) ->
     # If no command provided and no flags handled, show help
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
+
+
+@main.result_callback()
+@click.pass_context
+def _audit_subcommand(ctx, _result, **_kwargs):
+    """Log each successful subcommand invocation. See ADR-020."""
+    audit = (ctx.obj or {}).get("audit") if ctx.obj else None
+    if audit is None:
+        return
+    subcmd = ctx.invoked_subcommand or "none"
+    audit.info(f"event=cmd subcmd={subcmd} exit=0")
 
 
 # --- Setup command ---
