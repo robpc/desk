@@ -4,8 +4,6 @@ Two destinations on every log call: local file (mode 0600, rotated at
 1 MB) and syslog (corp log forwarder ships it to SIEM on Yahoo machines;
 routes to local syslog daemon elsewhere). Subcommand arguments,
 document contents, and token contents are never logged.
-
-Users who don't want audit logging can set DESK_AUDIT_DISABLED=1.
 """
 
 from __future__ import annotations
@@ -18,17 +16,6 @@ from pathlib import Path
 
 _TAG = "desk-audit"
 _LOG_NAME = "desk.audit"
-
-
-class _NoOpLogger(logging.Logger):
-    """Logger that silently drops all calls. Used when DESK_AUDIT_DISABLED=1."""
-
-    def __init__(self):
-        super().__init__(_LOG_NAME + ".noop")
-        self.disabled = True
-
-    def isEnabledFor(self, _level: int) -> bool:
-        return False
 
 
 def _syslog_address() -> str | tuple[str, int]:
@@ -47,11 +34,7 @@ def get_audit_logger(config_dir: Path) -> logging.Logger:
     """Return a logger that writes to both the local audit.log and syslog.
 
     Idempotent: repeat calls return the same configured logger.
-    Returns a no-op logger if DESK_AUDIT_DISABLED is set.
     """
-    if os.environ.get("DESK_AUDIT_DISABLED"):
-        return _NoOpLogger()
-
     logger = logging.getLogger(_LOG_NAME)
     if logger.handlers:
         return logger

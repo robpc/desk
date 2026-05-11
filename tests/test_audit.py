@@ -74,11 +74,3 @@ class TestGetAuditLogger:
         with patch("desk.audit.logging.handlers.SysLogHandler", side_effect=OSError):
             log = audit.get_audit_logger(tmp_path)
             assert log.propagate is False
-
-    def test_desk_audit_disabled_returns_noop_logger(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setenv("DESK_AUDIT_DISABLED", "1")
-        log = audit.get_audit_logger(tmp_path)
-        # NoOp logger silently drops calls; no file gets written.
-        log.info("event=cmd subcmd=mail exit=0")
-        assert not (tmp_path / "audit.log").exists()
-        assert log.isEnabledFor(logging.INFO) is False

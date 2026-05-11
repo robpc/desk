@@ -70,10 +70,9 @@ The audit log is not Yahoo-specific. For external users:
 - Local `audit.log` records the same invocation history — useful for
   debugging "what did I run last week?" or auditing your own use.
 - Syslog routing follows OS conventions; no Yahoo-specific destination.
-
-Users who don't want audit logging can set `DESK_AUDIT_DISABLED=1`
-(implementation: the logger setup checks this env var early and
-returns a no-op logger).
+  Nothing is sent off the user's machine. The "ships to SIEM" piece on
+  Yahoo corp machines is a corp-installed Splunk forwarder watching
+  the local syslog — it isn't part of desk's code.
 
 ## Consequences
 
