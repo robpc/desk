@@ -1,11 +1,11 @@
 ---
 id: 046
 title: Drive Folder Read + Office File Support
-status: adr-created
+status: implemented
 effort: M
 value: Batch-read folders and render Office files as text for agents
 created: 2026-03-03
-updated: 2026-03-03
+updated: 2026-05-18
 adr: docs/decisions/014-drive-folder-read-and-office-support.md
 ---
 
