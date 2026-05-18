@@ -31,6 +31,21 @@ console = Console()
 _BATCH_MODIFY_CHUNK = 1000
 
 
+def _parse_headers_spec(spec: str | None) -> list[str] | None:
+    """Parse the --headers CSV (or wildcard) into the service-layer list.
+
+    Returns None for "no extra headers requested" (flag omitted), ``["*"]``
+    for the wildcard, or a list of trimmed header names otherwise. See
+    ADR-022.
+    """
+    if spec is None:
+        return None
+    if spec.strip() == "*":
+        return ["*"]
+    names = [h.strip() for h in spec.split(",") if h.strip()]
+    return names or None
+
+
 def _get_client(as_json: bool = False) -> GmailClient:
     """Get authenticated Gmail client or exit."""
     creds = get_credentials()
@@ -369,8 +384,25 @@ def mail() -> None:
 @click.option("--max", "-n", "max_results", default=20, help="Max results")
 @click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
+@click.option(
+    "--headers",
+    "headers_spec",
+    default=None,
+    help=(
+        "Comma-separated RFC 5322 header names to include in output, "
+        "or '*' for all. Names match case-insensitively. "
+        "Example: --headers List-Unsubscribe,Auto-Submitted"
+    ),
+)
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def search(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
+def search(
+    query: str,
+    max_results: int,
+    limit: int | None,
+    page_token: str | None,
+    headers_spec: str | None,
+    as_json: bool,
+) -> None:
     """Search for messages.
 
     Uses Gmail search syntax (same as Gmail search box).
@@ -382,13 +414,22 @@ def search(query: str, max_results: int, limit: int | None, page_token: str | No
         desk mail search "after:2024/01/01 has:attachment"
 
         desk mail search "is:unread" --json | jq '.nextPageToken'
+
+        desk mail search "category:promotions" --json --headers List-Unsubscribe
     """
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
 
+    extra_headers = _parse_headers_spec(headers_spec)
+
     client = _get_client()
-    result = client.search(query, max_results=max_results, page_token=page_token)
+    result = client.search(
+        query,
+        max_results=max_results,
+        page_token=page_token,
+        extra_headers=extra_headers,
+    )
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -414,6 +455,16 @@ def search(query: str, max_results: int, limit: int | None, page_token: str | No
         )
 
     console.print(table)
+
+    if extra_headers:
+        for msg in messages:
+            hdrs = msg.get("headers") or {}
+            if not hdrs:
+                continue
+            console.print(f"\n[dim]{msg['id']}[/dim]")
+            for name, values in hdrs.items():
+                for v in values:
+                    console.print(f"  [bold]{escape(name)}:[/bold] {escape(v)}")
 
     if result.get("nextPageToken"):
         console.print(f"\n[dim]More results available. Use --page-token {result['nextPageToken']}[/dim]")
@@ -599,12 +650,23 @@ def thread_trash(thread_id: str, dry_run: bool, quiet: bool, as_json: bool) -> N
 
 @mail.command()
 @click.argument("message_id")
+@click.option(
+    "--headers",
+    "headers_spec",
+    default=None,
+    help=(
+        "Comma-separated RFC 5322 header names to include in output, "
+        "or '*' for all. Names match case-insensitively. "
+        "Example: --headers List-Unsubscribe,Authentication-Results"
+    ),
+)
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def read(message_id: str, as_json: bool) -> None:
+def read(message_id: str, headers_spec: str | None, as_json: bool) -> None:
     """Read a message by ID."""
     client = _get_client(as_json)
+    extra_headers = _parse_headers_spec(headers_spec)
     try:
-        message = client.read(message_id)
+        message = client.read(message_id, extra_headers=extra_headers)
     except Exception as e:
         _handle_api_error(e, as_json, {"operation": "read", "message_id": message_id})
 
@@ -615,6 +677,13 @@ def read(message_id: str, as_json: bool) -> None:
     console.print(f"[bold]From:[/bold] {message['from']}")
     console.print(f"[bold]Subject:[/bold] {message['subject']}")
     console.print(f"[bold]Date:[/bold] {message['date']}")
+
+    if extra_headers:
+        hdrs = message.get("headers") or {}
+        for name, values in hdrs.items():
+            for v in values:
+                console.print(f"[bold]{escape(name)}:[/bold] {escape(v)}")
+
     console.print()
     console.print(message.get("body", "(no body)"))
     _print_links_section(message)

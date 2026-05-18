@@ -105,6 +105,55 @@ class TestMailRead:
         assert output["id"] == "msg123"
         assert output["body"] == "Hello World"
 
+    def test_read_passes_headers_csv_to_client(
+        self, runner, mock_get_credentials, mock_gmail_client_class
+    ):
+        """--headers should be split on commas and passed to client.read."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "m1",
+            "from": "a@x",
+            "subject": "s",
+            "date": "d",
+            "body": "b",
+            "headers": {"List-Unsubscribe": ["<u>"]},
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            mail,
+            ["read", "m1", "--json", "--headers", "List-Unsubscribe,Auto-Submitted"],
+        )
+
+        assert result.exit_code == 0
+        mock_client.read.assert_called_once_with(
+            "m1", extra_headers=["List-Unsubscribe", "Auto-Submitted"]
+        )
+
+    def test_read_passes_wildcard_to_client(
+        self, runner, mock_get_credentials, mock_gmail_client_class
+    ):
+        """--headers '*' should pass ['*'] to client.read."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "m1",
+            "from": "a@x",
+            "subject": "s",
+            "date": "d",
+            "body": "b",
+            "headers": {},
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["read", "m1", "--json", "--headers", "*"])
+
+        assert result.exit_code == 0
+        mock_client.read.assert_called_once_with("m1", extra_headers=["*"])
+
 
 class TestMailThreads:
     """Tests for desk mail threads command."""

@@ -16,6 +16,35 @@ from googleapiclient.errors import HttpError
 _HTTP_BATCH_MAX = 100
 
 
+def _collect_headers(
+    raw_headers: list[dict], requested: list[str]
+) -> dict[str, list[str]]:
+    """Build a ``{name: [values]}`` dict from raw Gmail header entries.
+
+    Implements the matching rules from ADR-022:
+    - ``["*"]`` matches every header on the message.
+    - Otherwise, requested names match case-insensitively.
+    - Output keys preserve the casing Gmail returned for that header.
+    - Multi-valued headers preserve every occurrence in source order.
+    - Headers requested but absent from the message are silently omitted.
+    """
+    if not requested:
+        return {}
+
+    want_all = any(name.strip() == "*" for name in requested)
+    wanted = {name.strip().lower() for name in requested if name.strip() != "*"}
+
+    out: dict[str, list[str]] = {}
+    for h in raw_headers:
+        name = h.get("name", "")
+        if not name:
+            continue
+        if not want_all and name.lower() not in wanted:
+            continue
+        out.setdefault(name, []).append(h.get("value", ""))
+    return out
+
+
 class GmailClient:
     """Client for Gmail API operations."""
 
@@ -167,7 +196,11 @@ class GmailClient:
             raise RuntimeError(f"Gmail API error: {error}")
 
     def search(
-        self, query: str, max_results: int = 20, page_token: str | None = None
+        self,
+        query: str,
+        max_results: int = 20,
+        page_token: str | None = None,
+        extra_headers: list[str] | None = None,
     ) -> dict:
         """Search for messages matching query.
 
@@ -175,6 +208,9 @@ class GmailClient:
             query: Gmail search query (same syntax as Gmail search box)
             max_results: Maximum number of results to return
             page_token: Token for fetching next page of results
+            extra_headers: Optional RFC 5322 header names to include in
+                each message's ``headers`` field. ``["*"]`` requests every
+                header. See ADR-022.
 
         Returns:
             Dict with 'messages' list and 'nextPageToken' (if more results exist)
@@ -192,18 +228,29 @@ class GmailClient:
 
             messages = results.get("messages", [])
 
+            # Augment metadataHeaders with caller-requested names. The "*"
+            # wildcard drops the param entirely so Gmail returns every header.
+            metadata_headers: list[str] | None = ["From", "Subject", "Date"]
+            if extra_headers:
+                if any(h.strip() == "*" for h in extra_headers):
+                    metadata_headers = None
+                else:
+                    extra = [h.strip() for h in extra_headers if h.strip()]
+                    metadata_headers = list(
+                        dict.fromkeys((metadata_headers or []) + extra)
+                    )
+
+            get_kwargs = {"format": "metadata"}
+            if metadata_headers is not None:
+                get_kwargs["metadataHeaders"] = metadata_headers
+
             # Batch-fetch metadata for all messages
             requests = [
                 (
                     msg["id"],
                     self.service.users()
                     .messages()
-                    .get(
-                        userId=self.user_id,
-                        id=msg["id"],
-                        format="metadata",
-                        metadataHeaders=["From", "Subject", "Date"],
-                    ),
+                    .get(userId=self.user_id, id=msg["id"], **get_kwargs),
                 )
                 for msg in messages
             ]
@@ -211,7 +258,9 @@ class GmailClient:
 
             # Preserve Gmail's ordering
             detailed = [
-                self._parse_message_metadata(batch_results[msg["id"]])
+                self._parse_message_metadata(
+                    batch_results[msg["id"]], extra_headers=extra_headers
+                )
                 for msg in messages
                 if msg["id"] in batch_results
             ]
@@ -362,8 +411,16 @@ class GmailClient:
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
-    def read(self, message_id: str) -> dict:
+    def read(
+        self, message_id: str, extra_headers: list[str] | None = None
+    ) -> dict:
         """Read a full message by ID.
+
+        Args:
+            message_id: Gmail message ID.
+            extra_headers: Optional RFC 5322 header names to surface in a
+                ``headers`` sub-dict. ``["*"]`` requests every header. See
+                ADR-022.
 
         Returns:
             Message with full content
@@ -375,7 +432,7 @@ class GmailClient:
                 .get(userId=self.user_id, id=message_id, format="full")
                 .execute()
             )
-            return self._parse_full_message(message)
+            return self._parse_full_message(message, extra_headers=extra_headers)
         except HttpError as error:
             raise RuntimeError(f"Gmail API error: {error}")
 
@@ -1303,10 +1360,23 @@ class GmailClient:
                 return label["id"]
         return None
 
-    def _parse_message_metadata(self, msg: dict) -> dict:
-        """Parse message metadata into clean dict."""
-        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
-        return {
+    def _parse_message_metadata(
+        self, msg: dict, extra_headers: list[str] | None = None
+    ) -> dict:
+        """Parse message metadata into clean dict.
+
+        Args:
+            msg: Gmail API message dict.
+            extra_headers: Optional list of RFC 5322 header names to surface
+                in a ``headers`` sub-dict. ``["*"]`` means every header on
+                the message. Case-insensitive match; output preserves the
+                casing Gmail returns. See ADR-022.
+        """
+        raw_headers = msg.get("payload", {}).get("headers", [])
+        # Curated fields use last-wins (existing behavior); RFC 5322 §3.6
+        # makes most curated fields singular in practice.
+        headers = {h["name"]: h["value"] for h in raw_headers}
+        result = {
             "id": msg["id"],
             "threadId": msg["threadId"],
             "snippet": msg.get("snippet", ""),
@@ -1323,11 +1393,18 @@ class GmailClient:
             "replyTo": headers.get("Reply-To", ""),
         }
 
-    def _parse_full_message(self, msg: dict) -> dict:
+        if extra_headers:
+            result["headers"] = _collect_headers(raw_headers, extra_headers)
+
+        return result
+
+    def _parse_full_message(
+        self, msg: dict, extra_headers: list[str] | None = None
+    ) -> dict:
         """Parse full message including body and links."""
         from desk.links import extract_links_from_html
 
-        metadata = self._parse_message_metadata(msg)
+        metadata = self._parse_message_metadata(msg, extra_headers=extra_headers)
         plain, html = self._extract_body_parts(msg.get("payload", {}))
         metadata["body"] = plain
 
