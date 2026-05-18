@@ -40,10 +40,32 @@ Output format matches existing patterns - table by default, `--json` for structu
 
 ## Open Questions
 
-- [ ] Does Gmail API support all filter actions available in the UI?
+- [x] **Does Gmail API support all filter actions available in the UI?** — No. See "API Constraints Discovered" below.
 - [ ] How to handle filter ordering/priority?
-- [ ] Should we support updating existing filters or just delete + recreate?
+- [ ] Should we support updating existing filters or just delete + recreate? (Note: there's no PATCH/PUT verb — only POST and DELETE. Delete-before-create is dangerous; see implementation note below.)
 - [ ] How to represent complex criteria (AND vs OR)?
+
+## API Constraints Discovered
+
+Hit empirically during a bulk inbox cleanup using the Gmail Settings API directly (2026-05-18). These directly affect what a `desk mail create-filter` command can support and the error messages it should produce.
+
+**`action.addLabelIds`:**
+- ✅ User labels and most system labels (INBOX, IMPORTANT, STARRED, etc.)
+- ❌ `SPAM` — `HTTP 400 "Invalid label SPAM in AddLabelIds"`
+- ❌ `TRASH` — same pattern
+- Consequence: there is no API equivalent of the UI's "Mark as spam" / "Delete" actions. A `--mark-as-spam` flag on `desk mail create-filter` is unimplementable; the closest is a normal filter routing mail to a user label, plus a one-time `batchModify` of historical mail to add `SPAM`.
+
+**`action.removeLabelIds`:**
+- ✅ `INBOX`, `UNREAD`, `IMPORTANT` (the only ones effectively used by the UI's "Skip Inbox", "Mark as read", "Never mark as important" actions)
+- ❌ `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_FORUMS` — `HTTP 400 "Invalid label(s) ... in RemoveLabelIds"`
+- ❌ Any user-created label (e.g., `Label_5809875640041094720`) — same error
+- Consequence: a `--remove-label` flag must validate input upfront against a known whitelist (or just relay Gmail's error verbatim). Removing categories or user labels at filter-trigger time is impossible via API.
+
+**Workaround for the disallowed operations:** `users.messages.batchModify` has no such restriction. It can add/remove any label including SPAM, TRASH, categories, and user labels. The pattern for desk would be:
+- Filter for real-time routing on incoming mail: limited to the allowed action set above
+- batchModify for periodic / one-shot cleanup: can express anything
+
+**Implementation footgun:** Gmail filters have no PATCH verb. To "modify" a filter you must DELETE and POST a new one. If validation of the new filter happens server-side and fails, the old filter is gone. **Validate the new filter's action shape against the API constraints above BEFORE any delete loop**, e.g. by creating a single test filter end-to-end first. Otherwise a bulk update can wipe filters mid-loop with no easy recovery.
 
 ## Value Signal
 
