@@ -46,6 +46,97 @@ def _get_client(as_json: bool = False) -> CalendarClient:
     return CalendarClient(creds)
 
 
+def _resolve_calendars(
+    client: CalendarClient, raw: tuple[str, ...], as_json: bool
+) -> list[str]:
+    """Resolve --calendar values to canonical Calendar IDs.
+
+    Accepts calendar IDs, friendly names (case-insensitive against
+    ``summary`` from ``cal list``), or the literal ``primary``. See
+    ADR-023.
+
+    Empty tuple → ``["primary"]``.
+
+    On ambiguous or unknown names, emits a structured INVALID_INPUT error
+    and exits 1, matching the rest of the module's error contract.
+    """
+    if not raw:
+        return ["primary"]
+
+    catalog: list[dict] | None = None
+    resolved: list[str] = []
+
+    for value in raw:
+        if value == "primary" or "@" in value:
+            resolved.append(value)
+            continue
+        if catalog is None:
+            try:
+                catalog = client.list_calendars()
+            except Exception as e:
+                _handle_api_error(e, as_json, {"step": "resolve_calendar"})
+        matches = [
+            c
+            for c in (catalog or [])
+            if c.get("summary", "").casefold() == value.casefold()
+        ]
+        if len(matches) == 1:
+            resolved.append(matches[0]["id"])
+        elif not matches:
+            _emit_resolution_error(
+                as_json,
+                value,
+                f"No calendar matches '{value}'.",
+                ["Run `desk cal list` to see available calendars."],
+            )
+        else:
+            ids = ", ".join(m["id"] for m in matches)
+            _emit_resolution_error(
+                as_json,
+                value,
+                f"Multiple calendars match '{value}': {ids}",
+                [
+                    "Disambiguate by using the calendar ID directly.",
+                    "Run `desk cal list` to see the full mapping.",
+                ],
+            )
+
+    return resolved
+
+
+def _emit_resolution_error(
+    as_json: bool, value: str, message: str, suggestions: list[str]
+) -> None:
+    """Emit an INVALID_INPUT error for a calendar-resolution failure and exit."""
+    if as_json:
+        error = structured_error(
+            code=ErrorCode.INVALID_INPUT,
+            message=message,
+            suggestions=suggestions,
+            retryable=False,
+            details={"calendar": value},
+        )
+        print(json.dumps(error, indent=2), file=sys.stderr)
+    else:
+        error_console.print(f"[red]Error: {message}[/red]")
+        for s in suggestions:
+            error_console.print(f"  [cyan]- {s}[/cyan]")
+    sys.exit(1)
+
+
+def _merge_events(per_calendar: list[dict]) -> dict:
+    """Merge multiple per-calendar query results into one events dict.
+
+    Sorts the merged event list by ``start`` (lexicographic over ISO 8601
+    works for both ``date`` and ``dateTime``). See ADR-023.
+    """
+    events: list[dict] = []
+    for r in per_calendar:
+        events.extend(r.get("events", []))
+    events.sort(key=lambda e: e.get("start", ""))
+    return {"events": events}
+
+
 def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) -> None:
     """Handle API errors with structured output when --json is used."""
     raw_error = str(e)
@@ -91,11 +182,46 @@ def cal() -> None:
     pass
 
 
+_CALENDAR_OPTION_HELP = (
+    "Calendar ID, friendly name from `desk cal list` (case-insensitive), or "
+    "'primary'. Repeatable to merge across calendars (sorted by start time)."
+)
+
+
+def _reject_page_token_with_multi_calendar(
+    calendar_ids: list[str], page_token: str | None, as_json: bool
+) -> None:
+    """Multi-calendar mode + --page-token combo is unsupported. See ADR-023."""
+    if page_token and len(calendar_ids) > 1:
+        _emit_resolution_error(
+            as_json,
+            "--page-token",
+            "--page-token is not supported when multiple --calendar are given.",
+            [
+                "Paginate per-calendar by issuing separate calls with one "
+                "--calendar each.",
+                "Future: structured per-calendar page tokens may be added.",
+            ],
+        )
+
+
 @cal.command()
 @click.option("--date", "-d", default=None, help="Date to show (YYYY-MM-DD). Defaults to today.")
+@click.option(
+    "-c",
+    "--calendar",
+    "calendars",
+    multiple=True,
+    help=_CALENDAR_OPTION_HELP,
+)
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def today(date: str | None, page_token: str | None, as_json: bool) -> None:
+def today(
+    date: str | None,
+    calendars: tuple[str, ...],
+    page_token: str | None,
+    as_json: bool,
+) -> None:
     """Show events for a day.
 
     Examples:
@@ -103,12 +229,25 @@ def today(date: str | None, page_token: str | None, as_json: bool) -> None:
         desk cal today
 
         desk cal today --date 2026-02-09
+
+        desk cal today -c primary -c "Family" --json
     """
     client = _get_client(as_json)
+    calendar_ids = _resolve_calendars(client, calendars, as_json)
+    _reject_page_token_with_multi_calendar(calendar_ids, page_token, as_json)
+
     try:
-        result = client.today(page_token=page_token, date=date)
+        per_cal = [
+            client.today(calendar_id=cid, page_token=page_token, date=date)
+            for cid in calendar_ids
+        ]
     except Exception as e:
         _handle_api_error(e, as_json)
+
+    if len(calendar_ids) == 1:
+        result = per_cal[0]
+    else:
+        result = _merge_events(per_cal)
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -124,9 +263,21 @@ def today(date: str | None, page_token: str | None, as_json: bool) -> None:
 
 @cal.command()
 @click.option("--date", "-d", default=None, help="Date in target week (YYYY-MM-DD)")
+@click.option(
+    "-c",
+    "--calendar",
+    "calendars",
+    multiple=True,
+    help=_CALENDAR_OPTION_HELP,
+)
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def week(date: str | None, page_token: str | None, as_json: bool) -> None:
+def week(
+    date: str | None,
+    calendars: tuple[str, ...],
+    page_token: str | None,
+    as_json: bool,
+) -> None:
     """Show events for a week.
 
     Examples:
@@ -134,12 +285,25 @@ def week(date: str | None, page_token: str | None, as_json: bool) -> None:
         desk cal week
 
         desk cal week --date 2026-02-12
+
+        desk cal week -c primary -c "Family"
     """
     client = _get_client(as_json)
+    calendar_ids = _resolve_calendars(client, calendars, as_json)
+    _reject_page_token_with_multi_calendar(calendar_ids, page_token, as_json)
+
     try:
-        result = client.week(page_token=page_token, date=date)
+        per_cal = [
+            client.week(calendar_id=cid, page_token=page_token, date=date)
+            for cid in calendar_ids
+        ]
     except Exception as e:
         _handle_api_error(e, as_json)
+
+    if len(calendar_ids) == 1:
+        result = per_cal[0]
+    else:
+        result = _merge_events(per_cal)
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -154,26 +318,57 @@ def week(date: str | None, page_token: str | None, as_json: bool) -> None:
 
 
 @cal.command("next")
-@click.option("--max", "-n", "max_results", default=10, help="Max results")
+@click.option("--max", "-n", "max_results", default=10, help="Max results (per calendar)")
 @click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option(
+    "-c",
+    "--calendar",
+    "calendars",
+    multiple=True,
+    help=_CALENDAR_OPTION_HELP,
+)
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def next_events(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
+def next_events(
+    max_results: int,
+    limit: int | None,
+    calendars: tuple[str, ...],
+    page_token: str | None,
+    as_json: bool,
+) -> None:
     """Show upcoming events.
+
+    With multiple --calendar, --max applies per calendar (e.g. -c A -c B --max 10
+    returns up to 20 events, sorted by start time).
 
     Examples:
 
         desk cal next --max 5
+
+        desk cal next -c primary -c "Family" --max 10
     """
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
 
     client = _get_client(as_json)
+    calendar_ids = _resolve_calendars(client, calendars, as_json)
+    _reject_page_token_with_multi_calendar(calendar_ids, page_token, as_json)
+
     try:
-        result = client.next(max_results=max_results, page_token=page_token)
+        per_cal = [
+            client.next(
+                max_results=max_results, calendar_id=cid, page_token=page_token
+            )
+            for cid in calendar_ids
+        ]
     except Exception as e:
         _handle_api_error(e, as_json)
+
+    if len(calendar_ids) == 1:
+        result = per_cal[0]
+    else:
+        result = _merge_events(per_cal)
 
     if as_json:
         print(json.dumps(result, indent=2))
@@ -463,11 +658,25 @@ def update(
 
 @cal.command()
 @click.argument("query")
-@click.option("--max", "-n", "max_results", default=10, help="Max results")
+@click.option("--max", "-n", "max_results", default=10, help="Max results (per calendar)")
 @click.option("--limit", "limit", default=None, type=int, help="Max results (alias for --max)")
+@click.option(
+    "-c",
+    "--calendar",
+    "calendars",
+    multiple=True,
+    help=_CALENDAR_OPTION_HELP,
+)
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def find(query: str, max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
+def find(
+    query: str,
+    max_results: int,
+    limit: int | None,
+    calendars: tuple[str, ...],
+    page_token: str | None,
+    as_json: bool,
+) -> None:
     """Search for events by text.
 
     Examples:
@@ -475,16 +684,34 @@ def find(query: str, max_results: int, limit: int | None, page_token: str | None
         desk cal find "standup"
 
         desk cal find "review" --max 5
+
+        desk cal find "school" -c primary -c "Family"
     """
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
 
     client = _get_client(as_json)
+    calendar_ids = _resolve_calendars(client, calendars, as_json)
+    _reject_page_token_with_multi_calendar(calendar_ids, page_token, as_json)
+
     try:
-        result = client.find(query, max_results=max_results, page_token=page_token)
+        per_cal = [
+            client.find(
+                query,
+                max_results=max_results,
+                calendar_id=cid,
+                page_token=page_token,
+            )
+            for cid in calendar_ids
+        ]
     except Exception as e:
         _handle_api_error(e, as_json, {"query": query})
+
+    if len(calendar_ids) == 1:
+        result = per_cal[0]
+    else:
+        result = _merge_events(per_cal)
 
     if as_json:
         print(json.dumps(result, indent=2))
