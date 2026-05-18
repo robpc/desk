@@ -61,8 +61,8 @@ class TestGmailClientInit:
 class TestBatchGet:
     """Tests for GmailClient._batch_get helper."""
 
-    def test_empty_input_returns_empty_dict(self, mock_credentials):
-        """Should return empty dict for empty request list."""
+    def test_empty_input_returns_empty(self, mock_credentials):
+        """Should return empty results and empty failures for empty input."""
         with patch("desk.services.gmail.build") as mock_build:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
@@ -70,12 +70,13 @@ class TestBatchGet:
             from desk.services.gmail import GmailClient
 
             client = GmailClient(mock_credentials)
-            result = client._batch_get([])
+            results, failed = client._batch_get([])
 
-            assert result == {}
+            assert results == {}
+            assert failed == []
 
     def test_all_succeed_returns_complete_dict(self, mock_credentials):
-        """Should return all results when all requests succeed."""
+        """Should return all results and no failures when all succeed."""
         with patch("desk.services.gmail.build") as mock_build:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
@@ -97,12 +98,13 @@ class TestBatchGet:
                 ("id2", MagicMock()),
                 ("id3", MagicMock()),
             ]
-            result = client._batch_get(requests)
+            results, failed = client._batch_get(requests)
 
-            assert result == response_map
+            assert results == response_map
+            assert failed == []
 
-    def test_partial_failure_omits_failed_items(self, mock_credentials):
-        """Should omit failed items and return the rest."""
+    def test_partial_failure_records_failed_ids(self, mock_credentials):
+        """Should omit failed items from results and list them in failed."""
         with patch("desk.services.gmail.build") as mock_build:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
@@ -123,11 +125,12 @@ class TestBatchGet:
                 ("id2", MagicMock()),
                 ("id3", MagicMock()),
             ]
-            result = client._batch_get(requests)
+            results, failed = client._batch_get(requests)
 
-            assert "id1" in result
-            assert "id2" not in result
-            assert "id3" in result
+            assert "id1" in results
+            assert "id2" not in results
+            assert "id3" in results
+            assert failed == ["id2"]
 
     def test_all_fail_raises_runtime_error(self, mock_credentials):
         """Should raise RuntimeError when ALL requests fail."""
@@ -146,6 +149,73 @@ class TestBatchGet:
 
             with pytest.raises(RuntimeError, match="All 2 batch requests failed"):
                 client._batch_get(requests)
+
+    def test_chunks_above_100_into_multiple_batches(self, mock_credentials):
+        """Should split inputs above 100 into multiple sequential batches."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            response_map = {f"id{i}": {"data": f"r{i}"} for i in range(250)}
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            requests = [(f"id{i}", MagicMock()) for i in range(250)]
+
+            results, failed = client._batch_get(requests)
+
+            assert len(results) == 250
+            assert failed == []
+            # 250 requests at 100 per chunk = 3 sub-batches.
+            assert mock_service.new_batch_http_request.call_count == 3
+
+    def test_chunk_execute_failure_does_not_abort_other_chunks(
+        self, mock_credentials
+    ):
+        """A chunk whose execute() raises should mark its ids failed and proceed."""
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            response_map = {f"id{i}": {"data": f"r{i}"} for i in range(150)}
+
+            # First chunk (ids 0-99) raises on execute(); second chunk (100-149)
+            # succeeds via the mock factory.
+            call_count = {"n": 0}
+
+            def factory(callback):
+                call_count["n"] += 1
+                batch = MockBatchHttpRequest(callback, response_map=response_map)
+                if call_count["n"] == 1:
+                    original_execute = batch.execute
+
+                    def raising_execute():
+                        raise RuntimeError("chunk 1 transport failure")
+
+                    batch.execute = raising_execute  # type: ignore[method-assign]
+                    return batch
+                return batch
+
+            mock_service.new_batch_http_request.side_effect = factory
+
+            from desk.services.gmail import GmailClient
+
+            client = GmailClient(mock_credentials)
+            requests = [(f"id{i}", MagicMock()) for i in range(150)]
+
+            results, failed = client._batch_get(requests)
+
+            # First 100 ids should be in failed; last 50 should be in results.
+            assert len(results) == 50
+            assert len(failed) == 100
+            assert "id0" in failed
+            assert "id99" in failed
+            assert "id100" in results
+            assert "id149" in results
 
 
 class TestGmailSearch:

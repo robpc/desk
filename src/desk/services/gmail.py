@@ -11,6 +11,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# Gmail HTTP batch caps inner requests per call. Exceeding it returns
+# HTTP 400 "Inner request count exceeds the limit". See ADR-021.
+_HTTP_BATCH_MAX = 100
+
 
 class GmailClient:
     """Client for Gmail API operations."""
@@ -41,43 +45,63 @@ class GmailClient:
             self._timeout_services[timeout] = build("gmail", "v1", http=authed_http)
         return self._timeout_services[timeout]
 
-    def _batch_get(self, requests: list[tuple[str, object]]) -> dict[str, dict]:
-        """Execute multiple API requests in a single batch HTTP call.
+    def _batch_get(
+        self, requests: list[tuple[str, object]]
+    ) -> tuple[dict[str, dict], list[str]]:
+        """Execute multiple API requests across chunked batch HTTP calls.
+
+        Gmail's HTTP batch endpoint accepts at most 100 inner requests per
+        call. This helper splits larger inputs into sequential chunks of
+        <=100 and aggregates the results. A chunk whose ``execute()`` raises
+        is recorded as a failure for every request_id it contained and the
+        loop proceeds — one bad chunk does not abort the rest. See ADR-021.
 
         Args:
-            requests: List of (request_id, HttpRequest) tuples. The HttpRequest
-                objects should be un-executed (built via .get() without .execute()).
+            requests: List of (request_id, HttpRequest) tuples. The
+                HttpRequest objects should be un-executed (built via .get()
+                without .execute()).
 
         Returns:
-            Dict mapping request_id to response dict. Failed individual requests
-            are silently omitted.
+            ``(results, failed_request_ids)``. ``results`` maps request_id to
+            response dict for successful inner requests. ``failed_request_ids``
+            lists the request_ids that did not produce a response (individual
+            failures plus all ids belonging to chunks whose ``execute()``
+            raised).
 
         Raises:
-            RuntimeError: If ALL requests in the batch fail.
+            RuntimeError: If no inner request across any chunk succeeded.
         """
         if not requests:
-            return {}
+            return {}, []
 
         results: dict[str, dict] = {}
-        errors: list[str] = []
+        failed: list[str] = []
 
         def callback(request_id, response, exception):
             if exception is not None:
-                errors.append(request_id)
+                failed.append(request_id)
             else:
                 results[request_id] = response
 
-        batch = self.service.new_batch_http_request(callback=callback)
-        for request_id, request in requests:
-            batch.add(request, request_id=request_id)
-        batch.execute()
+        for start in range(0, len(requests), _HTTP_BATCH_MAX):
+            chunk = requests[start : start + _HTTP_BATCH_MAX]
+            batch = self.service.new_batch_http_request(callback=callback)
+            for request_id, request in chunk:
+                batch.add(request, request_id=request_id)
+            try:
+                batch.execute()
+            except Exception:
+                # Whole-chunk failure: every id in this chunk is unfulfilled.
+                # Mark them failed and move on to the next chunk so partial
+                # success across the overall call is preserved.
+                for request_id, _ in chunk:
+                    if request_id not in results:
+                        failed.append(request_id)
 
-        if errors and not results:
-            raise RuntimeError(
-                f"All {len(errors)} batch requests failed"
-            )
+        if failed and not results:
+            raise RuntimeError(f"All {len(failed)} batch requests failed")
 
-        return results
+        return results, failed
 
     def search_all_ids(self, query: str) -> list[str]:
         """Paginate through all messages matching query and return their IDs.
@@ -183,7 +207,7 @@ class GmailClient:
                 )
                 for msg in messages
             ]
-            batch_results = self._batch_get(requests)
+            batch_results, failed = self._batch_get(requests)
 
             # Preserve Gmail's ordering
             detailed = [
@@ -195,6 +219,8 @@ class GmailClient:
             result = {"messages": detailed}
             if results.get("nextPageToken"):
                 result["nextPageToken"] = results["nextPageToken"]
+            if failed:
+                result["failed_to_fetch"] = len(failed)
             return result
 
         except HttpError as error:
@@ -240,7 +266,7 @@ class GmailClient:
                 )
                 for thread in threads
             ]
-            batch_results = self._batch_get(requests)
+            batch_results, failed = self._batch_get(requests)
 
             # Preserve Gmail's ordering
             detailed = []
@@ -266,6 +292,8 @@ class GmailClient:
             result = {"threads": detailed}
             if results.get("nextPageToken"):
                 result["nextPageToken"] = results["nextPageToken"]
+            if failed:
+                result["failed_to_fetch"] = len(failed)
             return result
 
         except HttpError as error:
@@ -803,7 +831,7 @@ class GmailClient:
                 )
                 for draft in drafts
             ]
-            batch_results = self._batch_get(requests)
+            batch_results, failed = self._batch_get(requests)
 
             # Preserve ordering
             detailed = []
@@ -827,6 +855,8 @@ class GmailClient:
             result = {"drafts": detailed}
             if results.get("nextPageToken"):
                 result["nextPageToken"] = results["nextPageToken"]
+            if failed:
+                result["failed_to_fetch"] = len(failed)
             return result
 
         except HttpError as error:
