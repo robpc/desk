@@ -173,3 +173,199 @@ class TestCalList:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert isinstance(output, list)
+
+
+class TestMultiCalendarFlag:
+    """Tests for --calendar flag (ADR-023, issue #27)."""
+
+    @staticmethod
+    def _catalog():
+        return [
+            {"id": "primary", "summary": "Home", "primary": True},
+            {"id": "family@group.calendar.google.com", "summary": "Family"},
+            {"id": "kids@group.calendar.google.com", "summary": "Kids School"},
+        ]
+
+    def test_no_flag_defaults_to_primary(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.today.return_value = {"events": []}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["today", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.today.assert_called_once_with(
+            calendar_id="primary", page_token=None, date=None
+        )
+        # No catalog fetch when no friendly name was used.
+        mock_client.list_calendars.assert_not_called()
+
+    def test_friendly_name_resolves_case_insensitively(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.today.return_value = {
+            "events": [
+                {
+                    "id": "e1",
+                    "summary": "Soccer",
+                    "start": "2026-05-18T10:00:00",
+                    "calendar_id": "family@group.calendar.google.com",
+                }
+            ]
+        }
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["today", "-c", "family", "--json"])
+
+        assert result.exit_code == 0
+        mock_client.today.assert_called_once_with(
+            calendar_id="family@group.calendar.google.com",
+            page_token=None,
+            date=None,
+        )
+
+    def test_calendar_id_passes_through_without_catalog_lookup(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.today.return_value = {"events": []}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["today", "-c", "family@group.calendar.google.com", "--json"],
+        )
+
+        assert result.exit_code == 0
+        # @-containing value treated as ID, no catalog fetch needed.
+        mock_client.list_calendars.assert_not_called()
+        mock_client.today.assert_called_once_with(
+            calendar_id="family@group.calendar.google.com",
+            page_token=None,
+            date=None,
+        )
+
+    def test_unknown_friendly_name_errors_with_invalid_input(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal, ["today", "-c", "Bogus", "--json"]        )
+
+        assert result.exit_code == 1
+        err = json.loads(result.stderr)
+        assert err["error"]["code"] == "INVALID_INPUT"
+        assert "Bogus" in err["error"]["details"]["calendar"]
+
+    def test_ambiguous_friendly_name_errors(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = [
+            {"id": "a@g.com", "summary": "Family"},
+            {"id": "b@g.com", "summary": "Family"},
+        ]
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal, ["today", "-c", "Family", "--json"]        )
+
+        assert result.exit_code == 1
+        err = json.loads(result.stderr)
+        assert err["error"]["code"] == "INVALID_INPUT"
+        assert "Multiple" in err["error"]["message"]
+
+    def test_multi_calendar_merges_and_sorts_by_start(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        # Primary returns a later event; Family returns an earlier one.
+        # The merge must sort them by `start`.
+        mock_client.today.side_effect = [
+            {"events": [
+                {"id": "p1", "summary": "Stand-up",
+                 "start": "2026-05-18T10:00:00", "calendar_id": "primary"}
+            ]},
+            {"events": [
+                {"id": "f1", "summary": "Soccer drop-off",
+                 "start": "2026-05-18T07:30:00",
+                 "calendar_id": "family@group.calendar.google.com"}
+            ]},
+        ]
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal, ["today", "-c", "primary", "-c", "Family", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert [e["id"] for e in output["events"]] == ["f1", "p1"]
+        assert output["events"][0]["calendar_id"].startswith("family@")
+        assert output["events"][1]["calendar_id"] == "primary"
+
+    def test_multi_calendar_rejects_page_token(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["today", "-c", "primary", "-c", "Family",
+             "--page-token", "abc", "--json"],
+        )
+
+        assert result.exit_code == 1
+        err = json.loads(result.stderr)
+        assert err["error"]["code"] == "INVALID_INPUT"
+        assert "--page-token" in err["error"]["message"]
+
+    def test_find_multi_calendar_merges(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.find.side_effect = [
+            {"events": [{"id": "p1", "summary": "Open house",
+                         "start": "2026-06-01T18:00:00",
+                         "calendar_id": "primary"}]},
+            {"events": [{"id": "k1", "summary": "School fair",
+                         "start": "2026-05-25T09:00:00",
+                         "calendar_id": "kids@group.calendar.google.com"}]},
+        ]
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["find", "school", "-c", "primary", "-c", "Kids School", "--json"],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert [e["id"] for e in output["events"]] == ["k1", "p1"]

@@ -101,7 +101,12 @@ class CalendarClient:
 
             results = self.service.events().list(**request_kwargs).execute()
 
-            result = {"events": [self._parse_event(e) for e in results.get("items", [])]}
+            result = {
+                "events": [
+                    self._parse_event(e, calendar_id=calendar_id)
+                    for e in results.get("items", [])
+                ]
+            }
             if results.get("nextPageToken"):
                 result["nextPageToken"] = results["nextPageToken"]
             return result
@@ -314,7 +319,12 @@ class CalendarClient:
 
             results = self.service.events().list(**request_kwargs).execute()
 
-            result = {"events": [self._parse_event(e) for e in results.get("items", [])]}
+            result = {
+                "events": [
+                    self._parse_event(e, calendar_id=calendar_id)
+                    for e in results.get("items", [])
+                ]
+            }
             if results.get("nextPageToken"):
                 result["nextPageToken"] = results["nextPageToken"]
             return result
@@ -346,19 +356,30 @@ class CalendarClient:
 
             results = self.service.events().list(**request_kwargs).execute()
 
-            result = {"events": [self._parse_event(e) for e in results.get("items", [])]}
+            result = {
+                "events": [
+                    self._parse_event(e, calendar_id=calendar_id)
+                    for e in results.get("items", [])
+                ]
+            }
             if results.get("nextPageToken"):
                 result["nextPageToken"] = results["nextPageToken"]
             return result
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
-    def _parse_event(self, event: dict) -> dict:
-        """Parse a Calendar API event into a clean dict."""
+    def _parse_event(self, event: dict, calendar_id: str | None = None) -> dict:
+        """Parse a Calendar API event into a clean dict.
+
+        Args:
+            event: Calendar API event resource.
+            calendar_id: The source calendar's ID, surfaced on the
+                returned event for multi-calendar provenance. See ADR-023.
+        """
         start = event.get("start", {})
         end = event.get("end", {})
         attendees = event.get("attendees", [])
-        return {
+        parsed = {
             "id": event.get("id", ""),
             "summary": event.get("summary", "(no title)"),
             "start": start.get("dateTime", start.get("date", "")),
@@ -386,6 +407,9 @@ class CalendarClient:
                 for att in event.get("attachments", [])
             ],
         }
+        if calendar_id is not None:
+            parsed["calendar_id"] = calendar_id
+        return parsed
 
     def _parse_time_input(self, time_str: str) -> dict:
         """Parse a time string into Calendar API format."""
