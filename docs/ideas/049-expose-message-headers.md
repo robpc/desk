@@ -1,7 +1,7 @@
 ---
 id: 049
 title: Expose Arbitrary Message Headers in mail read --json
-status: adr-created
+status: implemented
 effort: S
 value: Agents need RFC 5322 headers (List-Unsubscribe, Auto-Submitted, Authentication-Results, etc.) for tasks like unsubscribe automation, DMARC inspection, mailing-list workflows
 created: 2026-05-16
