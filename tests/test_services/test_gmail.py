@@ -358,6 +358,171 @@ class TestGmailRead:
                 client.read("nonexistent_id")
 
 
+class TestCollectHeaders:
+    """Tests for _collect_headers helper (ADR-022)."""
+
+    @staticmethod
+    def _hdrs():
+        return [
+            {"name": "From", "value": "a@example.com"},
+            {"name": "Subject", "value": "Hi"},
+            {"name": "List-Unsubscribe", "value": "<mailto:u@x>"},
+            {"name": "Received", "value": "by host1"},
+            {"name": "Received", "value": "by host2"},
+        ]
+
+    def test_empty_requested_returns_empty(self):
+        from desk.services.gmail import _collect_headers
+        assert _collect_headers(self._hdrs(), []) == {}
+
+    def test_wildcard_returns_every_header(self):
+        from desk.services.gmail import _collect_headers
+        out = _collect_headers(self._hdrs(), ["*"])
+        assert set(out.keys()) == {
+            "From", "Subject", "List-Unsubscribe", "Received"
+        }
+        # Each value is a list of strings, preserving order for multi-valued.
+        assert out["Received"] == ["by host1", "by host2"]
+        assert out["From"] == ["a@example.com"]
+
+    def test_case_insensitive_match_preserves_source_casing(self):
+        from desk.services.gmail import _collect_headers
+        out = _collect_headers(self._hdrs(), ["list-unsubscribe"])
+        assert "List-Unsubscribe" in out
+        assert out["List-Unsubscribe"] == ["<mailto:u@x>"]
+
+    def test_unknown_name_silently_omitted(self):
+        from desk.services.gmail import _collect_headers
+        out = _collect_headers(self._hdrs(), ["X-Does-Not-Exist"])
+        assert out == {}
+
+    def test_multi_valued_header_returns_all_occurrences(self):
+        from desk.services.gmail import _collect_headers
+        out = _collect_headers(self._hdrs(), ["Received"])
+        assert out == {"Received": ["by host1", "by host2"]}
+
+
+class TestGmailReadWithHeaders:
+    """Tests for GmailClient.read with extra_headers (ADR-022)."""
+
+    def test_read_with_explicit_headers_returns_dict(self, mock_credentials):
+        body_text = "body"
+        encoded_body = base64.urlsafe_b64encode(body_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            messages_mock = mock_service.users.return_value.messages.return_value
+            messages_mock.get.return_value.execute.return_value = {
+                "id": "m1",
+                "threadId": "t1",
+                "payload": {
+                    "headers": [
+                        {"name": "From", "value": "a@x"},
+                        {"name": "Subject", "value": "s"},
+                        {"name": "List-Unsubscribe", "value": "<mailto:u@x>"},
+                    ],
+                    "body": {"data": encoded_body},
+                },
+            }
+
+            from desk.services.gmail import GmailClient
+            client = GmailClient(mock_credentials)
+            result = client.read("m1", extra_headers=["List-Unsubscribe"])
+
+            assert result["headers"] == {
+                "List-Unsubscribe": ["<mailto:u@x>"]
+            }
+
+    def test_read_without_headers_flag_has_no_headers_field(self, mock_credentials):
+        body_text = "body"
+        encoded_body = base64.urlsafe_b64encode(body_text.encode()).decode()
+
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            messages_mock = mock_service.users.return_value.messages.return_value
+            messages_mock.get.return_value.execute.return_value = {
+                "id": "m1",
+                "threadId": "t1",
+                "payload": {
+                    "headers": [{"name": "From", "value": "a@x"}],
+                    "body": {"data": encoded_body},
+                },
+            }
+
+            from desk.services.gmail import GmailClient
+            client = GmailClient(mock_credentials)
+            result = client.read("m1")
+
+            assert "headers" not in result
+
+
+class TestGmailSearchWithHeaders:
+    """Tests for GmailClient.search with extra_headers (ADR-022)."""
+
+    def test_search_with_headers_augments_metadataHeaders(self, mock_credentials):
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            messages_mock = mock_service.users.return_value.messages.return_value
+            messages_mock.list.return_value.execute.return_value = {
+                "messages": [{"id": "m1", "threadId": "t1"}]
+            }
+            response_map = {
+                "m1": {
+                    "id": "m1",
+                    "threadId": "t1",
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": "a@x"},
+                            {"name": "List-Unsubscribe", "value": "<u>"},
+                        ]
+                    },
+                }
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map=response_map
+            )
+
+            from desk.services.gmail import GmailClient
+            client = GmailClient(mock_credentials)
+            result = client.search("is:unread", extra_headers=["List-Unsubscribe"])
+
+            # The List-Unsubscribe name appears in metadataHeaders kwargs passed
+            # to messages.get() for the batched per-message fetch.
+            get_calls = messages_mock.get.call_args_list
+            assert any(
+                "List-Unsubscribe" in (call.kwargs.get("metadataHeaders") or [])
+                for call in get_calls
+            )
+            assert result["messages"][0]["headers"] == {
+                "List-Unsubscribe": ["<u>"]
+            }
+
+    def test_search_with_wildcard_drops_metadataHeaders(self, mock_credentials):
+        with patch("desk.services.gmail.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            messages_mock = mock_service.users.return_value.messages.return_value
+            messages_mock.list.return_value.execute.return_value = {
+                "messages": [{"id": "m1", "threadId": "t1"}]
+            }
+            mock_service.new_batch_http_request.side_effect = _make_batch_factory(
+                response_map={
+                    "m1": {"id": "m1", "threadId": "t1", "payload": {"headers": []}}
+                }
+            )
+
+            from desk.services.gmail import GmailClient
+            client = GmailClient(mock_credentials)
+            client.search("is:unread", extra_headers=["*"])
+
+            get_calls = messages_mock.get.call_args_list
+            # No metadataHeaders kwarg when wildcard is requested.
+            assert all("metadataHeaders" not in call.kwargs for call in get_calls)
+
+
 class TestGmailModify:
     """Tests for GmailClient.modify method."""
 
