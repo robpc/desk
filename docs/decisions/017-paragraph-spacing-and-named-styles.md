@@ -1,7 +1,7 @@
 ---
 id: "017"
 title: Paragraph Spacing Controls
-status: proposed
+status: accepted
 date: 2026-04-29
 supersedes: []
 superseded_by: null

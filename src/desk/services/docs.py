@@ -576,6 +576,23 @@ class DocsClient:
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
 
+    def get_body_extent(
+        self, document_id: str, tab_id: str | None = None
+    ) -> tuple[int, int]:
+        """Return the ``(start, end)`` range covering a tab's body.
+
+        Returns ``(1, end_index - 1)`` where ``end_index`` is the last
+        element's ``endIndex`` on the target tab, suitable as inputs to
+        ``updateParagraphStyle``/``deleteContentRange``-style requests.
+
+        For an empty body, returns ``(1, 1)`` (zero-width). Callers
+        should treat that as a no-op signal. See ADR-024.
+        """
+        _, body = self._get_body(document_id, tab_id)
+        content = body.get("content", [])
+        end_index = content[-1]["endIndex"] if content else 1
+        return 1, max(1, end_index - 1)
+
     @staticmethod
     def _build_paragraph_style_fields(
         space_above: int | None,

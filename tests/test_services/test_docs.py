@@ -2001,3 +2001,44 @@ class TestDocsGetTabsCached:
             assert documents_mock.get.call_count == 2
         finally:
             patcher.stop()
+
+
+class TestGetBodyExtent:
+    """Tests for DocsClient.get_body_extent (ADR-024)."""
+
+    def test_returns_range_for_non_empty_body(self, mock_credentials):
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "body": {
+                    "content": [
+                        {"endIndex": 1},
+                        {"endIndex": 100},
+                        {"endIndex": 250},
+                    ]
+                }
+            }
+
+            from desk.services.docs import DocsClient
+            client = DocsClient(mock_credentials)
+            start, end = client.get_body_extent("doc123")
+
+            assert start == 1
+            assert end == 249  # endIndex - 1
+
+    def test_empty_body_returns_zero_width(self, mock_credentials):
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            documents_mock = mock_service.documents.return_value
+            documents_mock.get.return_value.execute.return_value = {
+                "body": {"content": []}
+            }
+
+            from desk.services.docs import DocsClient
+            client = DocsClient(mock_credentials)
+            start, end = client.get_body_extent("doc123")
+
+            assert (start, end) == (1, 1)

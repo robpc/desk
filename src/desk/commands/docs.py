@@ -851,8 +851,14 @@ def _emit_invalid_input(msg: str, as_json: bool) -> None:
 
 @docs.command("paragraph-style")
 @click.argument("document_id")
-@click.option("--start", required=True, type=int, help="Start index")
-@click.option("--end", required=True, type=int, help="End index")
+@click.option("--start", type=int, default=None, help="Start index (omit with --all)")
+@click.option("--end", type=int, default=None, help="End index (omit with --all)")
+@click.option(
+    "--all",
+    "all_",
+    is_flag=True,
+    help="Apply across the tab's entire body. Mutually exclusive with --start/--end.",
+)
 @click.option("--heading", type=int, default=None, help="Heading level 1-6, or 0 for normal")
 @click.option(
     "--alignment",
@@ -874,8 +880,9 @@ def _emit_invalid_input(msg: str, as_json: bool) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def paragraph_style_cmd(
     document_id: str,
-    start: int,
-    end: int,
+    start: int | None,
+    end: int | None,
+    all_: bool,
     heading: int | None,
     alignment: str | None,
     space_above: int | None,
@@ -898,8 +905,21 @@ def paragraph_style_cmd(
 
         desk docs paragraph-style <id> --start 1 --end 999 --space-below 8
 
-        desk docs paragraph-style <id> --start 1 --end 999 --line-spacing 150
+        desk docs paragraph-style <id> --all --space-below 8
+
+        desk docs paragraph-style <id> --all --line-spacing 150 --tab "Notes"
     """
+    if all_ and (start is not None or end is not None):
+        _emit_invalid_input(
+            "--all is mutually exclusive with --start/--end.",
+            as_json,
+        )
+    if not all_ and (start is None or end is None):
+        _emit_invalid_input(
+            "Either --all or both --start and --end are required.",
+            as_json,
+        )
+
     if heading is not None and (heading < 0 or heading > 6):
         _emit_invalid_input(
             f"Invalid heading level: {heading}. Must be 0 (normal) or 1-6.",
@@ -907,9 +927,30 @@ def paragraph_style_cmd(
         )
 
     client = _get_client(as_json)
+    resolved_tab_id: str | None = tab_id
+
+    if all_:
+        try:
+            extent, resolved_tab_id = _with_tab_resolution(
+                client, document_id, tab_id, as_json,
+                lambda tid: client.get_body_extent(document_id, tid),
+            )
+        except Exception as e:
+            _handle_api_error(e, as_json, {"document_id": document_id, "all": True})
+        resolved_start, resolved_end = extent
+        if resolved_end <= resolved_start:
+            receipt = operation_receipt(
+                operation="paragraph_style",
+                target={"id": document_id},
+                changes={"all": True, "note": "document is empty"},
+            )
+            output_result(receipt, as_json, quiet)
+            return
+        start, end = resolved_start, resolved_end
+
     try:
         _with_tab_resolution(
-            client, document_id, tab_id, as_json,
+            client, document_id, resolved_tab_id, as_json,
             lambda tid: client.update_paragraph_style(
                 document_id, start, end,
                 heading=heading,
@@ -929,6 +970,8 @@ def paragraph_style_cmd(
         _handle_api_error(e, as_json, {"document_id": document_id, "start": start, "end": end})
 
     applied_styles: dict = {"start": start, "end": end}
+    if all_:
+        applied_styles["all"] = True
     if heading is not None:
         applied_styles["heading"] = heading
     if alignment is not None:

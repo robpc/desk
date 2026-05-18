@@ -604,6 +604,89 @@ class TestDocsParagraphStyle:
         assert output["success"] is False
         assert output["error"]["code"] == "INVALID_INPUT"
 
+    def test_all_flag_uses_computed_range(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """--all should fetch body extent and apply across it (ADR-024)."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_body_extent.return_value = (1, 250)
+        mock_client.update_paragraph_style.return_value = {
+            "documentId": "doc123", "status": "ok"
+        }
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs,
+            ["paragraph-style", "doc123", "--all", "--space-below", "8", "--json"],
+        )
+
+        assert result.exit_code == 0
+        mock_client.get_body_extent.assert_called_once_with("doc123", None)
+        mock_client.update_paragraph_style.assert_called_once()
+        call = mock_client.update_paragraph_style.call_args
+        assert call.args == ("doc123", 1, 250)
+        assert call.kwargs["space_below"] == 8
+
+        output = json.loads(result.output)
+        assert output["changes"]["all"] is True
+        assert output["changes"]["start"] == 1
+        assert output["changes"]["end"] == 250
+
+    def test_all_with_start_is_invalid_input(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """--all + --start should error (ADR-024)."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs,
+            ["paragraph-style", "doc123", "--all", "--start", "1",
+             "--space-below", "8", "--json"],
+        )
+
+        assert result.exit_code != 0
+        err = json.loads(result.stderr)
+        assert err["error"]["code"] == "INVALID_INPUT"
+        assert "mutually exclusive" in err["error"]["message"]
+
+    def test_no_range_args_is_invalid_input(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """Neither --all nor --start/--end should error (ADR-024)."""
+        from desk.commands.docs import docs
+
+        result = runner.invoke(
+            docs, ["paragraph-style", "doc123", "--space-below", "8", "--json"],
+        )
+
+        assert result.exit_code != 0
+        err = json.loads(result.stderr)
+        assert err["error"]["code"] == "INVALID_INPUT"
+        assert "Either --all" in err["error"]["message"]
+
+    def test_all_on_empty_doc_is_no_op(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        """--all over an empty body (range (1,1)) should not call update."""
+        from desk.commands.docs import docs
+
+        mock_client = MagicMock()
+        mock_client.get_body_extent.return_value = (1, 1)
+        mock_docs_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            docs,
+            ["paragraph-style", "doc123", "--all", "--space-below", "8", "--json"],
+        )
+
+        assert result.exit_code == 0
+        mock_client.get_body_extent.assert_called_once()
+        mock_client.update_paragraph_style.assert_not_called()
+        output = json.loads(result.output)
+        assert output["changes"]["note"] == "document is empty"
+
 
 class TestDocsInsertImage:
     """Tests for desk docs insert-image command."""
