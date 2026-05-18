@@ -1,7 +1,7 @@
 ---
 id: 050
 title: Chunk Gmail batch.get to Respect 100-Request Limit
-status: adr-created
+status: implemented
 effort: S
 value: desk mail search --max N>100 currently fails with HTTP 400; bulk operations are broken at exactly the scale where they matter
 created: 2026-05-16
