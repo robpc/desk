@@ -1,11 +1,11 @@
 ---
 id: "047"
 title: Paragraph Spacing Controls
-status: adr-created
+status: implemented
 effort: M
 value: Give agents and humans direct control over paragraph spacing, line spacing, and indentation — instead of encoding opinions in the markdown converter
 created: 2026-04-29
-updated: 2026-04-29
+updated: 2026-05-18
 adr: 017
 ---
 

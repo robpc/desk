@@ -1,12 +1,12 @@
 ---
 id: "048"
 title: Doc-wide range convenience for paragraph-style
-status: idea
+status: implemented
 effort: S
 value: Avoid making users compute end-of-doc indices when they want to apply paragraph styling across an entire document
 created: 2026-04-29
-updated: 2026-04-29
-adr: null
+updated: 2026-05-18
+adr: docs/decisions/024-doc-wide-paragraph-style.md
 ---
 
 # Idea 048: Doc-wide Range Convenience for `paragraph-style`
