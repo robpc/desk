@@ -1,7 +1,7 @@
 ---
 id: "048"
 title: Doc-wide range convenience for paragraph-style
-status: adr-created
+status: implemented
 effort: S
 value: Avoid making users compute end-of-doc indices when they want to apply paragraph styling across an entire document
 created: 2026-04-29
