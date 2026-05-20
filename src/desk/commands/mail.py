@@ -211,6 +211,7 @@ def _query_bulk_operate(
     dry_run: bool = False,
     quiet: bool = False,
     as_json: bool = False,
+    extra_flags: list[str] | None = None,
 ) -> None:
     """Execute a bulk operation on all messages matching a query.
 
@@ -226,9 +227,12 @@ def _query_bulk_operate(
         dry_run: If True, show count and exit without executing
         quiet: Suppress human-readable output
         as_json: Output structured JSON
+        extra_flags: Additional CLI flags to surface in the dry-run replay
+            suggestion so the executed command matches the preview.
     """
     if dry_run:
         count = client.count_messages(query)
+        flag_suffix = (" " + " ".join(extra_flags)) if extra_flags else ""
         if as_json:
             preview = dry_run_preview(
                 operation=operation,
@@ -240,7 +244,7 @@ def _query_bulk_operate(
         elif not quiet:
             console.print(f"[yellow]Query '{query}' matches ~{count} message(s)[/yellow]")
             console.print(
-                f"[dim]Use --yes to execute: desk mail {operation} --query '{query}' --yes[/dim]"
+                f"[dim]Use --yes to execute: desk mail {operation} --query '{query}' --yes{flag_suffix}[/dim]"
             )
         return
 
@@ -1731,10 +1735,11 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, query: str
 @click.option("--stdin", is_flag=True, help="Read message IDs from stdin")
 @click.option("--query", "-Q", default=None, help="Gmail query — operate on all matching messages")
 @click.option("--yes", "-y", is_flag=True, help="Confirm query-based bulk operation")
+@click.option("--mark-read", "-r", is_flag=True, help="Also mark as read when archiving")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool, mark_read: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
     """Archive messages (remove from inbox).
 
     Examples:
@@ -1744,7 +1749,13 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
         desk mail search "from:bot" --json | jq -r '.[].id' | desk mail archive --stdin
 
         desk mail archive --query 'label:Github is:unread' --yes
+
+        desk mail archive --query 'is:unread category:promotions' --mark-read --yes
     """
+    remove_labels = ["INBOX"]
+    if mark_read:
+        remove_labels.append("UNREAD")
+
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "archive", as_json,
     )
@@ -1753,8 +1764,9 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
         client = _get_client(as_json)
         _query_bulk_operate(
             client, resolved_query, "archive",
-            remove_labels=["INBOX"],
+            remove_labels=remove_labels,
             dry_run=dry_run, quiet=quiet, as_json=as_json,
+            extra_flags=["--mark-read"] if mark_read else None,
         )
         return
 
@@ -1763,6 +1775,9 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
         return
 
     undo_cmd, undo_expires, reversible = get_undo_info("archive", ids)
+    if mark_read:
+        ids_str = " ".join(ids)
+        undo_cmd = f"desk mail modify --add-label INBOX --add-label UNREAD {ids_str}"
 
     if dry_run:
         client = _get_client(as_json)
@@ -1789,7 +1804,7 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
 
     client = _get_client(as_json)
     try:
-        client.batch_modify(ids, remove_labels=["INBOX"])
+        client.batch_modify(ids, remove_labels=remove_labels)
     except Exception as e:
         _handle_api_error(e, as_json, {"operation": "archive", "ids": ids})
 
@@ -1800,11 +1815,12 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
             target=targets,
             undo_command=undo_cmd,
             undo_expires=undo_expires,
-            changes={"labels_removed": ["INBOX"]},
+            changes={"labels_removed": remove_labels},
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
-        console.print(f"[green]Archived {len(ids)} message(s)[/green]")
+        suffix = " and marked read" if mark_read else ""
+        console.print(f"[green]Archived {len(ids)} message(s){suffix}[/green]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -2031,16 +2047,16 @@ def trash(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: boo
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def unread(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
-    """List unread messages.
+    """List unread messages in inbox.
 
-    Shortcut for: desk mail search "is:unread"
+    Shortcut for: desk mail search "is:unread in:inbox"
     """
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
 
     client = _get_client()
-    result = client.search("is:unread", max_results=max_results, page_token=page_token)
+    result = client.search("is:unread in:inbox", max_results=max_results, page_token=page_token)
 
     if as_json:
         print(json.dumps(result, indent=2))
