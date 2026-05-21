@@ -264,6 +264,7 @@ def operation_receipt(
     undo_command: str | None = None,
     undo_expires: str | None = None,
     changes: dict[str, Any] | None = None,
+    equivalent: str | None = None,
 ) -> dict[str, Any]:
     """Create an operation receipt for agent consumption.
 
@@ -273,6 +274,10 @@ def operation_receipt(
         undo_command: Command to reverse this operation (None if irreversible)
         undo_expires: When undo becomes unavailable (None = no expiration)
         changes: Details about what changed (labels added/removed, etc.)
+        equivalent: Optional ``desk mail modify`` / ``desk mail search``
+            invocation that would produce the same effect as this
+            convenience-command call. Teaches the agent the primitive
+            it could have used directly. See ADR-025.
 
     Returns:
         Structured receipt dict suitable for JSON output
@@ -295,6 +300,9 @@ def operation_receipt(
 
     if changes:
         receipt["changes"] = changes
+
+    if equivalent:
+        receipt["equivalent"] = equivalent
 
     receipt["undo"] = {
         "available": undo_command is not None,

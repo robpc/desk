@@ -206,6 +206,62 @@ class TestMailArchive:
         output = json.loads(result.output)
         assert output["success"] is True
 
+    def test_archive_json_receipt_includes_equivalent(
+        self, runner, mock_get_credentials, mock_gmail_client_class
+    ):
+        """JSON receipt should include the `equivalent` modify call (ADR-025)."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.read.return_value = {
+            "id": "msg123", "subject": "Test", "from": "x@y", "date": "d",
+        }
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["archive", "msg123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output.get("equivalent") == "desk mail modify --remove-label INBOX <ids>"
+
+    def test_archive_human_output_shows_equivalent_line(
+        self, runner, mock_get_credentials, mock_gmail_client_class
+    ):
+        """Non-JSON success path should print a dim equivalent line (ADR-025)."""
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["archive", "msg123"])
+
+        assert result.exit_code == 0
+        assert "equivalent:" in result.output
+        assert "desk mail modify --remove-label INBOX" in result.output
+
+
+class TestMailUnreadDeprecation:
+    """Tests for the `mail unread` deprecation warning (ADR-025)."""
+
+    def test_unread_emits_deprecation_warning_to_stderr(
+        self, runner, mock_get_credentials, mock_gmail_client_class
+    ):
+        from desk.commands.mail import mail
+
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"messages": []}
+        mock_gmail_client_class.return_value = mock_client
+
+        result = runner.invoke(mail, ["unread", "--json"])
+
+        assert result.exit_code == 0
+        assert "Deprecation" in result.stderr
+        assert "desk mail search" in result.stderr
+        # And the actual behavior is unchanged: still calls search with is:unread
+        mock_client.search.assert_called_once()
+        call = mock_client.search.call_args
+        assert call.args[0] == "is:unread"
+
 
 class TestMailLabels:
     """Tests for desk mail labels command."""
