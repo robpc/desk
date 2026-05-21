@@ -1668,7 +1668,10 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, query: str
         desk mail label Work ID1 ID2 ID3
 
         desk mail label Important --query 'from:ceo@company.com' --yes
+
+    See also: desk mail modify --add-label <name> <ids>
     """
+    equivalent = f"desk mail modify --add-label '{label_name}' <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "label", as_json,
     )
@@ -1719,10 +1722,12 @@ def label(label_name: str, message_ids: tuple[str, ...], stdin: bool, query: str
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_added": [label_name]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Added label '{label_name}' to {len(ids)} message(s)[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -1744,7 +1749,12 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
         desk mail search "from:bot" --json | jq -r '.[].id' | desk mail archive --stdin
 
         desk mail archive --query 'label:Github is:unread' --yes
+
+    See also: desk mail modify --remove-label INBOX <ids>
+              (for compound label changes, e.g. archive + mark read,
+              use modify directly with multiple --remove-label flags)
     """
+    equivalent = "desk mail modify --remove-label INBOX <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "archive", as_json,
     )
@@ -1801,10 +1811,12 @@ def archive(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: b
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_removed": ["INBOX"]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Archived {len(ids)} message(s)[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -1824,7 +1836,10 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes:
         desk mail mark-read ID1 ID2 ID3
 
         desk mail mark-read --query 'label:Github is:unread' --yes
+
+    See also: desk mail modify --remove-label UNREAD <ids>
     """
+    equivalent = "desk mail modify --remove-label UNREAD <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "mark-read", as_json,
     )
@@ -1868,10 +1883,12 @@ def mark_read(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes:
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_removed": ["UNREAD"]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as read[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -1891,7 +1908,10 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, query: str | None, ye
         desk mail mark-unread ID1 ID2 ID3
 
         desk mail mark-unread --query 'from:bot' --yes
+
+    See also: desk mail modify --add-label UNREAD <ids>
     """
+    equivalent = "desk mail modify --add-label UNREAD <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "mark-unread", as_json,
     )
@@ -1935,10 +1955,12 @@ def mark_unread(message_ids: tuple[str, ...], stdin: bool, query: str | None, ye
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_added": ["UNREAD"]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Marked {len(ids)} message(s) as unread[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -1958,7 +1980,10 @@ def trash(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: boo
         desk mail trash ID1 ID2 ID3
 
         desk mail trash --query 'older_than:1y label:Promotions' --yes
+
+    See also: desk mail modify --add-label TRASH --remove-label INBOX <ids>
     """
+    equivalent = "desk mail modify --add-label TRASH --remove-label INBOX <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "trash", as_json,
     )
@@ -2017,10 +2042,12 @@ def trash(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: boo
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_added": ["TRASH"], "labels_removed": ["INBOX"]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Moved {len(ids)} message(s) to trash[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
         console.print(f"[dim]Expires: {undo_expires}[/dim]")
 
@@ -2031,10 +2058,22 @@ def trash(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: boo
 @click.option("--page-token", "page_token", default=None, help="Continue from previous page")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def unread(max_results: int, limit: int | None, page_token: str | None, as_json: bool) -> None:
-    """List unread messages.
+    """List unread messages. [DEPRECATED]
+
+    Deprecated in favor of `desk mail search "is:unread"`, which gives
+    full control over scope (e.g. `is:unread in:inbox` or
+    `is:unread label:Work`). Scheduled for removal in the next minor.
+    See ADR-025.
 
     Shortcut for: desk mail search "is:unread"
     """
+    error_console.print(
+        "[yellow]Deprecation:[/yellow] `desk mail unread` is deprecated and "
+        "will be removed in the next minor release.\n"
+        "  Use [cyan]desk mail search \"is:unread\"[/cyan] for full control "
+        "over scope (e.g. [cyan]desk mail search \"is:unread in:inbox\"[/cyan])."
+    )
+
     # --limit takes precedence if provided
     if limit is not None:
         max_results = limit
@@ -2087,7 +2126,10 @@ def star(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool
         desk mail star ID1 ID2 ID3
 
         desk mail star --query 'from:ceo@company.com' --yes
+
+    See also: desk mail modify --add-label STARRED <ids>
     """
+    equivalent = "desk mail modify --add-label STARRED <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "star", as_json,
     )
@@ -2131,10 +2173,12 @@ def star(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_added": ["STARRED"]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Starred {len(ids)} message(s)[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -2154,7 +2198,10 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bo
         desk mail unstar ID1 ID2 ID3
 
         desk mail unstar --query 'is:starred older_than:6m' --yes
+
+    See also: desk mail modify --remove-label STARRED <ids>
     """
+    equivalent = "desk mail modify --remove-label STARRED <ids>"
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "unstar", as_json,
     )
@@ -2198,10 +2245,12 @@ def unstar(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bo
             undo_command=undo_cmd,
             undo_expires=undo_expires,
             changes={"labels_removed": ["STARRED"]},
+            equivalent=equivalent,
         )
         print(json.dumps(receipt, indent=2))
     elif not quiet:
         console.print(f"[green]Unstarred {len(ids)} message(s)[/green]")
+        console.print(f"[dim]equivalent: {equivalent}[/dim]")
         console.print(f"[dim]Undo: {undo_cmd}[/dim]")
 
 
@@ -2223,6 +2272,8 @@ def spam(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: bool
         desk mail spam ID1 ID2 ID3
 
         desk mail spam --query 'from:suspicious@domain.com' --yes
+
+    See also: desk mail modify --add-label SPAM --remove-label INBOX <ids>
     """
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "spam", as_json,
@@ -2275,6 +2326,8 @@ def not_spam(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes: 
         desk mail not-spam ID1 ID2 ID3
 
         desk mail not-spam --query 'in:spam from:trusted@domain.com' --yes
+
+    See also: desk mail modify --add-label INBOX --remove-label SPAM <ids>
     """
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "not-spam", as_json,
@@ -2325,6 +2378,8 @@ def important(message_ids: tuple[str, ...], stdin: bool, query: str | None, yes:
         desk mail important ID1 ID2 ID3
 
         desk mail important --query 'from:ceo@company.com' --yes
+
+    See also: desk mail modify --add-label IMPORTANT <ids>
     """
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "important", as_json,
@@ -2375,6 +2430,8 @@ def not_important(message_ids: tuple[str, ...], stdin: bool, query: str | None, 
         desk mail not-important ID1 ID2 ID3
 
         desk mail not-important --query 'is:important older_than:1y' --yes
+
+    See also: desk mail modify --remove-label IMPORTANT <ids>
     """
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "not-important", as_json,
@@ -2426,6 +2483,8 @@ def remove_label(label_name: str, message_ids: tuple[str, ...], stdin: bool, que
         desk mail remove-label Work ID1 ID2 ID3
 
         desk mail remove-label Github --query 'label:Github' --yes
+
+    See also: desk mail modify --remove-label <name> <ids>
     """
     ids, resolved_query = _resolve_query_or_ids(
         message_ids, stdin, query, yes or dry_run, "remove-label", as_json,
