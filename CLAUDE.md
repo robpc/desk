@@ -109,7 +109,8 @@ desk (CLI entry point)
 │   ├── create         → Create a new spreadsheet
 │   ├── write          → Write values to a range
 │   ├── append         → Append rows
-│   └── clear          → Clear a range
+│   ├── clear          → Clear a range
+│   └── chip           → Insert a person smart-chip into a cell
 ├── docs               → Google Docs operations
 │   ├── create         → Create a new document
 │   ├── read           → Read document content
