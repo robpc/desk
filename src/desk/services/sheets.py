@@ -1,5 +1,7 @@
 """Google Sheets API wrapper."""
 
+import re
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -453,6 +455,121 @@ class SheetsClient:
             ).execute()
         except HttpError as error:
             raise RuntimeError(f"Sheets API error: {error}")
+
+    # ------------------------------------------------------------------
+    # Smart chips
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _column_to_index(letters: str) -> int:
+        """Convert spreadsheet column letters (A, B, ..., AA) to a 0-based index."""
+        index = 0
+        for ch in letters.upper():
+            index = index * 26 + (ord(ch) - ord("A") + 1)
+        return index - 1
+
+    @staticmethod
+    def _parse_a1_cell(cell: str) -> tuple[str | None, int, int]:
+        """Parse a single A1 cell reference into (sheet_name, row_index, col_index).
+
+        Indices are 0-based. ``sheet_name`` is None when the reference has no
+        ``SheetName!`` prefix. Ranges (containing ``:``) are rejected.
+        """
+        sheet_name: str | None = None
+        ref = cell
+        if "!" in cell:
+            sheet_part, ref = cell.rsplit("!", 1)
+            sheet_name = sheet_part.strip().strip("'")
+        match = re.fullmatch(r"([A-Za-z]+)(\d+)", ref.strip())
+        if not match:
+            raise ValueError(
+                f"Invalid cell '{cell}': expected a single cell like 'Sheet1!D2'"
+            )
+        col_letters, row_num = match.group(1), int(match.group(2))
+        if row_num < 1:
+            raise ValueError(f"Invalid cell '{cell}': row must be >= 1")
+        return sheet_name, row_num - 1, SheetsClient._column_to_index(col_letters)
+
+    def _resolve_sheet_id(self, spreadsheet_id: str, sheet_name: str | None) -> int:
+        """Resolve a sheet (tab) name to its numeric sheetId.
+
+        Falls back to the first sheet when *sheet_name* is None.
+        """
+        meta = (
+            self.service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets.properties(sheetId,title)")
+            .execute()
+        )
+        sheets = meta.get("sheets", [])
+        if not sheets:
+            raise RuntimeError("Spreadsheet has no sheets")
+        if sheet_name is None:
+            return sheets[0]["properties"]["sheetId"]
+        for s in sheets:
+            if s["properties"].get("title") == sheet_name:
+                return s["properties"]["sheetId"]
+        raise RuntimeError(f"Sheet '{sheet_name}' not found")
+
+    def set_person_chip(
+        self,
+        spreadsheet_id: str,
+        cell: str,
+        email: str,
+        display_format: str = "DEFAULT",
+    ) -> dict:
+        """Insert a person smart-chip into a single cell, replacing its contents.
+
+        Args:
+            spreadsheet_id: The spreadsheet ID
+            cell: Single cell in A1 notation (e.g., "Sheet1!D2")
+            email: Email address the chip links to
+            display_format: DEFAULT | EMAIL | LAST_NAME_COMMA_FIRST_NAME
+
+        Returns:
+            Dict echoing the cell, email, and display format.
+        """
+        sheet_name, row_index, col_index = self._parse_a1_cell(cell)
+        sheet_id = self._resolve_sheet_id(spreadsheet_id, sheet_name)
+
+        request = {
+            "updateCells": {
+                "rows": [
+                    {
+                        "values": [
+                            {
+                                "userEnteredValue": {"stringValue": "@"},
+                                "chipRuns": [
+                                    {
+                                        "startIndex": 0,
+                                        "chip": {
+                                            "personProperties": {
+                                                "email": email,
+                                                "displayFormat": display_format,
+                                            }
+                                        },
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ],
+                "fields": "userEnteredValue,chipRuns",
+                "start": {
+                    "sheetId": sheet_id,
+                    "rowIndex": row_index,
+                    "columnIndex": col_index,
+                },
+            }
+        }
+
+        try:
+            self.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": [request]}
+            ).execute()
+        except HttpError as error:
+            raise RuntimeError(f"Sheets API error: {error}")
+
+        return {"cell": cell, "email": email, "displayFormat": display_format}
 
     def rename_sheet(self, spreadsheet_id: str, sheet_id: int, title: str) -> dict:
         """Rename a sheet (tab).

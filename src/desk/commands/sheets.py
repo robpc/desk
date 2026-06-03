@@ -475,6 +475,60 @@ def rename_sheet(spreadsheet_id: str, sheet_id: int, name: str, quiet: bool, as_
     output_result(receipt, as_json, quiet)
 
 
+@sheets.command()
+@click.argument("spreadsheet_id")
+@click.argument("cell")
+@click.argument("email")
+@click.option(
+    "--format",
+    "display_format",
+    type=click.Choice(["DEFAULT", "EMAIL", "LAST_NAME_COMMA_FIRST_NAME"]),
+    default="DEFAULT",
+    help="Chip display format (default: DEFAULT)",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def chip(
+    spreadsheet_id: str,
+    cell: str,
+    email: str,
+    display_format: str,
+    quiet: bool,
+    as_json: bool,
+) -> None:
+    """Insert a person smart-chip into a single cell.
+
+    Replaces the cell's contents with a Google people chip linked to EMAIL.
+    The chip resolves against the directory — canonical display name, hover
+    card, and the notification behavior of an @-mention.
+
+    CELL is a single cell in A1 notation; ranges are not supported. Loop for
+    multiple cells.
+
+    Examples:
+
+        desk sheets chip <id> "Sheet1!D2" alice@example.com
+
+        desk sheets chip <id> "Owners!B5" bob@example.com --format EMAIL
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.set_person_chip(spreadsheet_id, cell, email, display_format)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"spreadsheet_id": spreadsheet_id, "cell": cell})
+
+    receipt = operation_receipt(
+        operation="chip",
+        target={
+            "spreadsheet_id": spreadsheet_id,
+            "cell": result.get("cell"),
+            "email": result.get("email"),
+            "format": result.get("displayFormat"),
+        },
+    )
+    output_result(receipt, as_json, quiet)
+
+
 def _print_values_table(values: list[list]) -> None:
     """Print a 2D values array as a Rich table."""
     if not values:
