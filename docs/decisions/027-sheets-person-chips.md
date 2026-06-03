@@ -1,5 +1,5 @@
 ---
-id: 025
+id: 027
 title: Person smart-chips in Sheets cells
 status: accepted
 date: 2026-06-02
@@ -8,7 +8,7 @@ superseded_by: null
 tags: [sheets, api, cli, chips]
 ---
 
-# ADR-025: Person smart-chips in Sheets cells
+# ADR-027: Person smart-chips in Sheets cells
 
 ## Context
 
