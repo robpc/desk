@@ -82,6 +82,20 @@ def delete_token() -> bool:
     return False
 
 
+def delete_client_credentials() -> bool:
+    """Delete the stored OAuth client credentials from keyring.
+
+    Returns True if they existed and were removed.
+    """
+    try:
+        if keyring.get_password(KEYRING_SERVICE, "client:credentials") is not None:
+            keyring.delete_password(KEYRING_SERVICE, "client:credentials")
+            return True
+    except keyring.errors.PasswordDeleteError:
+        pass
+    return False
+
+
 def clear_all() -> bool:
     """Delete all desk credentials from keyring. Returns True if anything was deleted."""
     deleted = False
