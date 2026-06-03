@@ -183,6 +183,19 @@ desk forms add-question <form-id> "Your name?" --type short-answer
 desk forms add-section <form-id> "Part 2"        # Add a section
 ```
 
+### Groups / Distribution Lists (read-only)
+
+```bash
+desk groups members orionteam@yahooinc.com       # Expand a distribution list
+desk groups members orionteam@yahooinc.com --role OWNER,MANAGER
+desk groups find "email:orion*"                  # Search groups
+desk groups get orionteam@yahooinc.com           # Group metadata
+```
+
+> Backed by the Admin SDK Directory API. Requires re-auth (`desk auth login`)
+> to grant the read-only directory scopes, and a Workspace domain that permits
+> the caller to read group data — Directory reads are frequently admin-gated.
+
 ### Batch Operations
 
 ```bash

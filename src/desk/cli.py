@@ -161,6 +161,14 @@ def _get_capabilities() -> dict:
                     },
                 },
             },
+            "groups": {
+                "description": "Google Groups / distribution list operations",
+                "commands": {
+                    "members": {"description": "List group members", "batch": False, "destructive": False},
+                    "find": {"description": "Search/list groups", "batch": False, "destructive": False},
+                    "get": {"description": "Group metadata", "batch": False, "destructive": False},
+                },
+            },
         },
         "global_flags": {
             "--json": "Output as JSON (agent-friendly structured output)",
@@ -180,7 +188,7 @@ def _get_capabilities() -> dict:
 @click.version_option(version=__version__)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option("--capabilities", "capabilities_service", default=None, required=False,
-              help="Show capabilities. Use 'all' for everything or specify service: mail, drive, cal, sheets, docs, forms")
+              help="Show capabilities. Use 'all' for everything or specify service: mail, drive, cal, sheets, docs, forms, groups")
 @click.pass_context
 def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) -> None:
     """Desk - Google Workspace from the command line."""
@@ -441,6 +449,7 @@ from desk.commands.cal import cal  # noqa: E402
 from desk.commands.docs import docs  # noqa: E402
 from desk.commands.drive import drive  # noqa: E402
 from desk.commands.forms import forms  # noqa: E402
+from desk.commands.groups import groups  # noqa: E402
 from desk.commands.mail import mail  # noqa: E402
 from desk.commands.sheets import sheets  # noqa: E402
 
@@ -450,6 +459,7 @@ main.add_command(sheets)
 main.add_command(docs)
 main.add_command(cal)
 main.add_command(forms)
+main.add_command(groups)
 
 
 if __name__ == "__main__":

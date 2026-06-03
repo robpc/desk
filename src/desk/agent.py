@@ -35,6 +35,7 @@ class ErrorCode(str, Enum):
     DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
     SPREADSHEET_NOT_FOUND = "SPREADSHEET_NOT_FOUND"
     FORM_NOT_FOUND = "FORM_NOT_FOUND"
+    GROUP_NOT_FOUND = "GROUP_NOT_FOUND"
 
     # Permission errors
     PERMISSION_DENIED = "PERMISSION_DENIED"
@@ -107,6 +108,11 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
     ErrorCode.FORM_NOT_FOUND: [
         "Run `desk forms read` to check the form ID",
         "The form may have been deleted or you may not have access",
+    ],
+    ErrorCode.GROUP_NOT_FOUND: [
+        "Run `desk groups find <query>` to look up the group's email or ID",
+        "Check the group email address for typos",
+        "The group may not exist or may be outside your domain",
     ],
     ErrorCode.PERMISSION_DENIED: [
         "You may not have access to this resource",

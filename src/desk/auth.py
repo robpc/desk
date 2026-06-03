@@ -489,4 +489,17 @@ def verify_service_access(credentials: Credentials) -> dict[str, bool]:
         _logger.debug(f"Calendar access check error: {type(e).__name__}: {e}")
         results["cal"] = False
 
+    # Groups - try to list groups in the caller's customer (lightweight)
+    # 403 here is expected for non-admin accounts even when the scope is granted.
+    try:
+        service = build("admin", "directory_v1", credentials=credentials)
+        service.groups().list(customer="my_customer", maxResults=1).execute()
+        results["groups"] = True
+    except HttpError as e:
+        _logger.debug(f"Groups access check failed: {e}")
+        results["groups"] = False
+    except Exception as e:
+        _logger.debug(f"Groups access check error: {type(e).__name__}: {e}")
+        results["groups"] = False
+
     return results

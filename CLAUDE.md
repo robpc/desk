@@ -135,15 +135,19 @@ desk (CLI entry point)
 │   ├── delete-item    → Delete a question or section
 │   ├── publish        → Publish form and accept responses
 │   └── unpublish      → Unpublish form (stops accepting)
-└── cal                → Google Calendar operations
-    ├── today          → Today's events
-    ├── week           → This week's events
-    ├── next           → Upcoming events
-    ├── list           → List calendars
-    ├── create         → Create an event
-    ├── delete         → Delete an event
-    ├── update         → Update an event
-    └── find           → Search events by text
+├── cal                → Google Calendar operations
+│   ├── today          → Today's events
+│   ├── week           → This week's events
+│   ├── next           → Upcoming events
+│   ├── list           → List calendars
+│   ├── create         → Create an event
+│   ├── delete         → Delete an event
+│   ├── update         → Update an event
+│   └── find           → Search events by text
+└── groups             → Google Groups / distribution list operations (read-only)
+    ├── members        → List members of a group / distribution list
+    ├── find           → Search/list groups
+    └── get            → Group metadata
 
 Config/Tokens: ~/.desk/
 ├── credentials.json  ← User provides (from their Google Cloud project)
@@ -167,6 +171,8 @@ Config/Tokens: ~/.desk/
 - `src/desk/services/docs.py` - DocsClient API wrapper
 - `src/desk/services/calendar.py` - CalendarClient API wrapper
 - `src/desk/services/forms.py` - FormsClient API wrapper
+- `src/desk/commands/groups.py` - Groups / distribution list commands (read-only)
+- `src/desk/services/groups.py` - GroupsClient API wrapper (Admin SDK Directory)
 
 ## Adding a New Service
 
