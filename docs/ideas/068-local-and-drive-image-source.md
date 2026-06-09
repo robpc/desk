@@ -1,13 +1,42 @@
 ---
 id: 068
 title: Local / Drive Image Source for Slides + Docs insert-image
-status: idea
+status: parked
 effort: M
 value: Insert an image from a local file or Drive id, not only a public URL
 created: 2026-06-09
 updated: 2026-06-09
 adr: null
 ---
+
+> **Parked 2026-06-09 — blocked for restricted Workspace domains; no REST API path.**
+> Implemented `--file`/`--drive-id` (upload → anyone-with-link → createImage → delete temp),
+> but it **cannot work in this org** and the happy path is **unverified anywhere from here**.
+> The code was reverted off `feat/slides-support` (kept public `--url`, which works).
+>
+> **Findings (all verified live against the Slides REST API + OAuth):**
+> - `createImage` fetches the image **anonymously** — it does NOT use the caller's
+>   OAuth/Drive scope. A private Drive file is rejected via every URL form:
+>   `…/drive/v3/files/{id}?alt=media` → *"Access to the provided image was forbidden"*;
+>   `uc?export=download` and `drive.usercontent.google.com/download` → *"should be publicly
+>   accessible"*. (So a service account wouldn't help either — still anonymous.)
+> - Making the temp file `anyone`-with-link is **blocked by domain policy** here
+>   (`publishOutNotPermitted` — yahooinc forbids external link sharing).
+> - **data: URIs are rejected** (tested a 118-char tiny PNG → 400). The `url` field is
+>   capped at 2 KB and must be a public HTTP(S) URL (PNG/JPEG/GIF, <50MB, <25MP).
+> - There is **no direct-bytes upload** in the Slides REST API.
+> - The only runtime that can insert a private/local image is **Apps Script**
+>   (`slide.insertImage(blob)` runs inside the org and accepts raw bytes) — a different
+>   runtime Desk (REST/OAuth CLI) cannot use.
+>
+> **Net:** in a domain that blocks public sharing, inserting a local image into Slides via
+> the REST API is impossible; only a genuinely public off-Drive `--url` works. Revive this
+> only to verify `--file` against a *permissive* account (personal Google / org allowing
+> link-sharing), where the upload→share→insert→delete flow should work.
+>
+> **Docs `insert-image` shares the exact same limitation** (URL-only, same anonymous fetch)
+> — the "make the same fix in docs later" follow-up is blocked by the same wall; only worth
+> doing alongside a verified slides `--file`.
 
 # Idea 068: Local / Drive Image Source for Slides + Docs insert-image
 
