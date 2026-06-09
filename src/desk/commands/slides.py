@@ -789,8 +789,10 @@ def insert_image(
 @slides.command("insert-table")
 @click.argument("presentation_id")
 @click.argument("slide")
-@click.option("--rows", required=True, type=int, help="Number of rows")
-@click.option("--cols", required=True, type=int, help="Number of columns")
+@click.option("--rows", type=int, default=None, help="Number of rows (or infer from --data)")
+@click.option("--cols", type=int, default=None, help="Number of columns (or infer from --data)")
+@click.option("--data", default=None,
+              help='Pre-fill: JSON rows of cells, e.g. \'[["Q","Rev"],["Q1","12"]]\'')
 @click.option("--region", type=click.Choice(REGIONS), default=None,
               help="Named layout region (overrides --x/--y/--width/--height)")
 @click.option("--x", type=float, default=None, help="Left position in points")
@@ -800,49 +802,63 @@ def insert_image(
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_table(
-    presentation_id: str, slide: str, rows: int, cols: int, region: str | None,
+    presentation_id: str, slide: str, rows: int | None, cols: int | None,
+    data: str | None, region: str | None,
     x: float | None, y: float | None, width: float | None, height: float | None,
     quiet: bool, as_json: bool,
 ) -> None:
-    """Insert a table onto a slide.
+    """Insert a table onto a slide, optionally pre-filled.
 
-    SLIDE is a 0-based index or a slide objectId. Position by --region or in
-    points; omit both to let the API place and size the table.
+    SLIDE is a 0-based index or a slide objectId. Give --rows/--cols, or --data
+    (JSON rows) to build and fill the table in one call. Position by --region or
+    in points; omit both to let the API place and size the table.
 
     Examples:
 
         desk slides insert-table <id> 0 --rows 3 --cols 4
 
-        desk slides insert-table <id> 0 --rows 3 --cols 4 --region bottom-half
+        desk slides insert-table <id> 0 --data '[["Q","Rev"],["Q1","12"]]'
 
         desk slides insert-table <id> 1 --rows 2 --cols 2 --x 50 --y 100
     """
     _reject_region_with_coords(region, x, y, width, height, as_json)
-    if rows < 1 or cols < 1:
-        msg = f"Invalid table dimensions: rows={rows}, cols={cols}. Both must be >= 1."
-        if as_json:
-            error = structured_error(ErrorCode.INVALID_INPUT, msg)
-            print(json.dumps(error, indent=2), file=sys.stderr)
-        else:
-            error_console.print(f"[red]Error: {msg}[/red]")
-        sys.exit(1)
+
+    parsed_data = None
+    if data is not None:
+        try:
+            parsed_data = json.loads(data)
+            if not isinstance(parsed_data, list) or not all(
+                isinstance(r, list) for r in parsed_data
+            ):
+                raise ValueError("--data must be a JSON list of lists (rows of cells).")
+        except (json.JSONDecodeError, ValueError) as e:
+            _emit_invalid_input(f"Invalid --data: {e}", as_json)
 
     client = _get_client(as_json)
     try:
         result = client.insert_table(
-            presentation_id, slide, rows, cols, x=x, y=y, width=width, height=height,
-            region=region,
+            presentation_id, slide, rows=rows, columns=cols,
+            x=x, y=y, width=width, height=height, region=region, data=parsed_data,
         )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
     except Exception as e:
         _handle_api_error(
             e, as_json,
-            {"presentation_id": presentation_id, "slide": slide, "rows": rows, "cols": cols},
+            {"presentation_id": presentation_id, "slide": slide},
         )
+
+    changes: dict = {
+        "slide_object_id": result.get("slideObjectId"),
+        "rows": result.get("rows", rows), "cols": result.get("cols", cols),
+    }
+    if "filled_cells" in result:
+        changes["filled_cells"] = result["filled_cells"]
 
     receipt = operation_receipt(
         operation="insert-table",
         target={"id": presentation_id, "object_id": result.get("objectId")},
-        changes={"slide_object_id": result.get("slideObjectId"), "rows": rows, "cols": cols},
+        changes=changes,
         undo_command=(
             f"desk slides delete-object {presentation_id} {result.get('objectId')} --yes"
         ),

@@ -1041,25 +1041,45 @@ class SlidesClient:
             raise RuntimeError(f"Slides API error: {error}")
 
     def insert_table(
-        self, presentation_id: str, slide: str, rows: int, columns: int,
+        self, presentation_id: str, slide: str,
+        rows: int | None = None, columns: int | None = None,
         x: float | None = None, y: float | None = None,
         width: float | None = None, height: float | None = None,
         region: str | None = None,
+        data: list[list[str]] | None = None,
     ) -> dict:
-        """Insert a table onto a slide.
+        """Insert a table onto a slide, optionally pre-filled with data.
 
         Args:
             presentation_id: The presentation ID
             slide: Target slide as 0-based index or objectId
-            rows: Number of rows
-            columns: Number of columns
+            rows/columns: Table dimensions. When ``data`` is given they are
+                inferred from it (and validated if also passed).
             x, y: Top-left position in points (default ~50,50)
             width, height: Size in points; when omitted the API sizes the table
             region: A named region (overrides x/y/width/height). See REGIONS.
+            data: Rows of cell text to fill at creation (Idea 070). The table is
+                created with a client objectId and cells are filled in the same
+                batchUpdate, so a populated table is one call.
 
         Returns:
-            Dict with presentationId, slideObjectId, objectId (the table), status.
+            Dict with presentationId, slideObjectId, objectId (the table), and
+            (when data given) filled_cells count.
         """
+        if data is not None:
+            if not data or not data[0]:
+                raise ValueError("--data must be a non-empty list of rows.")
+            d_rows, d_cols = len(data), max(len(r) for r in data)
+            if rows is not None and rows != d_rows:
+                raise ValueError(f"--rows {rows} != data rows {d_rows}.")
+            if columns is not None and columns != d_cols:
+                raise ValueError(f"--cols {columns} != data columns {d_cols}.")
+            rows, columns = d_rows, d_cols
+        if rows is None or columns is None:
+            raise ValueError("Provide --rows and --cols, or --data.")
+        if rows < 1 or columns < 1:
+            raise ValueError(f"Invalid dimensions: rows={rows}, cols={columns}.")
+
         try:
             page_id = self._resolve_slide_object_id(presentation_id, slide)
             if region:
@@ -1071,26 +1091,39 @@ class SlidesClient:
                 element_props = self._element_properties(
                     page_id, x, y, width, height, default_w=400.0, default_h=200.0,
                 )
-            result = self._batch_update(
-                presentation_id,
-                [{
-                    "createTable": {
-                        "elementProperties": element_props,
-                        "rows": rows,
-                        "columns": columns,
-                    }
-                }],
-            )
-            replies = result.get("replies", [{}])
-            new_id = ""
-            if replies:
-                new_id = replies[0].get("createTable", {}).get("objectId", "")
-            return {
+
+            table_id = f"table_{uuid.uuid4().hex[:16]}"
+            requests: list[dict] = [{
+                "createTable": {
+                    "objectId": table_id,
+                    "elementProperties": element_props,
+                    "rows": rows,
+                    "columns": columns,
+                }
+            }]
+            filled = 0
+            if data is not None:
+                for r, row_values in enumerate(data):
+                    for c, value in enumerate(row_values):
+                        if value:
+                            requests.append({"insertText": {
+                                "objectId": table_id,
+                                "cellLocation": {"rowIndex": r, "columnIndex": c},
+                                "text": value,
+                                "insertionIndex": 0,
+                            }})
+                            filled += 1
+
+            self._batch_update(presentation_id, requests)
+            result_dict = {
                 "presentationId": presentation_id,
                 "slideObjectId": page_id,
-                "objectId": new_id,
+                "objectId": table_id,
                 "status": "ok",
             }
+            if data is not None:
+                result_dict["filled_cells"] = filled
+            return result_dict
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 
@@ -1298,26 +1331,34 @@ class SlidesClient:
             raise RuntimeError(f"Slides API error: {error}")
 
     def _fit_transform_request(self, element: dict, box: tuple) -> dict:
-        """Build an ABSOLUTE updatePageElementTransform fitting element to box.
+        """Build an ABSOLUTE updatePageElementTransform placing element in box.
 
-        The API's base size is the un-scaled size, so scale = target / base.
-        Raises RuntimeError if the element has no resolvable size.
+        Shapes/images are scaled to fill the box (scale = target / base). Tables
+        reject scaled transforms (their size is row/column-driven), so a table is
+        **moved** to the box origin at scale 1 — repositioned, not resized.
+        Raises RuntimeError if a non-table element has no resolvable size.
         """
         object_id = element.get("objectId", "")
-        size = element.get("size", {})
-        base_w = self._dimension_pt(size.get("width"), 0.0)
-        base_h = self._dimension_pt(size.get("height"), 0.0)
-        if base_w <= 0 or base_h <= 0:
-            raise RuntimeError(
-                f"Cannot place object {object_id}: it has no resolvable size."
-            )
         box_x, box_y, box_w, box_h = box
+
+        if "table" in element:
+            scale_x = scale_y = 1
+        else:
+            size = element.get("size", {})
+            base_w = self._dimension_pt(size.get("width"), 0.0)
+            base_h = self._dimension_pt(size.get("height"), 0.0)
+            if base_w <= 0 or base_h <= 0:
+                raise RuntimeError(
+                    f"Cannot place object {object_id}: it has no resolvable size."
+                )
+            scale_x, scale_y = box_w / base_w, box_h / base_h
+
         return {
             "updatePageElementTransform": {
                 "objectId": object_id,
                 "applyMode": "ABSOLUTE",
                 "transform": {
-                    "scaleX": box_w / base_w, "scaleY": box_h / base_h,
+                    "scaleX": scale_x, "scaleY": scale_y,
                     "translateX": box_x, "translateY": box_y,
                     "unit": "PT",
                 },

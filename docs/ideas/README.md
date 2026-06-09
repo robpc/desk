@@ -56,7 +56,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 067 | [Service-Agnostic INVALID_INPUT Suggestions](067-error-suggestions-service-agnostic.md) | implemented | S | Non-mail errors stop leaking Gmail help |
 | 068 | [Local / Drive Image Source](068-local-and-drive-image-source.md) | idea | M | insert-image from a local file or Drive id (docs+slides) |
 | 069 | [Slides — list theme palette](069-slides-list-theme-palette.md) | implemented | S | Show what ACCENT1..6/DARK1/LIGHT1 resolve to |
-| 070 | [Slides Table Enhancements](070-slides-table-enhancements.md) | idea | M | Reposition, bulk --data fill, region sizing |
+| 070 | [Slides Table Enhancements](070-slides-table-enhancements.md) | implemented | M | Reposition (move) + bulk --data fill; region-sizing N/A |
 | 071 | [Slides Shape Text Alignment](071-slides-shape-text-alignment.md) | implemented | S | Center/align text in a shape (h/v) |
 
 ## Adding an Idea

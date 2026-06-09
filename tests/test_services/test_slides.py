@@ -448,12 +448,35 @@ class TestVisualElements:
 
         result = client.insert_table("p1", "objId", 3, 4)
 
-        assert result["objectId"] == "tbl1"
+        assert result["objectId"].startswith("table_")  # client-supplied id
         req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["createTable"]
         assert req["rows"] == 3
         assert req["columns"] == 4
         # No position/size given → elementProperties is just the page reference
         assert req["elementProperties"] == {"pageObjectId": "objId"}
+
+    def test_insert_table_with_data_fills_cells(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.insert_table("p1", "s0", data=[["Q", "Rev"], ["Q1", ""]])
+
+        assert result["filled_cells"] == 3  # empty cell skipped
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        create = reqs[0]["createTable"]
+        assert create["rows"] == 2 and create["columns"] == 2
+        # all fills target the same client-supplied table id via cellLocation
+        tid = create["objectId"]
+        fills = [r["insertText"] for r in reqs[1:]]
+        assert all(f["objectId"] == tid for f in fills)
+        assert {(*f["cellLocation"].values(),): f["text"] for f in fills} == {
+            (0, 0): "Q", (0, 1): "Rev", (1, 0): "Q1",
+        }
+
+    def test_insert_table_data_dim_mismatch_raises(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="!= data"):
+            client.insert_table("p1", "s0", rows=5, data=[["a"]])
 
     def test_insert_table_includes_size_when_given(self, mock_credentials):
         client, presentations = _make_client(mock_credentials)
@@ -777,6 +800,26 @@ class TestPlaceElement:
         assert abs(t["transform"]["scaleX"] - (672 / 100)) < 1e-6
         assert abs(t["transform"]["scaleY"] - (357 / 50)) < 1e-6
         assert t["transform"]["translateX"] == 24
+
+    def test_place_table_uses_translate_only(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        # Tables reject scaled transforms → place moves them at scale 1.
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": [{
+                "objectId": "tbl", "table": {"tableRows": []},
+                "size": {"width": {"magnitude": 100, "unit": "PT"},
+                         "height": {"magnitude": 50, "unit": "PT"}},
+            }]}],
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.place_element("p1", "tbl", "bottom-half")
+
+        t = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]
+        assert t["scaleX"] == 1 and t["scaleY"] == 1  # moved, not resized
 
     def test_place_without_size_raises(self, mock_credentials):
         client, presentations = _make_client(mock_credentials)

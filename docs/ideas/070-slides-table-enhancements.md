@@ -1,13 +1,24 @@
 ---
 id: 070
 title: Slides Table Enhancements — reposition, bulk fill, region sizing
-status: idea
+status: implemented
 effort: M
 value: Make tables first-class: movable, bulk-fillable, and region-sizable
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
+
+> **Implemented 2026-06-09 (live-verified), with one documented limitation:**
+> - **Bulk fill** — `insert-table --data '[["Q","Rev"],["Q1","12"]]'` builds and fills the
+>   table in one batchUpdate (rows/cols inferred from the data).
+> - **Reposition** — `place` now works on tables via a translate-only transform (scale 1):
+>   tables reject scaled transforms, so they're **moved, not resized**.
+> - **Region sizing — NOT possible** via transform: a table's size is row/column-driven, so
+>   `place`/`--region` reposition a table but can't shrink it to fit; a too-tall table will
+>   overflow (correctly surfaced by `inspect`'s `offSlide`). Truly fitting a table to a
+>   region would require setting column widths / row heights — deferred. Don't claim region
+>   sizing for tables.
 
 # Idea 070: Slides Table Enhancements
 

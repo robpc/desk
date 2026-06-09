@@ -280,11 +280,17 @@ class TestInsertTable:
         output = json.loads(result.output)
         assert output["changes"]["rows"] == 3
         client.insert_table.assert_called_once_with(
-            "p1", "0", 3, 4, x=None, y=None, width=None, height=None, region=None
+            "p1", "0", rows=3, columns=4, x=None, y=None, width=None, height=None,
+            region=None, data=None,
         )
 
     def test_insert_table_rejects_zero_rows(self, runner, mock_get_credentials, mock_slides_client_class):
         from desk.commands.slides import slides
+
+        # Dimension validation lives in the service now; surfaced as INVALID_INPUT.
+        client = MagicMock()
+        client.insert_table.side_effect = ValueError("Invalid dimensions: rows=0, cols=2.")
+        mock_slides_client_class.return_value = client
 
         result = runner.invoke(
             slides, ["insert-table", "p1", "0", "--rows", "0", "--cols", "2", "--json"]
@@ -293,6 +299,33 @@ class TestInsertTable:
         assert result.exit_code == 1
         output = json.loads(result.output)
         assert output["error"]["code"] == "INVALID_INPUT"
+
+    def test_insert_table_with_data(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.insert_table.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0", "objectId": "tbl",
+            "status": "ok", "filled_cells": 4,
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["insert-table", "p1", "0", "--data", '[["Q","Rev"],["Q1","12"]]', "--json"]
+        )
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["changes"]["filled_cells"] == 4
+        _, kwargs = client.insert_table.call_args
+        assert kwargs["data"] == [["Q", "Rev"], ["Q1", "12"]]
+
+    def test_insert_table_bad_data_json(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["insert-table", "p1", "0", "--data", "not json", "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.output)["error"]["code"] == "INVALID_INPUT"
 
 
 class TestInsertShape:
