@@ -426,18 +426,62 @@ class SlidesClient:
                 return self._extract_text_elements(element["shape"].get("text", {}))
         return ""
 
+    @staticmethod
+    def _element_box(element: dict) -> dict | None:
+        """Compute an element's rendered bounding box in points (ADR-030, Idea 064).
+
+        Derived from base size × transform scale + translate. Rotation/shear are
+        ignored (rare for agent-placed elements); returns None when size or
+        transform is absent.
+        """
+        size = element.get("size")
+        transform = element.get("transform")
+        if not size or not transform:
+            return None
+        base_w = SlidesClient._dimension_pt(size.get("width"), 0.0)
+        base_h = SlidesClient._dimension_pt(size.get("height"), 0.0)
+        scale_x = transform.get("scaleX", 1) or 1
+        scale_y = transform.get("scaleY", 1) or 1
+        tx = transform.get("translateX", 0) or 0
+        ty = transform.get("translateY", 0) or 0
+        if transform.get("unit") == "EMU":
+            tx /= _EMU_PER_PT
+            ty /= _EMU_PER_PT
+        return {
+            "x": round(tx, 1), "y": round(ty, 1),
+            "width": round(base_w * scale_x, 1),
+            "height": round(base_h * scale_y, 1),
+        }
+
+    @staticmethod
+    def _boxes_overlap(a: dict, b: dict) -> bool:
+        """Axis-aligned overlap test with a small tolerance (edge-touch is not overlap)."""
+        eps = 0.5
+        return not (
+            a["x"] + a["width"] <= b["x"] + eps
+            or b["x"] + b["width"] <= a["x"] + eps
+            or a["y"] + a["height"] <= b["y"] + eps
+            or b["y"] + b["height"] <= a["y"] + eps
+        )
+
     def inspect(self, presentation_id: str) -> dict:
-        """Inspect presentation structure with objectIds.
+        """Inspect presentation structure with objectIds and computed layout.
 
         Surfaces each slide's objectId and its page elements (type, objectId,
-        placeholder type, and a text preview) so agents know what to target
-        with insert-text/delete-object. Parallels ``desk docs inspect``.
+        placeholder type, text preview) plus each element's computed bounding
+        box (x/y/width/height in points) and ``offSlide`` / ``overlaps`` flags,
+        so an agent can verify placement without exporting (Idea 064).
 
         Returns:
-            Dict with presentationId, title, and slides (each with elements).
+            Dict with presentationId, title, pageSize, and slides (each with
+            elements carrying box + offSlide + overlaps).
         """
         try:
             pres = self._get(presentation_id)
+            page = pres.get("pageSize", {})
+            page_w = self._dimension_pt(page.get("width"), 720.0)
+            page_h = self._dimension_pt(page.get("height"), 405.0)
+
             slides = []
             for i, slide in enumerate(pres.get("slides", [])):
                 elements = []
@@ -449,36 +493,50 @@ class SlidesClient:
                         text = self._extract_text_elements(
                             shape.get("text", {})
                         ).rstrip("\n")
-                        elements.append({
+                        elem: dict = {
                             "objectId": object_id,
                             "type": "shape",
                             "shapeType": shape.get("shapeType", "TEXT_BOX"),
                             "placeholder": placeholder.get("type"),
                             "text": text[:200],
-                        })
+                        }
                     elif "table" in element:
                         table = element["table"]
-                        elements.append({
+                        elem = {
                             "objectId": object_id,
                             "type": "table",
                             "rows": table.get("rows", 0),
                             "columns": table.get("columns", 0),
-                        })
+                        }
                     elif "image" in element:
-                        elements.append({
-                            "objectId": object_id,
-                            "type": "image",
-                        })
+                        elem = {"objectId": object_id, "type": "image"}
                     elif "line" in element:
-                        elements.append({
-                            "objectId": object_id,
-                            "type": "line",
-                        })
+                        elem = {"objectId": object_id, "type": "line"}
                     else:
-                        elements.append({
-                            "objectId": object_id,
-                            "type": "other",
-                        })
+                        elem = {"objectId": object_id, "type": "other"}
+
+                    box = self._element_box(element)
+                    elem["box"] = box
+                    if box:
+                        eps = 0.5
+                        elem["offSlide"] = (
+                            box["x"] < -eps or box["y"] < -eps
+                            or box["x"] + box["width"] > page_w + eps
+                            or box["y"] + box["height"] > page_h + eps
+                        )
+                    elements.append(elem)
+
+                # Pairwise overlap flags (only elements with a resolved box).
+                for elem in elements:
+                    if not elem.get("box"):
+                        continue
+                    hits = [
+                        other["objectId"] for other in elements
+                        if other is not elem and other.get("box")
+                        and self._boxes_overlap(elem["box"], other["box"])
+                    ]
+                    elem["overlaps"] = hits
+
                 slides.append({
                     "index": i,
                     "objectId": slide.get("objectId", ""),
@@ -487,6 +545,7 @@ class SlidesClient:
             return {
                 "presentationId": presentation_id,
                 "title": pres.get("title", ""),
+                "pageSize": {"width": round(page_w, 1), "height": round(page_h, 1)},
                 "slideCount": len(slides),
                 "slides": slides,
             }

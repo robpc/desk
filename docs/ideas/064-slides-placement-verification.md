@@ -1,13 +1,20 @@
 ---
 id: 064
 title: Slides Placement Verification — bounding boxes in inspect
-status: idea
+status: implemented
 effort: M
 value: Let an agent trust positioning sight-unseen instead of exporting to look
 created: 2026-06-09
 updated: 2026-06-09
 adr: null
 ---
+
+> **Implemented 2026-06-09 (live-verified).** `inspect` now reports `pageSize` and, per
+> element, a computed `box` (x/y/width/height in pt from size × scale + translate),
+> `offSlide` (bool), and `overlaps` (objectIds it intersects). Human output shows
+> `box x,y WxHpt` with `OFF-SLIDE` / `overlaps N` markers. Rotation/shear ignored; elements
+> without size/transform get `box: null`. No new API calls. The overlap/off-slide *warning
+> on insert/place/arrange* (open question 3) was left for later — inspect-on-demand first.
 
 # Idea 064: Slides Placement Verification — bounding boxes in inspect
 

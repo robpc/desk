@@ -200,7 +200,9 @@ def inspect_cmd(presentation_id: str, quiet: bool, as_json: bool) -> None:
         return
 
     console.print(f"[bold]{result['title']}[/bold]")
-    console.print(f"[dim]{result['slideCount']} slide(s)[/dim]")
+    ps = result.get("pageSize", {})
+    page_dims = f" · slide {ps['width']}x{ps['height']}pt" if ps else ""
+    console.print(f"[dim]{result['slideCount']} slide(s){page_dims}[/dim]")
 
     for slide in result["slides"]:
         console.print()
@@ -234,6 +236,20 @@ def inspect_cmd(presentation_id: str, quiet: bool, as_json: bool) -> None:
             else:
                 console.print(
                     f"  [blue]{etype.upper()}[/blue] [dim]{oid}[/dim]"
+                )
+
+            # Computed placement (Idea 064) — lets agents verify without exporting.
+            box = elem.get("box")
+            if box:
+                flags = []
+                if elem.get("offSlide"):
+                    flags.append("[red]OFF-SLIDE[/red]")
+                if elem.get("overlaps"):
+                    flags.append(f"[yellow]overlaps {len(elem['overlaps'])}[/yellow]")
+                flag_str = ("  " + " ".join(flags)) if flags else ""
+                console.print(
+                    f"      [dim]box {box['x']},{box['y']} "
+                    f"{box['width']}x{box['height']}pt[/dim]{flag_str}"
                 )
 
 

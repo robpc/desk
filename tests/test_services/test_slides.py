@@ -216,6 +216,97 @@ class TestSlidesInspect:
         assert types["tbl1"] == "table"
 
 
+class TestInspectBoundingBoxes:
+    """Tests for inspect bounding boxes + flags (ADR-030, Idea 064)."""
+
+    def _pres(self, presentations, elements, page=(720, 405)):
+        presentations.get.return_value.execute.return_value = {
+            "title": "Deck",
+            "pageSize": {"width": {"magnitude": page[0], "unit": "PT"},
+                         "height": {"magnitude": page[1], "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": elements}],
+        }
+
+    @staticmethod
+    def _shape(oid, x, y, w, h, unit="PT", sx=1, sy=1):
+        return {
+            "objectId": oid,
+            "shape": {},
+            "size": {"width": {"magnitude": w, "unit": unit},
+                     "height": {"magnitude": h, "unit": unit}},
+            "transform": {"scaleX": sx, "scaleY": sy,
+                          "translateX": x, "translateY": y, "unit": unit},
+        }
+
+    def test_box_from_size_and_translate(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [self._shape("a", 50, 60, 200, 100)])
+
+        elem = client.inspect("p1")["slides"][0]["elements"][0]
+
+        assert elem["box"] == {"x": 50, "y": 60, "width": 200, "height": 100}
+        assert elem["offSlide"] is False
+        assert elem["overlaps"] == []
+
+    def test_box_applies_scale(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [self._shape("a", 0, 0, 100, 50, sx=2, sy=3)])
+
+        box = client.inspect("p1")["slides"][0]["elements"][0]["box"]
+        assert box["width"] == 200 and box["height"] == 150
+
+    def test_emu_translate_converted_to_points(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        # 914400 EMU = 72 pt; size in EMU too
+        self._pres(presentations, [self._shape("a", 914400, 0, 914400, 914400, unit="EMU")])
+
+        box = client.inspect("p1")["slides"][0]["elements"][0]["box"]
+        assert box["x"] == 72.0 and box["width"] == 72.0
+
+    def test_off_slide_flagged(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        # box runs past the 720x405 slide
+        self._pres(presentations, [self._shape("a", 700, 0, 200, 50)])
+
+        elem = client.inspect("p1")["slides"][0]["elements"][0]
+        assert elem["offSlide"] is True
+
+    def test_overlap_detected_both_ways(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [
+            self._shape("a", 0, 0, 100, 100),
+            self._shape("b", 50, 50, 100, 100),   # overlaps a
+            self._shape("c", 500, 300, 50, 50),   # disjoint
+        ])
+
+        els = {e["objectId"]: e for e in client.inspect("p1")["slides"][0]["elements"]}
+        assert els["a"]["overlaps"] == ["b"]
+        assert els["b"]["overlaps"] == ["a"]
+        assert els["c"]["overlaps"] == []
+
+    def test_edge_touch_is_not_overlap(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [
+            self._shape("a", 0, 0, 100, 100),
+            self._shape("b", 100, 0, 100, 100),  # shares the x=100 edge
+        ])
+        els = {e["objectId"]: e for e in client.inspect("p1")["slides"][0]["elements"]}
+        assert els["a"]["overlaps"] == []
+
+    def test_element_without_size_has_null_box(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [{"objectId": "a", "shape": {}}])  # no size/transform
+
+        elem = client.inspect("p1")["slides"][0]["elements"][0]
+        assert elem["box"] is None
+        assert "offSlide" not in elem
+
+    def test_pagesize_reported(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [])
+        assert client.inspect("p1")["pageSize"] == {"width": 720, "height": 405}
+
+
 class TestSlideStructure:
     """Tests for add/delete/duplicate/move slide operations."""
 
