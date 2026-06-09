@@ -33,6 +33,7 @@ proposed → accepted → [deprecated | superseded]
 | 002 | [Command Composability via Generic Modify](002-command-composability.md) | accepted | 2025-02-06 |
 | 019 | [Errors to stderr](019-errors-to-stderr.md) | accepted | 2026-05-06 |
 | 026 | [Google Slides Support](026-google-slides-support.md) | proposed | 2026-06-09 |
+| 027 | [Slides Visual Elements (Phase 2)](027-slides-visual-elements.md) | proposed | 2026-06-09 |
 
 ## Creating a New ADR
 

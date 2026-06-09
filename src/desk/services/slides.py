@@ -10,6 +10,8 @@ Use ``inspect()`` to discover the ``objectId``s and placeholder types needed to
 target text and structural edits, mirroring ``desk docs inspect``.
 """
 
+import uuid
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -29,6 +31,19 @@ PREDEFINED_LAYOUTS = [
     "ONE_COLUMN_TEXT",
     "MAIN_POINT",
     "BIG_NUMBER",
+]
+
+# Curated subset of Slides shape types exposed by `insert-shape --type`. The
+# full enum is large and mostly unused by agents; TEXT_BOX is the common case.
+# See ADR-027.
+SHAPE_TYPES = [
+    "TEXT_BOX",
+    "RECTANGLE",
+    "ROUND_RECTANGLE",
+    "ELLIPSE",
+    "DIAMOND",
+    "CLOUD",
+    "RIGHT_ARROW",
 ]
 
 
@@ -90,6 +105,35 @@ class SlidesClient:
                 rows.append(" | ".join(cells))
             return "\n".join(rows)
         return ""
+
+    @staticmethod
+    def _element_properties(
+        page_id: str,
+        x: float | None, y: float | None,
+        width: float | None, height: float | None,
+        default_w: float, default_h: float,
+    ) -> dict:
+        """Build an elementProperties payload (size + transform) in points.
+
+        Position/size are optional; omitted values fall back to defaults so an
+        element can be placed without geometry. See ADR-027.
+        """
+        w = width if width is not None else default_w
+        h = height if height is not None else default_h
+        tx = x if x is not None else 50.0
+        ty = y if y is not None else 50.0
+        return {
+            "pageObjectId": page_id,
+            "size": {
+                "width": {"magnitude": w, "unit": "PT"},
+                "height": {"magnitude": h, "unit": "PT"},
+            },
+            "transform": {
+                "scaleX": 1, "scaleY": 1,
+                "translateX": tx, "translateY": ty,
+                "unit": "PT",
+            },
+        }
 
     def _resolve_slide_object_id(self, presentation_id: str, slide: str) -> str:
         """Resolve a slide reference to its objectId.
@@ -439,6 +483,143 @@ class SlidesClient:
             return {
                 "presentationId": presentation_id,
                 "occurrences_changed": occurrences,
+                "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    # ── Visual elements (Phase 2, ADR-027) ──────────────────────────────
+
+    def insert_image(
+        self, presentation_id: str, slide: str, url: str,
+        x: float | None = None, y: float | None = None,
+        width: float | None = None, height: float | None = None,
+    ) -> dict:
+        """Insert an image onto a slide from a public URL.
+
+        Args:
+            presentation_id: The presentation ID
+            slide: Target slide as 0-based index or objectId
+            url: Publicly accessible image URL
+            x, y: Top-left position in points (default ~50,50)
+            width, height: Size in points (default 300x200)
+
+        Returns:
+            Dict with presentationId, slideObjectId, objectId (the image), status.
+        """
+        try:
+            page_id = self._resolve_slide_object_id(presentation_id, slide)
+            props = self._element_properties(
+                page_id, x, y, width, height, default_w=300.0, default_h=200.0,
+            )
+            result = self._batch_update(
+                presentation_id,
+                [{"createImage": {"url": url, "elementProperties": props}}],
+            )
+            replies = result.get("replies", [{}])
+            new_id = ""
+            if replies:
+                new_id = replies[0].get("createImage", {}).get("objectId", "")
+            return {
+                "presentationId": presentation_id,
+                "slideObjectId": page_id,
+                "objectId": new_id,
+                "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def insert_table(
+        self, presentation_id: str, slide: str, rows: int, columns: int,
+        x: float | None = None, y: float | None = None,
+        width: float | None = None, height: float | None = None,
+    ) -> dict:
+        """Insert a table onto a slide.
+
+        Args:
+            presentation_id: The presentation ID
+            slide: Target slide as 0-based index or objectId
+            rows: Number of rows
+            columns: Number of columns
+            x, y: Top-left position in points (default ~50,50)
+            width, height: Size in points; when omitted the API sizes the table
+
+        Returns:
+            Dict with presentationId, slideObjectId, objectId (the table), status.
+        """
+        try:
+            page_id = self._resolve_slide_object_id(presentation_id, slide)
+            element_props: dict = {"pageObjectId": page_id}
+            # Only constrain size/position when the caller asked; otherwise let
+            # the API place and size the table by its content.
+            if any(v is not None for v in (x, y, width, height)):
+                element_props = self._element_properties(
+                    page_id, x, y, width, height, default_w=400.0, default_h=200.0,
+                )
+            result = self._batch_update(
+                presentation_id,
+                [{
+                    "createTable": {
+                        "elementProperties": element_props,
+                        "rows": rows,
+                        "columns": columns,
+                    }
+                }],
+            )
+            replies = result.get("replies", [{}])
+            new_id = ""
+            if replies:
+                new_id = replies[0].get("createTable", {}).get("objectId", "")
+            return {
+                "presentationId": presentation_id,
+                "slideObjectId": page_id,
+                "objectId": new_id,
+                "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def insert_shape(
+        self, presentation_id: str, slide: str, shape_type: str = "TEXT_BOX",
+        text: str | None = None,
+        x: float | None = None, y: float | None = None,
+        width: float | None = None, height: float | None = None,
+    ) -> dict:
+        """Insert a shape (default text box) onto a slide, optionally with text.
+
+        When ``text`` is given, the shape is created with a client-supplied
+        objectId and the text inserted in the same batchUpdate, so a labelled
+        box is one round-trip. See ADR-027.
+
+        Returns:
+            Dict with presentationId, slideObjectId, objectId (the shape), status.
+        """
+        try:
+            page_id = self._resolve_slide_object_id(presentation_id, slide)
+            props = self._element_properties(
+                page_id, x, y, width, height, default_w=300.0, default_h=100.0,
+            )
+            object_id = f"shape_{uuid.uuid4().hex[:16]}"
+            requests: list[dict] = [{
+                "createShape": {
+                    "objectId": object_id,
+                    "shapeType": shape_type,
+                    "elementProperties": props,
+                }
+            }]
+            if text:
+                requests.append({
+                    "insertText": {
+                        "objectId": object_id,
+                        "text": text,
+                        "insertionIndex": 0,
+                    }
+                })
+            self._batch_update(presentation_id, requests)
+            return {
+                "presentationId": presentation_id,
+                "slideObjectId": page_id,
+                "objectId": object_id,
                 "status": "ok",
             }
         except HttpError as error:

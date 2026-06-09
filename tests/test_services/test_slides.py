@@ -323,6 +323,84 @@ class TestSlidesText:
         assert req["replaceAllText"]["replaceText"] == "new"
 
 
+class TestVisualElements:
+    """Tests for insert-image / insert-table / insert-shape (Phase 2)."""
+
+    def test_insert_image_builds_pt_properties(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0"}]
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {
+            "replies": [{"createImage": {"objectId": "img1"}}]
+        }
+
+        result = client.insert_image("p1", "0", "https://x/y.png", x=100, y=80, width=200)
+
+        assert result["objectId"] == "img1"
+        assert result["slideObjectId"] == "s0"
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["createImage"]
+        assert req["url"] == "https://x/y.png"
+        props = req["elementProperties"]
+        assert props["pageObjectId"] == "s0"
+        assert props["transform"]["translateX"] == 100
+        assert props["transform"]["unit"] == "PT"
+        assert props["size"]["width"]["magnitude"] == 200
+        # height defaulted
+        assert props["size"]["height"]["magnitude"] == 200.0
+
+    def test_insert_table_omits_size_when_unspecified(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {
+            "replies": [{"createTable": {"objectId": "tbl1"}}]
+        }
+
+        result = client.insert_table("p1", "objId", 3, 4)
+
+        assert result["objectId"] == "tbl1"
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["createTable"]
+        assert req["rows"] == 3
+        assert req["columns"] == 4
+        # No position/size given → elementProperties is just the page reference
+        assert req["elementProperties"] == {"pageObjectId": "objId"}
+
+    def test_insert_table_includes_size_when_given(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {"replies": [{}]}
+
+        client.insert_table("p1", "objId", 2, 2, x=50)
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["createTable"]
+        assert "size" in req["elementProperties"]
+        assert req["elementProperties"]["transform"]["translateX"] == 50
+
+    def test_insert_shape_default_textbox(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {"replies": [{}]}
+
+        result = client.insert_shape("p1", "objId")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert len(req) == 1  # no text → only createShape
+        assert req[0]["createShape"]["shapeType"] == "TEXT_BOX"
+        # objectId returned matches the one sent
+        assert result["objectId"] == req[0]["createShape"]["objectId"]
+
+    def test_insert_shape_with_text_chains_insert(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {"replies": [{}, {}]}
+
+        result = client.insert_shape("p1", "objId", shape_type="RECTANGLE", text="Hi")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert len(reqs) == 2
+        assert reqs[0]["createShape"]["shapeType"] == "RECTANGLE"
+        assert reqs[1]["insertText"]["text"] == "Hi"
+        # Both requests target the same generated objectId
+        assert reqs[0]["createShape"]["objectId"] == reqs[1]["insertText"]["objectId"]
+        assert result["objectId"] == reqs[0]["createShape"]["objectId"]
+
+
 class TestSlidesExport:
     """Tests for SlidesClient.export."""
 

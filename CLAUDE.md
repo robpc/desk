@@ -146,7 +146,10 @@ desk (CLI entry point)
 │   ├── duplicate-slide → Duplicate a slide
 │   ├── move-slide     → Reorder a slide
 │   ├── insert-text    → Insert text into a shape/placeholder
-│   └── replace-text   → Find and replace text across the deck
+│   ├── replace-text   → Find and replace text across the deck
+│   ├── insert-image   → Insert an image from a public URL
+│   ├── insert-table   → Insert a table
+│   └── insert-shape   → Insert a shape or text box (optionally with text)
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events

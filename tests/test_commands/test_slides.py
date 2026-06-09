@@ -231,6 +231,98 @@ class TestReplaceText:
         client.replace_text.assert_called_once_with("p1", "{{x}}", "Y", match_case=False)
 
 
+class TestInsertImage:
+    def test_insert_image(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.insert_image.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0", "objectId": "img1", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["insert-image", "p1", "0", "--url", "https://x/y.png", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["targets"][0]["object_id"] == "img1"
+        assert "delete-object" in output["undo"]["command"]
+        client.insert_image.assert_called_once_with(
+            "p1", "0", "https://x/y.png", x=None, y=None, width=None, height=None
+        )
+
+    def test_insert_image_requires_url(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["insert-image", "p1", "0"])
+        assert result.exit_code != 0
+
+
+class TestInsertTable:
+    def test_insert_table(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.insert_table.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0", "objectId": "tbl1", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["insert-table", "p1", "0", "--rows", "3", "--cols", "4", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["rows"] == 3
+        client.insert_table.assert_called_once_with(
+            "p1", "0", 3, 4, x=None, y=None, width=None, height=None
+        )
+
+    def test_insert_table_rejects_zero_rows(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(
+            slides, ["insert-table", "p1", "0", "--rows", "0", "--cols", "2", "--json"]
+        )
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+
+class TestInsertShape:
+    def test_insert_shape_with_text(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.insert_shape.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0", "objectId": "shape_x", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["insert-shape", "p1", "0", "--text", "Note", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["type"] == "TEXT_BOX"
+        assert output["changes"]["text_length"] == 4
+        client.insert_shape.assert_called_once_with(
+            "p1", "0", shape_type="TEXT_BOX", text="Note",
+            x=None, y=None, width=None, height=None,
+        )
+
+    def test_insert_shape_rejects_bad_type(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["insert-shape", "p1", "0", "--type", "BOGUS"])
+        assert result.exit_code != 0
+
+
 class TestExport:
     def test_export_writes_file(self, runner, mock_get_credentials, mock_slides_client_class, tmp_path):
         from desk.commands.slides import slides

@@ -22,7 +22,7 @@ from desk.agent import (
 )
 from desk.auth import get_credentials, get_last_auth_failure
 from desk.console import error_console
-from desk.services.slides import PREDEFINED_LAYOUTS, SlidesClient
+from desk.services.slides import PREDEFINED_LAYOUTS, SHAPE_TYPES, SlidesClient
 
 console = Console()
 
@@ -572,6 +572,171 @@ def replace_text(
             "ignore_case": ignore_case,
             "occurrences_changed": result["occurrences_changed"],
         },
+    )
+    output_result(receipt, as_json, quiet)
+
+
+# ── Visual elements (Phase 2, ADR-027) ──────────────────────────────────────
+
+@slides.command("insert-image")
+@click.argument("presentation_id")
+@click.argument("slide")
+@click.option("--url", required=True, help="Publicly accessible image URL")
+@click.option("--x", type=float, default=None, help="Left position in points")
+@click.option("--y", type=float, default=None, help="Top position in points")
+@click.option("--width", type=float, default=None, help="Width in points")
+@click.option("--height", type=float, default=None, help="Height in points")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def insert_image(
+    presentation_id: str, slide: str, url: str,
+    x: float | None, y: float | None, width: float | None, height: float | None,
+    quiet: bool, as_json: bool,
+) -> None:
+    """Insert an image onto a slide from a public URL.
+
+    SLIDE is a 0-based index or a slide objectId (see `desk slides inspect`).
+    Position/size are in points and optional.
+
+    Examples:
+
+        desk slides insert-image <id> 0 --url "https://example.com/logo.png"
+
+        desk slides insert-image <id> 1 --url "https://x/y.png" --x 100 --y 80 --width 200
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.insert_image(
+            presentation_id, slide, url, x=x, y=y, width=width, height=height,
+        )
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "slide": slide, "url": url}
+        )
+
+    receipt = operation_receipt(
+        operation="insert-image",
+        target={"id": presentation_id, "object_id": result.get("objectId")},
+        changes={"slide_object_id": result.get("slideObjectId"), "url": url},
+        undo_command=(
+            f"desk slides delete-object {presentation_id} {result.get('objectId')} --yes"
+        ),
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("insert-table")
+@click.argument("presentation_id")
+@click.argument("slide")
+@click.option("--rows", required=True, type=int, help="Number of rows")
+@click.option("--cols", required=True, type=int, help="Number of columns")
+@click.option("--x", type=float, default=None, help="Left position in points")
+@click.option("--y", type=float, default=None, help="Top position in points")
+@click.option("--width", type=float, default=None, help="Width in points")
+@click.option("--height", type=float, default=None, help="Height in points")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def insert_table(
+    presentation_id: str, slide: str, rows: int, cols: int,
+    x: float | None, y: float | None, width: float | None, height: float | None,
+    quiet: bool, as_json: bool,
+) -> None:
+    """Insert a table onto a slide.
+
+    SLIDE is a 0-based index or a slide objectId. Omit position/size to let the
+    API place and size the table.
+
+    Examples:
+
+        desk slides insert-table <id> 0 --rows 3 --cols 4
+
+        desk slides insert-table <id> 1 --rows 2 --cols 2 --x 50 --y 100
+    """
+    if rows < 1 or cols < 1:
+        msg = f"Invalid table dimensions: rows={rows}, cols={cols}. Both must be >= 1."
+        if as_json:
+            error = structured_error(ErrorCode.INVALID_INPUT, msg)
+            print(json.dumps(error, indent=2), file=sys.stderr)
+        else:
+            error_console.print(f"[red]Error: {msg}[/red]")
+        sys.exit(1)
+
+    client = _get_client(as_json)
+    try:
+        result = client.insert_table(
+            presentation_id, slide, rows, cols, x=x, y=y, width=width, height=height,
+        )
+    except Exception as e:
+        _handle_api_error(
+            e, as_json,
+            {"presentation_id": presentation_id, "slide": slide, "rows": rows, "cols": cols},
+        )
+
+    receipt = operation_receipt(
+        operation="insert-table",
+        target={"id": presentation_id, "object_id": result.get("objectId")},
+        changes={"slide_object_id": result.get("slideObjectId"), "rows": rows, "cols": cols},
+        undo_command=(
+            f"desk slides delete-object {presentation_id} {result.get('objectId')} --yes"
+        ),
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("insert-shape")
+@click.argument("presentation_id")
+@click.argument("slide")
+@click.option(
+    "--type", "shape_type",
+    type=click.Choice(SHAPE_TYPES),
+    default="TEXT_BOX",
+    help="Shape type",
+)
+@click.option("--text", default=None, help="Text to place in the shape")
+@click.option("--x", type=float, default=None, help="Left position in points")
+@click.option("--y", type=float, default=None, help="Top position in points")
+@click.option("--width", type=float, default=None, help="Width in points")
+@click.option("--height", type=float, default=None, help="Height in points")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def insert_shape(
+    presentation_id: str, slide: str, shape_type: str, text: str | None,
+    x: float | None, y: float | None, width: float | None, height: float | None,
+    quiet: bool, as_json: bool,
+) -> None:
+    """Insert a shape (default text box) onto a slide, optionally with text.
+
+    SLIDE is a 0-based index or a slide objectId.
+
+    Examples:
+
+        desk slides insert-shape <id> 0 --text "Key takeaway"
+
+        desk slides insert-shape <id> 1 --type ELLIPSE --x 200 --y 120 --width 150
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.insert_shape(
+            presentation_id, slide, shape_type=shape_type, text=text,
+            x=x, y=y, width=width, height=height,
+        )
+    except Exception as e:
+        _handle_api_error(
+            e, as_json,
+            {"presentation_id": presentation_id, "slide": slide, "type": shape_type},
+        )
+
+    changes: dict = {"slide_object_id": result.get("slideObjectId"), "type": shape_type}
+    if text:
+        changes["text_length"] = len(text)
+
+    receipt = operation_receipt(
+        operation="insert-shape",
+        target={"id": presentation_id, "object_id": result.get("objectId")},
+        changes=changes,
+        undo_command=(
+            f"desk slides delete-object {presentation_id} {result.get('objectId')} --yes"
+        ),
     )
     output_result(receipt, as_json, quiet)
 
