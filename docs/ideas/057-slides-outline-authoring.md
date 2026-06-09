@@ -1,13 +1,21 @@
 ---
 id: 057
 title: Slides Phase 4 — Outline-First Authoring
-status: idea
+status: questioned
 effort: L
 value: Agents generate a whole deck from a markdown/outline in one command
 created: 2026-06-09
 updated: 2026-06-09
 adr: null
 ---
+
+> **Open question on whether to build this at all (2026-06-09).** This is the most
+> workflow-encoding of the Slides phases and sits closest to the line ADR-003 draws
+> against pre-built workflows: with Phases 1–3a in place, an agent can already compose a
+> deck from primitives (`add-slide` + `insert-text`/`insert-shape` + `--region`). A
+> single `write-markdown`/`from-outline` command risks becoming the opinionated "make me
+> a deck" shortcut ADR-003 warns against. Parked pending a decision that the convenience
+> clearly outweighs that concern. Prefer investing in layout primitives (Phase 3b) first.
 
 # Idea 057: Slides Phase 4 — Outline-First Authoring
 
