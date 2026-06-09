@@ -40,6 +40,10 @@ idea → exploring → planned → adr-created → (implemented)
 | 013 | [Safety Confirmations](013-safety-confirmations.md) | implemented | M | Prevent accidental destructive actions |
 | 014 | [Test Suite](014-test-suite.md) | implemented | L | Confidence in changes, prevent regressions |
 | 035 | [Performance Optimization - Batch Fetch](035-performance-optimization.md) | implemented | M | 5-10x speedup for listing commands |
+| 054 | [Slides Phase 1 — Content CRUD](054-slides-content-crud.md) | adr-created | M | Read, draft, and edit Slides decks |
+| 055 | [Slides Phase 2 — Visual Elements](055-slides-visual-elements.md) | idea | M | Images, tables, shapes on slides |
+| 056 | [Slides Phase 3 — Styling & Layout](056-slides-styling-layout.md) | idea | L | Text/element styling, backgrounds, layouts |
+| 057 | [Slides Phase 4 — Outline-First Authoring](057-slides-outline-authoring.md) | idea | L | Generate a deck from a markdown outline |
 
 ## Adding an Idea
 

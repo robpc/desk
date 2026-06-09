@@ -35,6 +35,7 @@ class ErrorCode(str, Enum):
     DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
     SPREADSHEET_NOT_FOUND = "SPREADSHEET_NOT_FOUND"
     FORM_NOT_FOUND = "FORM_NOT_FOUND"
+    PRESENTATION_NOT_FOUND = "PRESENTATION_NOT_FOUND"
 
     # Permission errors
     PERMISSION_DENIED = "PERMISSION_DENIED"
@@ -107,6 +108,10 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
     ErrorCode.FORM_NOT_FOUND: [
         "Run `desk forms read` to check the form ID",
         "The form may have been deleted or you may not have access",
+    ],
+    ErrorCode.PRESENTATION_NOT_FOUND: [
+        "Run `desk slides read <id>` to check the presentation ID",
+        "The presentation may have been deleted or you may not have access",
     ],
     ErrorCode.PERMISSION_DENIED: [
         "You may not have access to this resource",
@@ -205,6 +210,7 @@ def parse_api_error(error_str: str) -> str:
         "Sheets API error: ",
         "Docs API error: ",
         "Forms API error: ",
+        "Slides API error: ",
     ]
     for prefix in prefixes_to_remove:
         if cleaned.startswith(prefix):

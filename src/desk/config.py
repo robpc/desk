@@ -21,6 +21,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/forms.body",
     "https://www.googleapis.com/auth/forms.responses.readonly",
+    "https://www.googleapis.com/auth/presentations",
 ]
 
 # Scopes for gcloud ADC

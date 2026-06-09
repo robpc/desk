@@ -161,6 +161,22 @@ def _get_capabilities() -> dict:
                     },
                 },
             },
+            "slides": {
+                "description": "Google Slides operations",
+                "commands": {
+                    "create": {"description": "Create presentation", "batch": False, "destructive": False},
+                    "read": {"description": "Read presentation text", "batch": False, "destructive": False},
+                    "inspect": {"description": "Show structure with objectIds", "batch": False, "destructive": False},
+                    "export": {"description": "Export presentation", "batch": False, "destructive": False},
+                    "add-slide": {"description": "Add a slide", "batch": False, "destructive": False, "reversible": True},
+                    "delete-slide": {"description": "Delete a slide", "batch": False, "destructive": True, "reversible": False},
+                    "delete-object": {"description": "Delete a page element", "batch": False, "destructive": True, "reversible": False},
+                    "duplicate-slide": {"description": "Duplicate a slide", "batch": False, "destructive": False, "reversible": True},
+                    "move-slide": {"description": "Reorder a slide", "batch": False, "destructive": False, "reversible": True},
+                    "insert-text": {"description": "Insert text into a shape", "batch": False, "destructive": False},
+                    "replace-text": {"description": "Find and replace text", "batch": False, "destructive": True},
+                },
+            },
         },
         "global_flags": {
             "--json": "Output as JSON (agent-friendly structured output)",
@@ -180,7 +196,7 @@ def _get_capabilities() -> dict:
 @click.version_option(version=__version__)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option("--capabilities", "capabilities_service", default=None, required=False,
-              help="Show capabilities. Use 'all' for everything or specify service: mail, drive, cal, sheets, docs, forms")
+              help="Show capabilities. Use 'all' for everything or specify service: mail, drive, cal, sheets, docs, forms, slides")
 @click.pass_context
 def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) -> None:
     """Desk - Google Workspace from the command line."""
@@ -443,6 +459,7 @@ from desk.commands.drive import drive  # noqa: E402
 from desk.commands.forms import forms  # noqa: E402
 from desk.commands.mail import mail  # noqa: E402
 from desk.commands.sheets import sheets  # noqa: E402
+from desk.commands.slides import slides  # noqa: E402
 
 main.add_command(mail)
 main.add_command(drive)
@@ -450,6 +467,7 @@ main.add_command(sheets)
 main.add_command(docs)
 main.add_command(cal)
 main.add_command(forms)
+main.add_command(slides)
 
 
 if __name__ == "__main__":

@@ -135,6 +135,18 @@ desk (CLI entry point)
 │   ├── delete-item    → Delete a question or section
 │   ├── publish        → Publish form and accept responses
 │   └── unpublish      → Unpublish form (stops accepting)
+├── slides             → Google Slides operations
+│   ├── create         → Create a new presentation
+│   ├── read           → Read presentation text, slide by slide
+│   ├── inspect        → Show structure with object IDs
+│   ├── export         → Export as PDF/PPTX/TXT
+│   ├── add-slide      → Add a slide with a predefined layout
+│   ├── delete-slide   → Delete a slide (by index or object ID)
+│   ├── delete-object  → Delete a page element by object ID
+│   ├── duplicate-slide → Duplicate a slide
+│   ├── move-slide     → Reorder a slide
+│   ├── insert-text    → Insert text into a shape/placeholder
+│   └── replace-text   → Find and replace text across the deck
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events
@@ -161,12 +173,14 @@ Config/Tokens: ~/.desk/
 - `src/desk/commands/docs.py` - Docs commands
 - `src/desk/commands/cal.py` - Calendar commands
 - `src/desk/commands/forms.py` - Forms commands
+- `src/desk/commands/slides.py` - Slides commands
 - `src/desk/services/gmail.py` - GmailClient API wrapper
 - `src/desk/services/drive.py` - DriveClient API wrapper
 - `src/desk/services/sheets.py` - SheetsClient API wrapper
 - `src/desk/services/docs.py` - DocsClient API wrapper
 - `src/desk/services/calendar.py` - CalendarClient API wrapper
 - `src/desk/services/forms.py` - FormsClient API wrapper
+- `src/desk/services/slides.py` - SlidesClient API wrapper
 
 ## Adding a New Service
 
