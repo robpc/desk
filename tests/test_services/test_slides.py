@@ -829,6 +829,66 @@ class TestAddSlidePlaceholders:
         assert len(ph) == 2
 
 
+class TestAddSlideInlineFill:
+    """Tests for add-slide inline placeholder fills (ADR-030, Idea 061b)."""
+
+    def _setup(self, presentations, placeholder_types):
+        presentations.batchUpdate.return_value.execute.return_value = {
+            "replies": [{"createSlide": {"objectId": "new"}}]
+        }
+        presentations.pages.return_value.get.return_value.execute.return_value = {
+            "pageElements": [
+                {"objectId": f"ph_{t}", "shape": {"placeholder": {"type": t}}}
+                for t in placeholder_types
+            ]
+        }
+
+    def test_fills_title_and_body_in_one_call(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._setup(presentations, ["TITLE", "BODY"])
+
+        result = client.add_slide("p1", layout="TITLE_AND_BODY", title="T", body="B")
+
+        # createSlide batch, then a fill batch
+        assert presentations.batchUpdate.call_count == 2
+        fill_reqs = presentations.batchUpdate.call_args_list[1][1]["body"]["requests"]
+        targets = {r["insertText"]["objectId"]: r["insertText"]["text"] for r in fill_reqs}
+        assert targets == {"ph_TITLE": "T", "ph_BODY": "B"}
+        assert {"field": "title", "objectId": "ph_TITLE"} in result["filled"]
+
+    def test_title_matches_centered_title(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._setup(presentations, ["CENTERED_TITLE", "SUBTITLE"])
+
+        client.add_slide("p1", layout="TITLE", title="Hi")
+
+        fill_reqs = presentations.batchUpdate.call_args_list[1][1]["body"]["requests"]
+        assert fill_reqs[0]["insertText"]["objectId"] == "ph_CENTERED_TITLE"
+
+    def test_missing_placeholder_rolls_back_slide(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._setup(presentations, ["TITLE"])  # no BODY
+
+        with pytest.raises(ValueError, match="--body: layout .* no matching placeholder"):
+            client.add_slide("p1", layout="TITLE_ONLY", title="T", body="B")
+
+        # createSlide, then a deleteObject rollback — and no insertText fill.
+        assert presentations.batchUpdate.call_count == 2
+        batches = [c[1]["body"]["requests"] for c in presentations.batchUpdate.call_args_list]
+        assert "createSlide" in batches[0][0]
+        assert batches[1][0]["deleteObject"]["objectId"] == "new"
+        assert not any("insertText" in r for b in batches for r in b)
+
+    def test_no_fills_no_second_batch(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._setup(presentations, ["TITLE", "BODY"])
+
+        result = client.add_slide("p1", layout="TITLE_AND_BODY")
+
+        assert presentations.batchUpdate.call_count == 1
+        assert result["filled"] == []
+
+
 class TestSlidesExport:
     """Tests for SlidesClient.export."""
 

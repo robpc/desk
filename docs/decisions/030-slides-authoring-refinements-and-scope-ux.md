@@ -68,9 +68,13 @@ API.
   instead of a post-create fetch — cleaner in theory but requires knowing each layout's
   placeholder set; the post-create fetch is simpler and robust. Revisit if the extra get
   matters.
-- **Inline `add-slide --title/--body`** (Idea 061b) — deferred. Emitting placeholder ids
-  removes the mandatory `inspect`; whether inline fill is still worth it is a follow-up
-  decision once the new flow is exercised.
+- **Inline `add-slide --title/--body`** (Idea 061b) — initially deferred, then **shipped**
+  in this same change at the maintainer's request: `add-slide` accepts
+  `--title/--subtitle/--body` and fills the matching layout placeholders at creation, so a
+  populated slide is one call. A requested placeholder the layout lacks raises
+  `INVALID_INPUT` and rolls back the just-created slide (no orphan). Filling text into
+  arbitrary (non-layout) positions remains the job of `insert-text`/`insert-shape`. The
+  batch/outline forms (061c/d, 057) stay parked under ADR-003.
 
 ## Consequences
 

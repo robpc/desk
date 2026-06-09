@@ -136,7 +136,9 @@ class TestAddSlide:
         output = json.loads(result.output)
         assert output["targets"][0]["slide_object_id"] == "new"
         assert "delete-object" in output["undo"]["command"]
-        client.add_slide.assert_called_once_with("p1", layout="TITLE_AND_BODY", index=None)
+        client.add_slide.assert_called_once_with(
+            "p1", layout="TITLE_AND_BODY", index=None, title=None, subtitle=None, body=None
+        )
 
     def test_add_slide_rejects_invalid_layout(self, runner, mock_get_credentials, mock_slides_client_class):
         from desk.commands.slides import slides
@@ -502,6 +504,49 @@ class TestAddSlideEmitsPlaceholders:
         output = json.loads(result.output)
         phs = output["changes"]["placeholders"]
         assert {"type": "TITLE", "objectId": "t1"} in phs
+
+
+class TestAddSlideInlineFill:
+    def test_add_slide_with_title_body(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.add_slide.return_value = {
+            "presentationId": "p1", "objectId": "new", "layout": "TITLE_AND_BODY",
+            "placeholders": [{"type": "TITLE", "objectId": "t1"}, {"type": "BODY", "objectId": "b1"}],
+            "filled": [{"field": "title", "objectId": "t1"}, {"field": "body", "objectId": "b1"}],
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["add-slide", "p1", "--title", "Q3", "--body", "Up 12%", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output["changes"]["filled"]) == 2
+        client.add_slide.assert_called_once_with(
+            "p1", layout="TITLE_AND_BODY", index=None, title="Q3", subtitle=None, body="Up 12%"
+        )
+
+    def test_add_slide_missing_placeholder_is_invalid_input(
+        self, runner, mock_get_credentials, mock_slides_client_class
+    ):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.add_slide.side_effect = ValueError(
+            "--body: layout TITLE_ONLY has no matching placeholder (available: TITLE)."
+        )
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["add-slide", "p1", "--layout", "TITLE_ONLY", "--body", "x", "--json"]
+        )
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
 
 
 class TestSetNotesCommand:

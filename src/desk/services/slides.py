@@ -495,22 +495,42 @@ class SlidesClient:
 
     # ── Slide structure ─────────────────────────────────────────────────
 
+    # Logical fill fields → the placeholder type(s) they target, in priority order.
+    _PLACEHOLDER_TARGETS = {
+        "title": ("TITLE", "CENTERED_TITLE"),
+        "subtitle": ("SUBTITLE",),
+        "body": ("BODY",),
+    }
+
+    @staticmethod
+    def _match_placeholder(placeholders: list[dict], types: tuple[str, ...]) -> str | None:
+        """Return the objectId of the first placeholder matching any of types."""
+        for ph in placeholders:
+            if ph.get("type") in types:
+                return ph.get("objectId")
+        return None
+
     def add_slide(
         self, presentation_id: str, layout: str = "TITLE_AND_BODY",
         index: int | None = None, object_id: str | None = None,
+        title: str | None = None, body: str | None = None,
+        subtitle: str | None = None,
     ) -> dict:
-        """Add a slide with a predefined layout.
+        """Add a slide with a predefined layout, optionally filling placeholders.
 
         Args:
             presentation_id: The presentation ID
             layout: A predefined layout (see PREDEFINED_LAYOUTS)
             index: 0-based insertion position, or None to append
             object_id: Optional client-supplied objectId for the new slide
+            title/subtitle/body: Optional text to insert into the matching
+                placeholder at creation, so a populated slide is one call
+                (ADR-030, Idea 061b). Raises ValueError if the layout lacks a
+                requested placeholder.
 
         Returns:
-            Dict with presentationId, objectId (the new slide's id), layout, and
-            placeholders — a list of {type, objectId} for the slide's layout
-            placeholders, so callers can fill them without a separate inspect.
+            Dict with presentationId, objectId (the new slide's id), layout,
+            placeholders ({type, objectId}), and filled ([{field, objectId}]).
         """
         try:
             request: dict = {
@@ -531,11 +551,40 @@ class SlidesClient:
 
             placeholders = self._slide_placeholders(presentation_id, new_id) if new_id else []
 
+            # Inline placeholder fills. Resolve+validate all targets first; if a
+            # requested placeholder is missing, roll back the just-created slide so
+            # a bad fill doesn't orphan a blank slide, then raise.
+            fills = [(f, t) for f, t in (
+                ("title", title), ("subtitle", subtitle), ("body", body),
+            ) if t is not None]
+            fill_requests = []
+            filled = []
+            for field, text in fills:
+                oid = self._match_placeholder(placeholders, self._PLACEHOLDER_TARGETS[field])
+                if not oid:
+                    available = sorted({p.get("type") for p in placeholders if p.get("type")})
+                    if new_id:
+                        self._batch_update(
+                            presentation_id, [{"deleteObject": {"objectId": new_id}}]
+                        )
+                    raise ValueError(
+                        f"--{field}: layout {layout} has no matching placeholder "
+                        f"(available: {', '.join(available) or 'none'})."
+                    )
+                fill_requests.append({"insertText": {
+                    "objectId": oid, "text": text, "insertionIndex": 0,
+                }})
+                filled.append({"field": field, "objectId": oid})
+
+            if fill_requests:
+                self._batch_update(presentation_id, fill_requests)
+
             return {
                 "presentationId": presentation_id,
                 "objectId": new_id,
                 "layout": layout,
                 "placeholders": placeholders,
+                "filled": filled,
             }
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")

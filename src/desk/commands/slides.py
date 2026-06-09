@@ -310,27 +310,33 @@ def export(presentation_id: str, dest: str, fmt: str, quiet: bool, as_json: bool
     help="Predefined slide layout",
 )
 @click.option("--index", "-i", type=int, default=None, help="0-based insertion position")
+@click.option("--title", default=None, help="Fill the slide's title placeholder")
+@click.option("--subtitle", default=None, help="Fill the slide's subtitle placeholder")
+@click.option("--body", default=None, help="Fill the slide's body placeholder")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def add_slide(
-    presentation_id: str, layout: str, index: int | None, quiet: bool, as_json: bool,
+    presentation_id: str, layout: str, index: int | None,
+    title: str | None, subtitle: str | None, body: str | None,
+    quiet: bool, as_json: bool,
 ) -> None:
-    """Add a slide with a predefined layout.
+    """Add a slide with a predefined layout, optionally filling its placeholders.
 
-    With --json, the response includes the new slide's placeholder objectIds and
-    types, so you can `insert-text` into them directly without a separate inspect.
+    Pass --title/--subtitle/--body to fill the layout's placeholders at creation,
+    so a populated slide is one call (no inspect, no separate insert-text). With
+    --json, the response also lists the slide's placeholder objectIds and types.
 
     Layout note: placeholders depend on the layout. SECTION_HEADER is title-only;
     for a section slide with a tagline use SECTION_TITLE_AND_DESCRIPTION (TITLE +
-    SUBTITLE + BODY). TITLE_AND_BODY gives TITLE + BODY; BLANK has none.
+    SUBTITLE + BODY). TITLE_AND_BODY gives TITLE + BODY; BLANK has none. Filling a
+    placeholder the layout lacks is an error.
 
     Examples:
 
-        desk slides add-slide <id>
+        desk slides add-slide <id> --title "Q3 Review" --body "Revenue up 12%"
 
-        desk slides add-slide <id> --layout TITLE_ONLY
-
-        desk slides add-slide <id> --layout SECTION_TITLE_AND_DESCRIPTION
+        desk slides add-slide <id> --layout SECTION_TITLE_AND_DESCRIPTION \\
+            --title "Part Two" --subtitle "Where we're headed"
 
         desk slides add-slide <id> --layout BLANK --index 0
     """
@@ -345,7 +351,12 @@ def add_slide(
 
     client = _get_client(as_json)
     try:
-        result = client.add_slide(presentation_id, layout=layout, index=index)
+        result = client.add_slide(
+            presentation_id, layout=layout, index=index,
+            title=title, subtitle=subtitle, body=body,
+        )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
     except Exception as e:
         _handle_api_error(e, as_json, {"presentation_id": presentation_id, "layout": layout})
 
@@ -358,6 +369,7 @@ def add_slide(
             # Hand back placeholder objectIds so the caller can insert-text
             # without a separate inspect (ADR-030).
             "placeholders": result.get("placeholders", []),
+            "filled": result.get("filled", []),
         },
         undo_command=(
             f"desk slides delete-object {presentation_id} {result.get('objectId')} --yes"

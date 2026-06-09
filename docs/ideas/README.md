@@ -47,7 +47,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 058 | [Bug — docs export supportsAllDrives](058-docs-export-supportsalldrives-bug.md) | idea | S | Fix probable latent crash in docs export |
 | 059 | [Slides Speaker Notes](059-slides-speaker-notes.md) | implemented | S | Set per-slide speaker notes (core deck gap) |
 | 060 | [Scope-Mismatch Re-Auth UX](060-scope-mismatch-reauth-ux.md) | implemented | S | Tell users to re-auth on new-scope 403s, not "request access" |
-| 061 | [Slides Authoring Ergonomics](061-slides-authoring-ergonomics.md) | idea | M | Fewer round-trips per slide; (a) done via 062, (b) inline fill open |
+| 061 | [Slides Authoring Ergonomics](061-slides-authoring-ergonomics.md) | partially-implemented | M | (a) placeholder ids + (b) inline fill done; (c)/(d) open |
 | 062 | [add-slide emit placeholder ids](062-slides-add-slide-emit-placeholder-ids.md) | implemented | S | Remove the mandatory inspect between add-slide and insert-text |
 | 063 | [SECTION_HEADER tagline coverage](063-slides-section-header-placeholders.md) | implemented | S | Resolved as docs: use SECTION_TITLE_AND_DESCRIPTION |
 

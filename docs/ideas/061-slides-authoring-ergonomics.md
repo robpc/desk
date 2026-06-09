@@ -1,13 +1,18 @@
 ---
 id: 061
 title: Slides Authoring Ergonomics — fewer round-trips per slide
-status: idea
+status: partially-implemented
 effort: M
 value: Cut the add-slide → inspect → insert-text-per-placeholder loop down for multi-slide decks
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
+
+> **Status (ADR-030):** (a) emit placeholder ids — **done** (Idea 062, removes the
+> mandatory inspect). (b) inline `add-slide --title/--subtitle/--body` — **done** (one-call
+> populated slide; bad fill rolls back the slide). (c) logical `insert-text` targets and
+> (d) batch/outline deck build remain **open** (d overlaps Idea 057, parked under ADR-003).
 
 # Idea 061: Slides Authoring Ergonomics — fewer round-trips per slide
 
