@@ -586,6 +586,59 @@ class TestSetNotesCommand:
         client.set_notes.assert_called_once_with("p1", "0", "more", mode="append")
 
 
+class TestSetCellCommand:
+    def test_set_cell(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_cell.return_value = {
+            "presentationId": "p1", "objectId": "tbl", "row": 0, "col": 1,
+            "mode": "replace", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["set-cell", "p1", "tbl", "Q1", "--row", "0", "--col", "1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["operation"] == "set-cell"
+        assert output["changes"]["row"] == 0 and output["changes"]["col"] == 1
+        client.set_cell.assert_called_once_with("p1", "tbl", 0, 1, "Q1", mode="replace")
+
+    def test_set_cell_out_of_range_is_invalid_input(
+        self, runner, mock_get_credentials, mock_slides_client_class
+    ):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_cell.side_effect = ValueError("Cell (5,0) out of range for a 2x2 table.")
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["set-cell", "p1", "tbl", "x", "--row", "5", "--col", "0", "--json"]
+        )
+
+        assert result.exit_code == 1
+        assert json.loads(result.output)["error"]["code"] == "INVALID_INPUT"
+
+
+class TestErrorSuggestionsNotMailLeaked:
+    def test_slides_invalid_input_has_no_gmail_suggestions(
+        self, runner, mock_get_credentials, mock_slides_client_class
+    ):
+        from desk.commands.slides import slides
+
+        # A slides validation error (negative index) must not suggest mail commands.
+        result = runner.invoke(slides, ["add-slide", "p1", "--index", "-1", "--json"])
+
+        assert result.exit_code == 1
+        suggestions = " ".join(json.loads(result.output)["error"]["suggestions"]).lower()
+        assert "desk mail search" not in suggestions
+        assert "message id" not in suggestions
+
+
 class TestScopeErrorClassification:
     def test_scope_error_maps_to_insufficient_scopes(
         self, runner, mock_get_credentials, mock_slides_client_class

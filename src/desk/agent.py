@@ -127,9 +127,9 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "See Gmail search operators: https://support.google.com/mail/answer/7190",
     ],
     ErrorCode.INVALID_INPUT: [
-        "Message IDs are hex strings like '19c3aa4804ae3ab4'",
-        "Use `desk mail search` to find valid message IDs",
-        "Check for typos or truncated IDs",
+        "Check the command's arguments and any IDs you passed",
+        "IDs must match the target resource and not be truncated",
+        "See the command's --help for the expected inputs",
     ],
     ErrorCode.OPERATION_FAILED: [
         "Check the error message for details",

@@ -52,6 +52,12 @@ idea → exploring → planned → adr-created → (implemented)
 | 063 | [SECTION_HEADER tagline coverage](063-slides-section-header-placeholders.md) | implemented | S | Resolved as docs: use SECTION_TITLE_AND_DESCRIPTION |
 | 064 | [Slides Placement Verification](064-slides-placement-verification.md) | implemented | M | inspect reports bounding boxes + off-slide/overlap flags |
 | 065 | [Slides Relative Anchoring](065-slides-relative-anchoring.md) | idea | M | Position "under the title" vs slide-absolute regions (holding) |
+| 066 | [Slides Table Cell Fill](066-slides-table-cell-fill.md) | implemented | S | set-cell fills table cells (were write-only) |
+| 067 | [Service-Agnostic INVALID_INPUT Suggestions](067-error-suggestions-service-agnostic.md) | implemented | S | Non-mail errors stop leaking Gmail help |
+| 068 | [Local / Drive Image Source](068-local-and-drive-image-source.md) | idea | M | insert-image from a local file or Drive id (docs+slides) |
+| 069 | [Slides — list theme palette](069-slides-list-theme-palette.md) | idea | S | Show what ACCENT1..6/DARK1/LIGHT1 resolve to |
+| 070 | [Slides Table Enhancements](070-slides-table-enhancements.md) | idea | M | Reposition, bulk --data fill, region sizing |
+| 071 | [Slides Shape Text Alignment](071-slides-shape-text-alignment.md) | idea | S | Center/align text in a shape (h/v) |
 
 ## Adding an Idea
 

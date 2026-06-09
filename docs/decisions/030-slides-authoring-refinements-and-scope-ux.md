@@ -59,6 +59,23 @@ misleading "request access from the owner":
 tagline. Resolution is documentation in `add-slide --help`, not code — verified against the
 API.
 
+### 5. Table cell fill (Idea 066) — new command `desk slides set-cell`
+
+Tables were write-only shells (`insert-text` on a bare table objectId is rejected). The
+Slides API addresses cells by a `cellLocation` on the table objectId; `set-cell <id>
+<table-object-id> "<text>" --row R --col C [--mode replace|append]` fills the cell at
+(row, col). No per-cell objectIds — the agent uses the table objectId from `inspect`.
+
+### 6. Service-agnostic INVALID_INPUT suggestions (Idea 067)
+
+The global `INVALID_INPUT` default suggestions were Gmail-specific (legacy), so every
+non-mail service leaked "use `desk mail search`" on validation errors. Made the default
+service-agnostic and preserved mail's message-ID guidance explicitly in mail's handler.
+Fixes slides/docs/forms/drive/cal at the root.
+
+(Reported alongside these: "exit codes unreliable" — **not reproducible**; all slides error
+paths return exit 1 when measured directly. The "exit 0" was a `PIPESTATUS` artifact.)
+
 ## Alternatives Considered
 
 - **Reclassify scope errors across all services at once** — correct eventually, but a

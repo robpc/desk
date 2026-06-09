@@ -891,6 +891,70 @@ class SlidesClient:
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 
+    def set_cell(
+        self, presentation_id: str, table_object_id: str,
+        row: int, col: int, text: str, mode: str = "replace",
+    ) -> dict:
+        """Set the text of a table cell (ADR-030, Idea 066).
+
+        Table cells aren't separate objects — the Slides API addresses them via
+        a ``cellLocation`` on the table's objectId. ``insert-text`` against a
+        bare table objectId is rejected; this fills the cell at (row, col).
+
+        Returns:
+            Dict with presentationId, objectId (table), row, col, mode, status.
+        """
+        element = self._find_element(presentation_id, table_object_id)
+        table = element.get("table")
+        if table is None:
+            raise ValueError(
+                f"Object {table_object_id} is not a table. "
+                "Use insert-text for shapes/placeholders."
+            )
+        rows = table.get("tableRows", [])
+        n_rows = len(rows)
+        n_cols = len(rows[0].get("tableCells", [])) if rows else 0
+        if not (0 <= row < n_rows) or not (0 <= col < n_cols):
+            raise ValueError(
+                f"Cell ({row},{col}) out of range for a {n_rows}x{n_cols} table."
+            )
+
+        cell = rows[row].get("tableCells", [])[col]
+        cell_len = len(self._extract_text_elements(cell.get("text", {})))
+        cell_location = {"rowIndex": row, "columnIndex": col}
+
+        requests: list[dict] = []
+        if mode == "append":
+            requests.append({"insertText": {
+                "objectId": table_object_id,
+                "cellLocation": cell_location,
+                "text": text,
+                "insertionIndex": max(0, cell_len - 1),
+            }})
+        else:  # replace
+            if cell_len > 1:
+                requests.append({"deleteText": {
+                    "objectId": table_object_id,
+                    "cellLocation": cell_location,
+                    "textRange": {"type": "ALL"},
+                }})
+            requests.append({"insertText": {
+                "objectId": table_object_id,
+                "cellLocation": cell_location,
+                "text": text,
+                "insertionIndex": 0,
+            }})
+
+        try:
+            self._batch_update(presentation_id, requests)
+            return {
+                "presentationId": presentation_id,
+                "objectId": table_object_id,
+                "row": row, "col": col, "mode": mode, "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
     # ── Visual elements (Phase 2, ADR-027) ──────────────────────────────
 
     def insert_image(

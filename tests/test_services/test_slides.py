@@ -980,6 +980,62 @@ class TestAddSlideInlineFill:
         assert result["filled"] == []
 
 
+class TestSetCell:
+    """Tests for SlidesClient.set_cell (ADR-030, Idea 066)."""
+
+    def _table(self, presentations, cell_text=""):
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [{
+                "objectId": "tbl",
+                "table": {"tableRows": [
+                    {"tableCells": [
+                        {"text": {"textElements": [{"textRun": {"content": cell_text}}]}},
+                        {"text": {}},
+                    ]},
+                    {"tableCells": [{"text": {}}, {"text": {}}]},
+                ]},
+            }]}],
+        }
+
+    def test_set_cell_replace_uses_cell_location(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._table(presentations, cell_text="old\n")
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.set_cell("p1", "tbl", 0, 0, "new")
+
+        assert result["row"] == 0 and result["col"] == 0
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert reqs[0]["deleteText"]["cellLocation"] == {"rowIndex": 0, "columnIndex": 0}
+        assert reqs[1]["insertText"]["cellLocation"] == {"rowIndex": 0, "columnIndex": 0}
+        assert reqs[1]["insertText"]["objectId"] == "tbl"
+        assert reqs[1]["insertText"]["text"] == "new"
+
+    def test_set_cell_replace_empty_skips_delete(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._table(presentations, cell_text="")
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_cell("p1", "tbl", 1, 1, "x")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert len(reqs) == 1 and "insertText" in reqs[0]
+
+    def test_set_cell_out_of_range_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._table(presentations)
+        with pytest.raises(ValueError, match="out of range"):
+            client.set_cell("p1", "tbl", 5, 0, "x")
+
+    def test_set_cell_non_table_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [{"objectId": "sh", "shape": {}}]}]
+        }
+        with pytest.raises(ValueError, match="not a table"):
+            client.set_cell("p1", "sh", 0, 0, "x")
+
+
 class TestSlidesExport:
     """Tests for SlidesClient.export."""
 

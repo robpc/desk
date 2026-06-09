@@ -667,6 +667,54 @@ def set_notes(
     output_result(receipt, as_json, quiet)
 
 
+@slides.command("set-cell")
+@click.argument("presentation_id")
+@click.argument("table_object_id")
+@click.argument("text")
+@click.option("--row", required=True, type=int, help="0-based row index")
+@click.option("--col", required=True, type=int, help="0-based column index")
+@click.option(
+    "--mode", type=click.Choice(["replace", "append"]), default="replace",
+    help="Replace the cell's text (default) or append to it",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def set_cell(
+    presentation_id: str, table_object_id: str, text: str,
+    row: int, col: int, mode: str, quiet: bool, as_json: bool,
+) -> None:
+    """Set the text of a table cell.
+
+    Table cells aren't separate objects — pass the TABLE's objectId (from
+    `desk slides inspect`) plus --row/--col. `insert-text` does not work on
+    tables; use this instead.
+
+    Examples:
+
+        desk slides set-cell <id> <table-object-id> "Q1" --row 0 --col 0
+
+        desk slides set-cell <id> <table-object-id> "more" --row 1 --col 2 --mode append
+    """
+    client = _get_client(as_json)
+    try:
+        client.set_cell(presentation_id, table_object_id, row, col, text, mode=mode)
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json,
+            {"presentation_id": presentation_id, "object_id": table_object_id,
+             "row": row, "col": col},
+        )
+
+    receipt = operation_receipt(
+        operation="set-cell",
+        target={"id": presentation_id, "object_id": table_object_id},
+        changes={"row": row, "col": col, "mode": mode, "text_length": len(text)},
+    )
+    output_result(receipt, as_json, quiet)
+
+
 # ── Visual elements (Phase 2, ADR-027) ──────────────────────────────────────
 
 @slides.command("insert-image")

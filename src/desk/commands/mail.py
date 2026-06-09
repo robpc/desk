@@ -157,6 +157,14 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
 
     # Get suggestions for this error code
     suggestions = ERROR_SUGGESTIONS.get(code, [])
+    # Mail keeps its message-ID-specific guidance for invalid-input API errors;
+    # the global INVALID_INPUT default is service-agnostic (see ADR-030 follow-up).
+    if code == ErrorCode.INVALID_INPUT:
+        suggestions = [
+            "Message IDs are hex strings like '19c3aa4804ae3ab4'",
+            "Use `desk mail search` to find valid message IDs",
+            "Check for typos or truncated IDs",
+        ]
 
     if as_json:
         error = structured_error(
