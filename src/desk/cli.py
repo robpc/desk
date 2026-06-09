@@ -181,6 +181,7 @@ def _get_capabilities() -> dict:
                     "style": {"description": "Style a shape's text", "batch": False, "destructive": False},
                     "format": {"description": "Fill/outline a shape or image", "batch": False, "destructive": False},
                     "place": {"description": "Move/fit an element into a region", "batch": False, "destructive": False},
+                    "arrange": {"description": "Distribute elements as columns/rows/grid", "batch": True, "destructive": False},
                 },
             },
         },

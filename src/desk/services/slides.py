@@ -61,8 +61,13 @@ REGIONS = [
     "left", "center", "right",
     "bottom-left", "bottom", "bottom-right",
     "left-half", "right-half", "top-half", "bottom-half",
+    "left-third", "center-third", "right-third",
+    "top-third", "middle-third", "bottom-third",
     "full",
 ]
+
+# Element distribution modes for `arrange` (ADR-029).
+ARRANGE_MODES = ["columns", "rows", "grid"]
 
 # Layout geometry, in points: outer margin and inter-cell gutter.
 _REGION_MARGIN = 24.0
@@ -125,6 +130,18 @@ def _region_box(
     if region == "bottom-half":
         return cx, cy + half_h + g, cw, half_h
 
+    # Full-height column thirds and full-width row thirds.
+    third_w = (cw - 2 * g) / 3
+    third_h = (ch - 2 * g) / 3
+    column_thirds = {"left-third": 0, "center-third": 1, "right-third": 2}
+    if region in column_thirds:
+        col = column_thirds[region]
+        return cx + col * (third_w + g), cy, third_w, ch
+    row_thirds = {"top-third": 0, "middle-third": 1, "bottom-third": 2}
+    if region in row_thirds:
+        row = row_thirds[region]
+        return cx, cy + row * (third_h + g), cw, third_h
+
     grid = {
         "top-left": (0, 0), "top": (1, 0), "top-right": (2, 0),
         "left": (0, 1), "center": (1, 1), "right": (2, 1),
@@ -138,6 +155,43 @@ def _region_box(
     x = cx + col * (col_w + g)
     y = cy + row * (row_h + g)
     return x, y, col_w, row_h
+
+
+def _grid_cells(
+    area: tuple[float, float, float, float], n: int, mode: str,
+) -> list[tuple[float, float, float, float]]:
+    """Split an (x, y, w, h) area into n cells for `arrange`.
+
+    columns → n side-by-side; rows → n stacked; grid → near-square, row-major.
+    Returns boxes in points, in placement order.
+    """
+    import math
+
+    if n < 1:
+        return []
+    ax, ay, aw, ah = area
+    g = _REGION_GUTTER
+
+    if mode == "columns":
+        cols, rows = n, 1
+    elif mode == "rows":
+        cols, rows = 1, n
+    elif mode == "grid":
+        cols = math.ceil(math.sqrt(n))
+        rows = math.ceil(n / cols)
+    else:
+        raise ValueError(f"Unknown arrange mode: {mode}. Valid: {', '.join(ARRANGE_MODES)}.")
+
+    cell_w = (aw - (cols - 1) * g) / cols
+    cell_h = (ah - (rows - 1) * g) / rows
+
+    cells = []
+    for i in range(n):
+        row, col = divmod(i, cols)
+        x = ax + col * (cell_w + g)
+        y = ay + row * (cell_h + g)
+        cells.append((x, y, cell_w, cell_h))
+    return cells
 
 
 class SlidesClient:
@@ -913,6 +967,33 @@ class SlidesClient:
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 
+    def _fit_transform_request(self, element: dict, box: tuple) -> dict:
+        """Build an ABSOLUTE updatePageElementTransform fitting element to box.
+
+        The API's base size is the un-scaled size, so scale = target / base.
+        Raises RuntimeError if the element has no resolvable size.
+        """
+        object_id = element.get("objectId", "")
+        size = element.get("size", {})
+        base_w = self._dimension_pt(size.get("width"), 0.0)
+        base_h = self._dimension_pt(size.get("height"), 0.0)
+        if base_w <= 0 or base_h <= 0:
+            raise RuntimeError(
+                f"Cannot place object {object_id}: it has no resolvable size."
+            )
+        box_x, box_y, box_w, box_h = box
+        return {
+            "updatePageElementTransform": {
+                "objectId": object_id,
+                "applyMode": "ABSOLUTE",
+                "transform": {
+                    "scaleX": box_w / base_w, "scaleY": box_h / base_h,
+                    "translateX": box_x, "translateY": box_y,
+                    "unit": "PT",
+                },
+            }
+        }
+
     def place_element(
         self, presentation_id: str, object_id: str, region: str,
     ) -> dict:
@@ -925,39 +1006,65 @@ class SlidesClient:
             Dict with presentationId, objectId, region, and status.
         """
         element = self._find_element(presentation_id, object_id)
-        size = element.get("size", {})
-        base_w = self._dimension_pt(size.get("width"), 0.0)
-        base_h = self._dimension_pt(size.get("height"), 0.0)
-        if base_w <= 0 or base_h <= 0:
-            raise RuntimeError(
-                f"Cannot place object {object_id}: it has no resolvable size."
-            )
-
         page_w, page_h = self._page_size_pt(presentation_id)
-        box_x, box_y, box_w, box_h = _region_box(page_w, page_h, region)
-
-        # Element's existing transform may already carry scale; the API's
-        # base size is the un-scaled size, so scale = target / base.
-        scale_x = box_w / base_w
-        scale_y = box_h / base_h
+        box = _region_box(page_w, page_h, region)
+        request = self._fit_transform_request(element, box)
 
         try:
-            self._batch_update(
-                presentation_id,
-                [{
-                    "updatePageElementTransform": {
-                        "objectId": object_id,
-                        "applyMode": "ABSOLUTE",
-                        "transform": {
-                            "scaleX": scale_x, "scaleY": scale_y,
-                            "translateX": box_x, "translateY": box_y,
-                            "unit": "PT",
-                        },
-                    }
-                }],
-            )
+            self._batch_update(presentation_id, [request])
             return {"presentationId": presentation_id, "objectId": object_id,
                     "region": region, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def arrange_elements(
+        self, presentation_id: str, object_ids: list[str], mode: str,
+        region: str | None = None,
+    ) -> dict:
+        """Distribute existing elements into evenly-sized cells (ADR-029).
+
+        The target area is the slide content area, or a named region if given.
+        Elements are fitted to their cells in argument order. All transforms
+        are sent in one batchUpdate.
+
+        Returns:
+            Dict with presentationId, objectIds, mode, region, and status.
+        """
+        if not object_ids:
+            raise ValueError("arrange requires at least one object id.")
+
+        # Fetch once; build an objectId → element map across all slides.
+        pres = self._get(presentation_id)
+        index: dict[str, dict] = {}
+        for slide in pres.get("slides", []):
+            for element in slide.get("pageElements", []):
+                index[element.get("objectId", "")] = element
+
+        elements = []
+        for oid in object_ids:
+            if oid not in index:
+                raise RuntimeError(
+                    f"Object not found: {oid}. "
+                    f"Use 'desk slides inspect {presentation_id}' to list objectIds."
+                )
+            elements.append(index[oid])
+
+        size = pres.get("pageSize", {})
+        page_w = self._dimension_pt(size.get("width"), 720.0)
+        page_h = self._dimension_pt(size.get("height"), 405.0)
+        area = _region_box(page_w, page_h, region) if region else _region_box(
+            page_w, page_h, "full"
+        )
+        cells = _grid_cells(area, len(elements), mode)
+        requests = [
+            self._fit_transform_request(el, cell)
+            for el, cell in zip(elements, cells)
+        ]
+
+        try:
+            self._batch_update(presentation_id, requests)
+            return {"presentationId": presentation_id, "objectIds": object_ids,
+                    "mode": mode, "region": region, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 

@@ -445,6 +445,43 @@ class TestRegionOnInsert:
         )
 
 
+class TestArrangeCommand:
+    def test_arrange_columns(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.arrange_elements.return_value = {
+            "presentationId": "p1", "objectIds": ["a", "b", "c"],
+            "mode": "columns", "region": None, "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["arrange", "p1", "a", "b", "c", "--as", "columns", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["mode"] == "columns"
+        assert output["changes"]["count"] == 3
+        assert output["targets"][0]["object_ids"] == ["a", "b", "c"]
+        client.arrange_elements.assert_called_once_with(
+            "p1", ["a", "b", "c"], "columns", region=None
+        )
+
+    def test_arrange_requires_objects(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["arrange", "p1", "--as", "rows"])
+        assert result.exit_code != 0  # nargs=-1 required
+
+    def test_arrange_rejects_bad_mode(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["arrange", "p1", "a", "--as", "spiral"])
+        assert result.exit_code != 0  # click.Choice rejects
+
+
 class TestExport:
     def test_export_writes_file(self, runner, mock_get_credentials, mock_slides_client_class, tmp_path):
         from desk.commands.slides import slides

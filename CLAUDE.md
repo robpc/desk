@@ -152,7 +152,8 @@ desk (CLI entry point)
 │   ├── insert-shape   → Insert a shape or text box (optionally with text)
 │   ├── style          → Style a shape's text (bold/color/font/size)
 │   ├── format         → Fill/outline a shape or image
-│   └── place          → Move/fit an element into a named region (top-right, etc.)
+│   ├── place          → Move/fit an element into a named region (top-right, etc.)
+│   └── arrange        → Distribute elements as columns/rows/grid
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events

@@ -11,9 +11,11 @@ adr: docs/decisions/028-slides-styling-and-relative-layout.md
 
 > **Phase 3a shipped** (ADR-028): text styling (`style`), shape/image fill+outline
 > (`format`), and a math-free relative-layout vocabulary (`--region` on inserts +
-> `place`). **Phase 3b remains** (see Open Questions / Notes): paragraph bullets,
-> element transforms beyond region-fit, slide backgrounds, layout/master apply, and
-> table-cell styling.
+> `place`).
+> **Phase 3b-i shipped** (ADR-029): multi-element `arrange` (columns/rows/grid, optionally
+> confined to a region) + richer regions (column/row thirds).
+> **Phase 3b remainder**: paragraph bullets/alignment in shapes, slide backgrounds,
+> layout/master apply, table-cell styling, aspect-preserving fit. (See Notes.)
 
 # Idea 056: Slides Phase 3 — Styling & Layout
 

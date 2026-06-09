@@ -23,6 +23,7 @@ from desk.agent import (
 from desk.auth import get_credentials, get_last_auth_failure
 from desk.console import error_console
 from desk.services.slides import (
+    ARRANGE_MODES,
     PREDEFINED_LAYOUTS,
     REGIONS,
     SHAPE_TYPES,
@@ -921,6 +922,58 @@ def place_cmd(
         operation="place",
         target={"id": presentation_id, "object_id": object_id},
         changes={"region": region},
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("arrange")
+@click.argument("presentation_id")
+@click.argument("object_ids", nargs=-1, required=True)
+@click.option("--as", "mode", type=click.Choice(ARRANGE_MODES), required=True,
+              help="Distribution: columns, rows, or grid")
+@click.option("--region", type=click.Choice(REGIONS), default=None,
+              help="Confine the arrangement to a region (default: whole slide)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def arrange_cmd(
+    presentation_id: str, object_ids: tuple[str, ...], mode: str,
+    region: str | None, quiet: bool, as_json: bool,
+) -> None:
+    """Distribute existing elements evenly as columns, rows, or a grid.
+
+    Name the elements and the arrangement; the command does the geometry.
+    Order is preserved (row-major for grid). Find objectIds with
+    `desk slides inspect <id>`.
+
+    Examples:
+
+        desk slides arrange <id> obj1 obj2 obj3 --as columns
+
+        desk slides arrange <id> a b c d --as grid
+
+        desk slides arrange <id> a b --as rows --region right-half
+    """
+    client = _get_client(as_json)
+    try:
+        client.arrange_elements(
+            presentation_id, list(object_ids), mode, region=region,
+        )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json,
+            {"presentation_id": presentation_id, "mode": mode, "count": len(object_ids)},
+        )
+
+    changes: dict = {"mode": mode, "count": len(object_ids)}
+    if region:
+        changes["region"] = region
+
+    receipt = operation_receipt(
+        operation="arrange",
+        target={"id": presentation_id, "object_ids": list(object_ids)},
+        changes=changes,
     )
     output_result(receipt, as_json, quiet)
 

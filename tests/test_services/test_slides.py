@@ -468,6 +468,104 @@ class TestRegionBox:
             _region_box(720, 405, "middle-ish")
 
 
+class TestRicherRegionsAndGridCells:
+    """Tests for thirds regions and _grid_cells (Phase 3b, ADR-029)."""
+
+    def test_column_thirds_span_full_height(self):
+        from desk.services.slides import _region_box
+
+        x, y, w, h = _region_box(720, 405, "center-third")
+        assert abs(h - (405 - 48)) < 1e-9
+        assert x > 24
+
+    def test_row_thirds_span_full_width(self):
+        from desk.services.slides import _region_box
+
+        x, y, w, h = _region_box(720, 405, "bottom-third")
+        assert abs(w - (720 - 48)) < 1e-9
+        assert y > 24
+
+    def test_grid_cells_columns_count_and_order(self):
+        from desk.services.slides import _grid_cells
+
+        cells = _grid_cells((0, 0, 300, 100), 3, "columns")
+        assert len(cells) == 3
+        assert cells[0][0] < cells[1][0] < cells[2][0]
+        assert cells[0][1] == cells[1][1] == cells[2][1]
+
+    def test_grid_cells_grid_is_near_square(self):
+        from desk.services.slides import _grid_cells
+
+        cells = _grid_cells((0, 0, 300, 300), 4, "grid")
+        assert len(cells) == 4
+        assert cells[0][1] == cells[1][1]
+        assert cells[2][1] > cells[0][1]
+
+    def test_grid_cells_unknown_mode_raises(self):
+        from desk.services.slides import _grid_cells
+
+        with pytest.raises(ValueError, match="Unknown arrange mode"):
+            _grid_cells((0, 0, 10, 10), 2, "spiral")
+
+
+class TestArrangeElements:
+    """Tests for SlidesClient.arrange_elements (Phase 3b, ADR-029)."""
+
+    def _pres(self, presentations, elements):
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": elements}],
+        }
+
+    def test_arrange_columns_emits_one_request_each(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        els = [
+            {"objectId": "a", "size": {"width": {"magnitude": 100, "unit": "PT"},
+                                       "height": {"magnitude": 50, "unit": "PT"}}},
+            {"objectId": "b", "size": {"width": {"magnitude": 100, "unit": "PT"},
+                                       "height": {"magnitude": 50, "unit": "PT"}}},
+        ]
+        self._pres(presentations, els)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.arrange_elements("p1", ["a", "b"], "columns")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert len(reqs) == 2
+        ax = reqs[0]["updatePageElementTransform"]["transform"]["translateX"]
+        bx = reqs[1]["updatePageElementTransform"]["transform"]["translateX"]
+        assert bx > ax
+        assert all(r["updatePageElementTransform"]["applyMode"] == "ABSOLUTE" for r in reqs)
+
+    def test_arrange_missing_object_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [{"objectId": "a", "size": {
+            "width": {"magnitude": 100, "unit": "PT"},
+            "height": {"magnitude": 50, "unit": "PT"}}}])
+
+        with pytest.raises(RuntimeError, match="Object not found"):
+            client.arrange_elements("p1", ["a", "ghost"], "columns")
+
+    def test_arrange_empty_raises(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="at least one"):
+            client.arrange_elements("p1", [], "columns")
+
+    def test_arrange_region_confines_area(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        els = [{"objectId": "a", "size": {"width": {"magnitude": 100, "unit": "PT"},
+                                          "height": {"magnitude": 50, "unit": "PT"}}}]
+        self._pres(presentations, els)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.arrange_elements("p1", ["a"], "columns", region="right-half")
+
+        tx = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]["translateX"]
+        assert tx > 360
+
+
 class TestStyleText:
     """Tests for SlidesClient.style_text (Phase 3a)."""
 
