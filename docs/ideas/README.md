@@ -50,6 +50,8 @@ idea → exploring → planned → adr-created → (implemented)
 | 061 | [Slides Authoring Ergonomics](061-slides-authoring-ergonomics.md) | partially-implemented | M | (a) placeholder ids + (b) inline fill done; (c)/(d) open |
 | 062 | [add-slide emit placeholder ids](062-slides-add-slide-emit-placeholder-ids.md) | implemented | S | Remove the mandatory inspect between add-slide and insert-text |
 | 063 | [SECTION_HEADER tagline coverage](063-slides-section-header-placeholders.md) | implemented | S | Resolved as docs: use SECTION_TITLE_AND_DESCRIPTION |
+| 064 | [Slides Placement Verification](064-slides-placement-verification.md) | idea | M | inspect reports bounding boxes so positioning is trustable sight-unseen |
+| 065 | [Slides Relative Anchoring](065-slides-relative-anchoring.md) | idea | M | Position "under the title" vs slide-absolute regions (holding) |
 
 ## Adding an Idea
 

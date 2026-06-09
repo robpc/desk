@@ -139,6 +139,18 @@ and (c) it remains a single-service primitive, not a workflow. It is not license
 vocabulary for convenience. Whether agents actually use regions/`arrange` well is being
 validated empirically against a real use case.
 
+**Field finding (2026-06-09, first real deck — 11 slides, text-heavy).** The
+layout+placeholder path carried 10/11 slides; the agent used `--region` exactly once
+(`insert-shape --region bottom`), used `--x/--y` zero times, and never called `place` or
+`arrange`. Read: the *simple* region escape hatch earned its place and matched the agent's
+mental model ("tagline at the bottom" → `--region bottom`, no fighting); the *elaborate*
+positioning (`arrange`, half/third regions, `place`) is **undertested and currently
+speculative** — do not invest further in positioning vocabulary until an image/layout-heavy
+deck demands it. The real gaps the agent hit were not expressiveness but **verification**
+(no way to confirm placement without exporting → Idea 064) and **relative anchoring**
+("under the title", not slide-absolute → Idea 065). This validates the narrow precedence
+above without endorsing breadth.
+
 ## Implementation Notes
 
 - `src/desk/services/slides.py`: `style_text`, `format_element`, region helpers
