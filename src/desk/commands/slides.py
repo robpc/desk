@@ -731,6 +731,44 @@ def set_cell(
     output_result(receipt, as_json, quiet)
 
 
+@slides.command("set-text")
+@click.argument("presentation_id")
+@click.argument("object_id")
+@click.argument("text")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def set_text(
+    presentation_id: str, object_id: str, text: str, quiet: bool, as_json: bool,
+) -> None:
+    """Replace a shape's entire text (keeps the shape).
+
+    Unlike insert-text (which appends) or replace-text (find/replace), this
+    clears the shape's text and sets a new value — so you don't have to
+    delete-object and re-create the shape to change its text. Find objectIds
+    with `desk slides inspect`.
+
+    Examples:
+
+        desk slides set-text <id> <object-id> "Updated heading"
+    """
+    client = _get_client(as_json)
+    try:
+        client.set_text(presentation_id, object_id, text)
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "object_id": object_id}
+        )
+
+    receipt = operation_receipt(
+        operation="set-text",
+        target={"id": presentation_id, "object_id": object_id},
+        changes={"text_length": len(text)},
+    )
+    output_result(receipt, as_json, quiet)
+
+
 # ── Visual elements (Phase 2, ADR-027) ──────────────────────────────────────
 
 @slides.command("insert-image")

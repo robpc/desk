@@ -739,6 +739,34 @@ class TestErrorSuggestionsNotMailLeaked:
         assert "message id" not in suggestions
 
 
+class TestSetTextCommand:
+    def test_set_text(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_text.return_value = {"presentationId": "p1", "objectId": "sh", "status": "ok"}
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["set-text", "p1", "sh", "New heading", "--json"])
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["operation"] == "set-text"
+        assert out["changes"]["text_length"] == len("New heading")
+        client.set_text.assert_called_once_with("p1", "sh", "New heading")
+
+    def test_set_text_non_shape_invalid_input(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_text.side_effect = ValueError("Object tbl is not a shape. Use set-cell for tables.")
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["set-text", "p1", "tbl", "x", "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.output)["error"]["code"] == "INVALID_INPUT"
+
+
 class TestScopeErrorClassification:
     def test_scope_error_maps_to_insufficient_scopes(
         self, runner, mock_get_credentials, mock_slides_client_class

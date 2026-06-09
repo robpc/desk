@@ -63,7 +63,7 @@ REGIONS = [
     "left-half", "right-half", "top-half", "bottom-half",
     "left-third", "center-third", "right-third",
     "top-third", "middle-third", "bottom-third",
-    "full",
+    "full", "full-bleed",
 ]
 
 # Element distribution modes for `arrange` (ADR-029).
@@ -118,6 +118,9 @@ def _region_box(
 
     if region == "full":
         return cx, cy, cw, ch
+    if region == "full-bleed":
+        # Edge-to-edge, no margin (full-bleed backgrounds/images).
+        return 0.0, 0.0, page_w, page_h
 
     half_w = (cw - g) / 2
     half_h = (ch - g) / 2
@@ -991,6 +994,42 @@ class SlidesClient:
                 "presentationId": presentation_id,
                 "objectId": table_object_id,
                 "row": row, "col": col, "mode": mode, "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def set_text(self, presentation_id: str, object_id: str, text: str) -> dict:
+        """Replace a shape's entire text, keeping the shape (Idea 072).
+
+        insert-text only inserts/appends and replace-text is find/replace, so
+        changing a shape's text otherwise meant delete + re-insert + re-style.
+        This clears the shape's text and sets the new value in one batchUpdate.
+
+        Returns:
+            Dict with presentationId, objectId, and status.
+        """
+        element = self._find_element(presentation_id, object_id)
+        if "shape" not in element:
+            raise ValueError(
+                f"Object {object_id} is not a shape. Use set-cell for tables."
+            )
+        current_len = len(
+            self._extract_text_elements(element["shape"].get("text", {}))
+        )
+        requests: list[dict] = []
+        if current_len > 1:  # text bodies carry an implicit trailing newline
+            requests.append({"deleteText": {
+                "objectId": object_id, "textRange": {"type": "ALL"},
+            }})
+        requests.append({"insertText": {
+            "objectId": object_id, "text": text, "insertionIndex": 0,
+        }})
+        try:
+            self._batch_update(presentation_id, requests)
+            return {
+                "presentationId": presentation_id,
+                "objectId": object_id,
+                "status": "ok",
             }
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")

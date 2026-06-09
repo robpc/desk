@@ -177,6 +177,7 @@ def _get_capabilities() -> dict:
                     "replace-text": {"description": "Find and replace text", "batch": False, "destructive": True},
                     "set-notes": {"description": "Set a slide's speaker notes", "batch": False, "destructive": False},
                     "set-cell": {"description": "Set a table cell's text", "batch": False, "destructive": False},
+                    "set-text": {"description": "Replace a shape's entire text", "batch": False, "destructive": False},
                     "insert-image": {"description": "Insert an image from a URL", "batch": False, "destructive": False, "reversible": True},
                     "insert-table": {"description": "Insert a table", "batch": False, "destructive": False, "reversible": True},
                     "insert-shape": {"description": "Insert a shape or text box", "batch": False, "destructive": False, "reversible": True},

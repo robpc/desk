@@ -59,6 +59,8 @@ idea → exploring → planned → adr-created → (implemented)
 | 070 | [Slides Table Enhancements](070-slides-table-enhancements.md) | implemented | M | Reposition (move) + bulk --data fill; region-sizing N/A |
 | 071 | [Slides Shape Text Alignment](071-slides-shape-text-alignment.md) | implemented | S | Center/align text in a shape (h/v) |
 
+| 072 | [Slides set-text + full-bleed](072-slides-set-text-and-full-bleed.md) | implemented | S | Replace a shape's text; true edge-to-edge region |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`

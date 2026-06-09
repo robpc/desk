@@ -1148,6 +1148,62 @@ class TestSetCell:
             client.set_cell("p1", "sh", 0, 0, "x")
 
 
+class TestSetText:
+    """Tests for SlidesClient.set_text (Idea 072)."""
+
+    def _shape(self, presentations, text=""):
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [{
+                "objectId": "sh",
+                "shape": {"text": {"textElements": [{"textRun": {"content": text}}]}},
+            }]}],
+        }
+
+    def test_replaces_existing_text(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._shape(presentations, text="old heading\n")
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_text("p1", "sh", "new heading")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert reqs[0]["deleteText"] == {"objectId": "sh", "textRange": {"type": "ALL"}}
+        assert reqs[1]["insertText"]["text"] == "new heading"
+        assert reqs[1]["insertText"]["insertionIndex"] == 0
+
+    def test_empty_shape_skips_delete(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._shape(presentations, text="")
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_text("p1", "sh", "hi")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert len(reqs) == 1 and "insertText" in reqs[0]
+
+    def test_non_shape_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [
+                {"objectId": "tbl", "table": {"tableRows": []}}]}]
+        }
+        with pytest.raises(ValueError, match="not a shape"):
+            client.set_text("p1", "tbl", "x")
+
+
+class TestFullBleedRegion:
+    def test_full_bleed_has_no_margin(self):
+        from desk.services.slides import _region_box
+
+        assert _region_box(720, 405, "full-bleed") == (0.0, 0.0, 720, 405)
+
+    def test_full_still_insets(self):
+        from desk.services.slides import _region_box
+
+        x, y, w, h = _region_box(720, 405, "full")
+        assert (x, y) == (24, 24) and w == 672 and h == 357
+
+
 class TestSlidesExport:
     """Tests for SlidesClient.export."""
 
