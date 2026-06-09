@@ -9,6 +9,13 @@ updated: 2026-06-09
 adr: null
 ---
 
+> **Decision (2026-06-09):** Desk ships **public `--url` only** (works for non-enterprise
+> users). Local/Drive image insertion is out of scope for a thin Workspace-OAuth CLI — the
+> only working paths (GCS/S3 **signed URLs**, or an Apps Script Execution-API proxy) require
+> separate infrastructure/auth. The signed-URL approach is a clean, reusable primitive that,
+> if pursued, belongs in its **own small tool** (ephemeral signed-URL hosting that composes
+> with `desk ... --url` via a pipe), not in Desk.
+>
 > **Parked 2026-06-09 — blocked for restricted Workspace domains; no REST API path.**
 > Implemented `--file`/`--drive-id` (upload → anyone-with-link → createImage → delete temp),
 > but it **cannot work in this org** and the happy path is **unverified anywhere from here**.
