@@ -464,6 +464,46 @@ class SlidesClient:
             or b["y"] + b["height"] <= a["y"] + eps
         )
 
+    @staticmethod
+    def _rgb_to_hex(rgb: dict) -> str:
+        """Format an rgbColor ({red,green,blue} 0–1 floats) as #RRGGBB."""
+        def chan(v):
+            return max(0, min(255, round((v or 0) * 255)))
+        return "#{:02X}{:02X}{:02X}".format(
+            chan(rgb.get("red")), chan(rgb.get("green")), chan(rgb.get("blue"))
+        )
+
+    def get_theme(self, presentation_id: str) -> dict:
+        """Return the deck's theme color palette (ADR-030, Idea 069).
+
+        Resolves the active color scheme (master → layout → slide) into a list
+        of {name, hex} so an agent can see what ACCENT1..6 / DARK1 / LIGHT1
+        actually resolve to before using them in style/format.
+
+        Returns:
+            Dict with presentationId and theme (list of {name, hex}).
+        """
+        try:
+            pres = self._get(presentation_id)
+            scheme = None
+            for container in ("masters", "layouts", "slides"):
+                for page in pres.get(container, []):
+                    cs = page.get("pageProperties", {}).get("colorScheme")
+                    if cs and cs.get("colors"):
+                        scheme = cs
+                        break
+                if scheme:
+                    break
+            colors = []
+            for c in (scheme or {}).get("colors", []):
+                colors.append({
+                    "name": c.get("type"),
+                    "hex": self._rgb_to_hex(c.get("color", {})),
+                })
+            return {"presentationId": presentation_id, "theme": colors}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
     def inspect(self, presentation_id: str) -> dict:
         """Inspect presentation structure with objectIds and computed layout.
 
@@ -1112,13 +1152,14 @@ class SlidesClient:
         bold: bool | None = None, italic: bool | None = None,
         underline: bool | None = None,
         font_size: float | None = None, font_family: str | None = None,
-        color: str | None = None,
+        color: str | None = None, alignment: str | None = None,
         start: int | None = None, end: int | None = None,
     ) -> dict:
-        """Apply text styling to a shape's text.
+        """Apply text + paragraph styling to a shape's text.
 
         Styles the whole shape's text by default; pass start/end for a range.
         ``color`` accepts hex (#RRGGBB) or a theme name (see _parse_color).
+        ``alignment`` (START/CENTER/END/JUSTIFIED) sets paragraph alignment.
 
         Returns:
             Dict with presentationId, objectId, and status.
@@ -1144,7 +1185,7 @@ class SlidesClient:
             style["foregroundColor"] = {"opaqueColor": _parse_color(color)}
             fields.append("foregroundColor")
 
-        if not fields:
+        if not fields and alignment is None:
             return {"presentationId": presentation_id, "objectId": object_id,
                     "status": "ok", "note": "no styles specified"}
 
@@ -1153,18 +1194,24 @@ class SlidesClient:
         else:
             text_range = {"type": "ALL"}
 
+        requests: list[dict] = []
+        if fields:
+            requests.append({"updateTextStyle": {
+                "objectId": object_id,
+                "style": style,
+                "textRange": text_range,
+                "fields": ",".join(fields),
+            }})
+        if alignment is not None:
+            requests.append({"updateParagraphStyle": {
+                "objectId": object_id,
+                "style": {"alignment": alignment},
+                "textRange": text_range,
+                "fields": "alignment",
+            }})
+
         try:
-            self._batch_update(
-                presentation_id,
-                [{
-                    "updateTextStyle": {
-                        "objectId": object_id,
-                        "style": style,
-                        "textRange": text_range,
-                        "fields": ",".join(fields),
-                    }
-                }],
-            )
+            self._batch_update(presentation_id, requests)
             return {"presentationId": presentation_id, "objectId": object_id, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
@@ -1172,12 +1219,13 @@ class SlidesClient:
     def format_element(
         self, presentation_id: str, object_id: str,
         fill: str | None = None, outline: str | None = None,
-        outline_weight: float | None = None,
+        outline_weight: float | None = None, valign: str | None = None,
     ) -> dict:
-        """Apply fill/outline to a shape or image.
+        """Apply fill/outline (and vertical text alignment) to a shape or image.
 
-        Shapes get a background fill + outline; images get an outline only
-        (the API has no image fill). Dispatches by the element's actual type.
+        Shapes get a background fill + outline + content (vertical) alignment;
+        images get an outline only (the API has no image fill or content
+        alignment). Dispatches by the element's actual type.
 
         Returns:
             Dict with presentationId, objectId, elementType, and status.
@@ -1209,6 +1257,9 @@ class SlidesClient:
                 if outline_obj:
                     props["outline"] = outline_obj
                     fields.extend(outline_fields)
+                if valign is not None:
+                    props["contentAlignment"] = valign
+                    fields.append("contentAlignment")
                 if not fields:
                     return {"presentationId": presentation_id, "objectId": object_id,
                             "elementType": "shape", "status": "ok",
@@ -1222,6 +1273,8 @@ class SlidesClient:
             elif "image" in element:
                 if fill is not None:
                     raise ValueError("Images have no fill; use --outline instead.")
+                if valign is not None:
+                    raise ValueError("Images have no content alignment; --valign is shape-only.")
                 if not outline_obj:
                     return {"presentationId": presentation_id, "objectId": object_id,
                             "elementType": "image", "status": "ok",

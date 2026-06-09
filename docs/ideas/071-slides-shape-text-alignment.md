@@ -1,12 +1,12 @@
 ---
 id: 071
 title: Slides — text alignment inside a shape (h/v)
-status: idea
+status: implemented
 effort: S
 value: Center/align text in a shape or cell, not just character-level styling
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
 
 # Idea 071: Slides — text alignment inside a shape (h/v)

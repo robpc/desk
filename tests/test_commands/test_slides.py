@@ -365,6 +365,73 @@ class TestStyleCommand:
         assert output["error"]["code"] == "INVALID_INPUT"
 
 
+class TestInspectTheme:
+    def test_theme_flag_includes_palette(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.inspect.return_value = {
+            "presentationId": "p1", "title": "D", "pageSize": {"width": 720, "height": 405},
+            "slideCount": 0, "slides": [],
+        }
+        client.get_theme.return_value = {"theme": [{"name": "ACCENT1", "hex": "#FF0000"}]}
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["inspect", "p1", "--theme", "--json"])
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["theme"][0]["name"] == "ACCENT1"
+        client.get_theme.assert_called_once_with("p1")
+
+    def test_no_theme_flag_skips_palette(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.inspect.return_value = {
+            "presentationId": "p1", "title": "D", "pageSize": {"width": 720, "height": 405},
+            "slideCount": 0, "slides": [],
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["inspect", "p1", "--json"])
+        assert result.exit_code == 0
+        assert "theme" not in json.loads(result.output)
+        client.get_theme.assert_not_called()
+
+
+class TestStyleAlignAndFormatValign:
+    def test_style_align(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.style_text.return_value = {"presentationId": "p1", "objectId": "sh", "status": "ok"}
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["style", "p1", "sh", "--align", "CENTER", "--json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["changes"]["align"] == "CENTER"
+        _, kwargs = client.style_text.call_args
+        assert kwargs["alignment"] == "CENTER"
+
+    def test_format_valign(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.format_element.return_value = {
+            "presentationId": "p1", "objectId": "sh", "elementType": "shape", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["format", "p1", "sh", "--valign", "MIDDLE", "--json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["changes"]["valign"] == "MIDDLE"
+        _, kwargs = client.format_element.call_args
+        assert kwargs["valign"] == "MIDDLE"
+
+
 class TestFormatCommand:
     def test_format_shape(self, runner, mock_get_credentials, mock_slides_client_class):
         from desk.commands.slides import slides

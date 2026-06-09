@@ -1,12 +1,12 @@
 ---
 id: 069
 title: Slides — list the active theme palette
-status: idea
+status: implemented
 effort: S
 value: Let agents see what ACCENT1..6 / DARK1 / LIGHT1 resolve to in this deck
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
 
 # Idea 069: Slides — list the active theme palette

@@ -980,6 +980,75 @@ class TestAddSlideInlineFill:
         assert result["filled"] == []
 
 
+class TestGetTheme:
+    """Tests for SlidesClient.get_theme (Idea 069)."""
+
+    def test_reads_master_color_scheme(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "masters": [{"pageProperties": {"colorScheme": {"colors": [
+                {"type": "ACCENT1", "color": {"red": 1.0, "green": 0.0, "blue": 0.0}},
+                {"type": "DARK1", "color": {"red": 0.0, "green": 0.0, "blue": 0.0}},
+            ]}}}],
+        }
+
+        theme = client.get_theme("p1")["theme"]
+        by_name = {c["name"]: c["hex"] for c in theme}
+        assert by_name["ACCENT1"] == "#FF0000"
+        assert by_name["DARK1"] == "#000000"
+
+    def test_empty_when_no_scheme(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {"masters": []}
+        assert client.get_theme("p1")["theme"] == []
+
+
+class TestStyleAlignmentAndValign:
+    """Tests for paragraph alignment (style) and content alignment (format) — Idea 071."""
+
+    def test_alignment_adds_paragraph_request(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.style_text("p1", "sh", bold=True, alignment="CENTER")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        kinds = [list(r.keys())[0] for r in reqs]
+        assert "updateTextStyle" in kinds and "updateParagraphStyle" in kinds
+        para = next(r["updateParagraphStyle"] for r in reqs if "updateParagraphStyle" in r)
+        assert para["style"]["alignment"] == "CENTER"
+
+    def test_alignment_only_no_text_style(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.style_text("p1", "sh", alignment="END")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert [list(r.keys())[0] for r in reqs] == ["updateParagraphStyle"]
+
+    def test_valign_on_shape(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [{"objectId": "sh", "shape": {}}]}]
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.format_element("p1", "sh", valign="MIDDLE")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["updateShapeProperties"]
+        assert req["shapeProperties"]["contentAlignment"] == "MIDDLE"
+        assert "contentAlignment" in req["fields"]
+
+    def test_valign_on_image_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [{"objectId": "img", "image": {}}]}]
+        }
+        with pytest.raises(ValueError, match="content alignment"):
+            client.format_element("p1", "img", valign="TOP")
+
+
 class TestSetCell:
     """Tests for SlidesClient.set_cell (ADR-030, Idea 066)."""
 

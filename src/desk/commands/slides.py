@@ -173,22 +173,32 @@ def read(presentation_id: str, as_json: bool) -> None:
 
 @slides.command("inspect")
 @click.argument("presentation_id")
+@click.option("--theme", "show_theme", is_flag=True,
+              help="Also report the deck's theme color palette (ACCENT1..6, etc.)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def inspect_cmd(presentation_id: str, quiet: bool, as_json: bool) -> None:
+def inspect_cmd(presentation_id: str, show_theme: bool, quiet: bool, as_json: bool) -> None:
     """Inspect presentation structure with objectIds.
 
     Shows each slide's objectId and its page elements (type, objectId,
-    placeholder type, and preview text). Use this to find the objectId to
-    target with insert-text or delete-object.
+    placeholder type, preview text) plus each element's computed bounding box
+    and offSlide/overlaps flags. Use this to find the objectId to target with
+    insert-text/delete-object and to verify placement without exporting.
+
+    --theme also dumps the deck's color palette so you know what ACCENT1..6 /
+    DARK1 / LIGHT1 resolve to for `style`/`format --color`.
 
     Examples:
 
         desk slides inspect <presentation-id>
+
+        desk slides inspect <presentation-id> --theme
     """
     client = _get_client(as_json)
     try:
         result = client.inspect(presentation_id)
+        if show_theme:
+            result["theme"] = client.get_theme(presentation_id)["theme"]
     except Exception as e:
         _handle_api_error(e, as_json, {"presentation_id": presentation_id})
 
@@ -251,6 +261,12 @@ def inspect_cmd(presentation_id: str, quiet: bool, as_json: bool) -> None:
                     f"      [dim]box {box['x']},{box['y']} "
                     f"{box['width']}x{box['height']}pt[/dim]{flag_str}"
                 )
+
+    if result.get("theme"):
+        console.print()
+        console.print("[bold]Theme palette[/bold]")
+        for c in result["theme"]:
+            console.print(f"  [cyan]{c['name']}[/cyan] [dim]{c['hex']}[/dim]")
 
 
 @slides.command()
@@ -909,6 +925,8 @@ def insert_shape(
 @click.option("--font-size", type=float, default=None, help="Font size in points")
 @click.option("--font", default=None, help="Font family name")
 @click.option("--color", default=None, help="Text color: #RRGGBB or a theme name")
+@click.option("--align", type=click.Choice(["START", "CENTER", "END", "JUSTIFIED"]),
+              default=None, help="Paragraph alignment")
 @click.option("--start", type=int, default=None, help="Start char index (range)")
 @click.option("--end", type=int, default=None, help="End char index (range)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
@@ -917,13 +935,15 @@ def style_cmd(
     presentation_id: str, object_id: str,
     bold: bool | None, italic: bool | None, underline: bool | None,
     font_size: float | None, font: str | None, color: str | None,
+    align: str | None,
     start: int | None, end: int | None,
     quiet: bool, as_json: bool,
 ) -> None:
     """Style the text of a shape (by objectId).
 
     Styles the whole shape's text by default; pass --start/--end for a range.
-    Find objectIds with `desk slides inspect <id>`.
+    --align sets paragraph alignment (horizontal). Find objectIds with
+    `desk slides inspect <id>`.
 
     Examples:
 
@@ -931,7 +951,7 @@ def style_cmd(
 
         desk slides style <id> <object-id> --color "#1A73E8" --font "Roboto"
 
-        desk slides style <id> <object-id> --italic --color ACCENT1
+        desk slides style <id> <object-id> --align CENTER --color ACCENT1
     """
     if (start is None) != (end is None):
         _emit_invalid_input("Provide both --start and --end, or neither.", as_json)
@@ -941,7 +961,7 @@ def style_cmd(
         client.style_text(
             presentation_id, object_id,
             bold=bold, italic=italic, underline=underline,
-            font_size=font_size, font_family=font, color=color,
+            font_size=font_size, font_family=font, color=color, alignment=align,
             start=start, end=end,
         )
     except ValueError as e:
@@ -955,6 +975,7 @@ def style_cmd(
     for key, val in (
         ("bold", bold), ("italic", italic), ("underline", underline),
         ("font_size", font_size), ("font", font), ("color", color),
+        ("align", align),
     ):
         if val is not None:
             changes[key] = val
@@ -975,20 +996,26 @@ def style_cmd(
 @click.option("--fill", default=None, help="Fill color (#RRGGBB or theme name; shapes only)")
 @click.option("--outline", default=None, help="Outline color (#RRGGBB or theme name)")
 @click.option("--outline-weight", type=float, default=None, help="Outline weight in points")
+@click.option("--valign", type=click.Choice(["TOP", "MIDDLE", "BOTTOM"]), default=None,
+              help="Vertical text alignment within the shape (shapes only)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def format_cmd(
     presentation_id: str, object_id: str,
     fill: str | None, outline: str | None, outline_weight: float | None,
+    valign: str | None,
     quiet: bool, as_json: bool,
 ) -> None:
-    """Apply fill/outline to a shape or image (by objectId).
+    """Apply fill/outline (and vertical text alignment) to a shape or image.
 
-    Shapes accept --fill and --outline; images accept --outline only.
+    Shapes accept --fill, --outline, and --valign; images accept --outline only.
+    For horizontal text alignment use `style --align`.
 
     Examples:
 
         desk slides format <id> <object-id> --fill "#FFF3CD" --outline "#856404"
+
+        desk slides format <id> <object-id> --valign MIDDLE
 
         desk slides format <id> <object-id> --outline ACCENT2 --outline-weight 2
     """
@@ -996,7 +1023,7 @@ def format_cmd(
     try:
         result = client.format_element(
             presentation_id, object_id,
-            fill=fill, outline=outline, outline_weight=outline_weight,
+            fill=fill, outline=outline, outline_weight=outline_weight, valign=valign,
         )
     except ValueError as e:
         _emit_invalid_input(str(e), as_json)
@@ -1012,6 +1039,8 @@ def format_cmd(
         changes["outline"] = outline
     if outline_weight is not None:
         changes["outline_weight"] = outline_weight
+    if valign is not None:
+        changes["valign"] = valign
 
     receipt = operation_receipt(
         operation="format",
