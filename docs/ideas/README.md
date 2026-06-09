@@ -54,7 +54,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 065 | [Slides Relative Anchoring](065-slides-relative-anchoring.md) | idea | M | Position "under the title" vs slide-absolute regions (holding) |
 | 066 | [Slides Table Cell Fill](066-slides-table-cell-fill.md) | implemented | S | set-cell fills table cells (were write-only) |
 | 067 | [Service-Agnostic INVALID_INPUT Suggestions](067-error-suggestions-service-agnostic.md) | implemented | S | Non-mail errors stop leaking Gmail help |
-| 068 | [Local / Drive Image Source](068-local-and-drive-image-source.md) | parked | M | No REST path in restricted domains (anon fetch; data URI rejected) |
+| 068 | [Local / Drive Image Source](068-local-and-drive-image-source.md) | parked | M | SOLVED via GCS signed URLs (proven); compose step, packaging TBD |
 | 069 | [Slides — list theme palette](069-slides-list-theme-palette.md) | implemented | S | Show what ACCENT1..6/DARK1/LIGHT1 resolve to |
 | 070 | [Slides Table Enhancements](070-slides-table-enhancements.md) | implemented | M | Reposition (move) + bulk --data fill; region-sizing N/A |
 | 071 | [Slides Shape Text Alignment](071-slides-shape-text-alignment.md) | implemented | S | Center/align text in a shape (h/v) |

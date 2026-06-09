@@ -9,12 +9,28 @@ updated: 2026-06-09
 adr: null
 ---
 
-> **Decision (2026-06-09):** Desk ships **public `--url` only** (works for non-enterprise
-> users). Local/Drive image insertion is out of scope for a thin Workspace-OAuth CLI — the
-> only working paths (GCS/S3 **signed URLs**, or an Apps Script Execution-API proxy) require
-> separate infrastructure/auth. The signed-URL approach is a clean, reusable primitive that,
-> if pursued, belongs in its **own small tool** (ephemeral signed-URL hosting that composes
-> with `desk ... --url` via a pipe), not in Desk.
+> **UPDATE (2026-06-09) — SOLVED via GCS signed URLs (proven end-to-end).** The earlier
+> "impossible in a restricted domain" conclusion was wrong. Verified working recipe in
+> `media-orion-d`:
+> 1. `gcpfed` as the project power user → active identity `fed-power-user@media-orion-d`,
+>    which already holds `roles/iam.serviceAccountTokenCreator` at the project level (no new
+>    grant, no Gacco/PSR exception — signing via impersonation is the sanctioned path; SA
+>    keys are what's banned, SBC-GCP-1004).
+> 2. `gcloud storage cp <local> gs://<private-bucket>/obj` (private; no public access).
+> 3. `gcloud storage sign-url … --duration=10m --impersonate-service-account=fed-power-user@…`
+>    → ~820-char v4 signed URL (well under the 2 KB cap).
+> 4. `desk slides insert-image <id> <slide> --url "<signed-url>"` → Slides fetches it
+>    anonymously (curl confirmed HTTP 200 image/png) and copies the bytes; the URL can then
+>    expire. Verified: image inserted successfully.
+>
+> Non-prod, non-public, not `s.yimg.com`, Paranoids-sanctioned. Caveats: the proof used the
+> broad `fed-power-user`; a real automation should use a **dedicated least-privilege signing
+> SA**. It needs GCP creds (`gcpfed`) alongside Workspace OAuth — two auth contexts — so it
+> stays a **compose step / thin helper**, NOT bundled into Desk.
+>
+> **Decision (2026-06-09):** Desk core ships **public `--url` only** (Workspace-only, no GCP
+> deps). The signed-URL upload→sign→URL step composes with `desk ... --url` and, if built,
+> lives in its **own small tool / runbook** (now de-risked — proven viable).
 >
 > **Parked 2026-06-09 — blocked for restricted Workspace domains; no REST API path.**
 > Implemented `--file`/`--drive-id` (upload → anyone-with-link → createImage → delete temp),
