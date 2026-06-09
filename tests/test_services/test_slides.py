@@ -1191,6 +1191,42 @@ class TestSetText:
             client.set_text("p1", "tbl", "x")
 
 
+class TestSetBackground:
+    """Tests for SlidesClient.set_background (Idea 073)."""
+
+    def test_sets_page_background_color_by_index(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0"}, {"objectId": "s1"}]
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_background("p1", "1", "#0B5394")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["updatePageProperties"]
+        assert req["objectId"] == "s1"
+        rgb = req["pageProperties"]["pageBackgroundFill"]["solidFill"]["color"]["rgbColor"]
+        assert "red" in rgb and "opaqueColor" not in \
+            req["pageProperties"]["pageBackgroundFill"]["solidFill"]["color"]
+        assert req["fields"] == "pageBackgroundFill.solidFill.color"
+
+    def test_theme_color_by_objectid(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_background("p1", "s0", "ACCENT1")  # non-digit → objectId, no get()
+
+        color = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageProperties"]["pageProperties"]["pageBackgroundFill"]["solidFill"]["color"]
+        assert color == {"themeColor": "ACCENT1"}
+        presentations.get.assert_not_called()
+
+    def test_bad_color_raises(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="Invalid color"):
+            client.set_background("p1", "s0", "chartreuse")
+
+
 class TestFullBleedRegion:
     def test_full_bleed_has_no_margin(self):
         from desk.services.slides import _region_box

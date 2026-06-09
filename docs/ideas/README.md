@@ -61,6 +61,8 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 072 | [Slides set-text + full-bleed](072-slides-set-text-and-full-bleed.md) | implemented | S | Replace a shape's text; true edge-to-edge region |
 
+| 073 | [Slides set-background](073-slides-set-background.md) | implemented | S | Set a slide's page background color (no rectangle hack) |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`

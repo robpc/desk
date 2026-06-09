@@ -769,6 +769,46 @@ def set_text(
     output_result(receipt, as_json, quiet)
 
 
+@slides.command("set-background")
+@click.argument("presentation_id")
+@click.argument("slide")
+@click.argument("color")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def set_background(
+    presentation_id: str, slide: str, color: str, quiet: bool, as_json: bool,
+) -> None:
+    """Set a slide's page background color.
+
+    Sets the real page background — no need to lay a full-bleed rectangle behind
+    everything (the Slides API has no z-order control, so that hack is awkward).
+    SLIDE is a 0-based index or a slide objectId. COLOR is #RRGGBB or a theme
+    name (ACCENT1, DARK1, ...).
+
+    Examples:
+
+        desk slides set-background <id> 0 "#0B5394"
+
+        desk slides set-background <id> 2 ACCENT1
+    """
+    client = _get_client(as_json)
+    try:
+        client.set_background(presentation_id, slide, color)
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "slide": slide, "color": color}
+        )
+
+    receipt = operation_receipt(
+        operation="set-background",
+        target={"id": presentation_id, "slide": slide},
+        changes={"color": color},
+    )
+    output_result(receipt, as_json, quiet)
+
+
 # ── Visual elements (Phase 2, ADR-027) ──────────────────────────────────────
 
 @slides.command("insert-image")

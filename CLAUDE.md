@@ -150,6 +150,7 @@ desk (CLI entry point)
 │   ├── set-notes      → Set a slide's speaker notes
 │   ├── set-cell       → Set a table cell's text (by row/col)
 │   ├── set-text       → Replace a shape's entire text
+│   ├── set-background → Set a slide's page background color
 │   ├── insert-image   → Insert an image from a public URL
 │   ├── insert-table   → Insert a table
 │   ├── insert-shape   → Insert a shape or text box (optionally with text)

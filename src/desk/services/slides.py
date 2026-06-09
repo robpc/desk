@@ -1034,6 +1034,42 @@ class SlidesClient:
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 
+    def set_background(self, presentation_id: str, slide: str, color: str) -> dict:
+        """Set a slide's page background color (Idea 073).
+
+        Sets the actual page background via updatePageProperties — no
+        rectangle-behind-everything hack (and the Slides API has no z-order
+        control, so a background rectangle is awkward anyway). ``color`` accepts
+        hex (#RRGGBB) or a theme name (see _parse_color).
+
+        Returns:
+            Dict with presentationId, slideObjectId, color, and status.
+        """
+        slide_id = self._resolve_slide_object_id(presentation_id, slide)
+        try:
+            self._batch_update(
+                presentation_id,
+                [{
+                    "updatePageProperties": {
+                        "objectId": slide_id,
+                        "pageProperties": {
+                            "pageBackgroundFill": {
+                                "solidFill": {"color": _parse_color(color)}
+                            }
+                        },
+                        "fields": "pageBackgroundFill.solidFill.color",
+                    }
+                }],
+            )
+            return {
+                "presentationId": presentation_id,
+                "slideObjectId": slide_id,
+                "color": color,
+                "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
     # ── Visual elements (Phase 2, ADR-027) ──────────────────────────────
 
     def insert_image(

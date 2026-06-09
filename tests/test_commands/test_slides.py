@@ -767,6 +767,36 @@ class TestSetTextCommand:
         assert json.loads(result.output)["error"]["code"] == "INVALID_INPUT"
 
 
+class TestSetBackgroundCommand:
+    def test_set_background(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_background.return_value = {
+            "presentationId": "p1", "slideObjectId": "s1", "color": "#0B5394", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["set-background", "p1", "1", "#0B5394", "--json"])
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["operation"] == "set-background"
+        assert out["changes"]["color"] == "#0B5394"
+        client.set_background.assert_called_once_with("p1", "1", "#0B5394")
+
+    def test_set_background_bad_color(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_background.side_effect = ValueError("Invalid color: nope.")
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["set-background", "p1", "0", "nope", "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.output)["error"]["code"] == "INVALID_INPUT"
+
+
 class TestScopeErrorClassification:
     def test_scope_error_maps_to_insufficient_scopes(
         self, runner, mock_get_credentials, mock_slides_client_class

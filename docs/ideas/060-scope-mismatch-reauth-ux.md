@@ -60,3 +60,8 @@ S — Error reclassification is small; `auth status` scope-diff is a modest addi
 - `ErrorCode.INSUFFICIENT_SCOPES` and its suggestions already exist in `agent.py`; this is
   mostly about routing to it and detecting drift.
 - Related: [[slides-phased-rollout]].
+- **Rollout complete (2026-06-09):** `is_scope_error()` is now wired into every service
+  handler — mail, drive, docs, sheets, cal, forms, **and** slides — so a missing-scope 403
+  maps to `INSUFFICIENT_SCOPES` ("run `desk auth login`") instead of the misleading
+  `PERMISSION_DENIED` everywhere. `auth status` scope-diff (added earlier) covers the
+  proactive side.

@@ -1361,3 +1361,29 @@ class TestErrorStreamDiscipline:
         assert result.stdout == ""
         payload = json.loads(result.stderr)
         assert payload["error"]["code"] == "TAB_NOT_FOUND"
+
+
+class TestDocsScopeErrorClassification:
+    """A missing-scope 403 should map to INSUFFICIENT_SCOPES (ADR-030 rollout),
+    not the misleading PERMISSION_DENIED 'request access from owner'."""
+
+    def test_scope_403_maps_to_insufficient_scopes(
+        self, runner, mock_get_credentials, mock_docs_client_class
+    ):
+        from desk.commands.docs import docs
+
+        client = MagicMock()
+        client.read.side_effect = RuntimeError(
+            'Docs API error: <HttpError 403 ... "Request had insufficient '
+            'authentication scopes." ... ACCESS_TOKEN_SCOPE_INSUFFICIENT>'
+        )
+        mock_docs_client_class.return_value = client
+
+        result = runner.invoke(docs, ["read", "docid", "--json"])
+
+        assert result.exit_code == 1
+        out = json.loads(result.output)
+        assert out["error"]["code"] == "INSUFFICIENT_SCOPES"
+        joined = " ".join(out["error"]["suggestions"]).lower()
+        assert "desk auth login" in joined
+        assert "request access" not in joined
