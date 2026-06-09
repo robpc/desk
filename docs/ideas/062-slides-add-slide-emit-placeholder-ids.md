@@ -1,12 +1,12 @@
 ---
 id: 062
 title: add-slide should emit placeholder objectIds + types
-status: idea
+status: implemented
 effort: S
 value: Removes the mandatory `inspect` round-trip between add-slide and insert-text
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
 
 # Idea 062: add-slide should emit placeholder objectIds + types

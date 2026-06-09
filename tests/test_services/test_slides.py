@@ -720,6 +720,115 @@ class TestInsertWithRegion:
         assert abs(size["height"]["magnitude"] - 357) < 1e-6
 
 
+class TestSetNotes:
+    """Tests for SlidesClient.set_notes (ADR-030, Idea 059)."""
+
+    def _page_with_notes(self, presentations, notes_text="", notes_id="notes_1"):
+        elements = []
+        if notes_text is not None:
+            elements = [{
+                "objectId": notes_id,
+                "shape": {"text": {"textElements": [
+                    {"textRun": {"content": notes_text}}]}},
+            }]
+        presentations.pages.return_value.get.return_value.execute.return_value = {
+            "objectId": "s0",
+            "slideProperties": {"notesPage": {
+                "notesProperties": {"speakerNotesObjectId": notes_id},
+                "pageElements": elements,
+            }},
+        }
+
+    def test_set_notes_replace_clears_then_inserts(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._page_with_notes(presentations, notes_text="old notes\n")
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.set_notes("p1", "s0", "new notes", mode="replace")
+
+        assert result["notesObjectId"] == "notes_1"
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert reqs[0]["deleteText"]["objectId"] == "notes_1"
+        assert reqs[1]["insertText"]["text"] == "new notes"
+        assert reqs[1]["insertText"]["insertionIndex"] == 0
+
+    def test_set_notes_replace_skips_delete_when_empty(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._page_with_notes(presentations, notes_text="\n")  # just trailing newline
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_notes("p1", "s0", "hi", mode="replace")
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        assert len(reqs) == 1
+        assert "insertText" in reqs[0]
+
+    def test_set_notes_append_inserts_before_trailing_newline(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._page_with_notes(presentations, notes_text="line one\n")  # len 9
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.set_notes("p1", "s0", " more", mode="append")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
+        assert req["insertText"]["insertionIndex"] == 8  # len-1
+
+    def test_set_notes_no_notes_shape_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.pages.return_value.get.return_value.execute.return_value = {
+            "objectId": "s0",
+            "slideProperties": {"notesPage": {"notesProperties": {}}},
+        }
+        with pytest.raises(RuntimeError, match="no speaker-notes"):
+            client.set_notes("p1", "s0", "x")
+
+
+class TestReadIncludesNotes:
+    def test_read_surfaces_notes(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "title": "Deck",
+            "slides": [{
+                "objectId": "s0",
+                "pageElements": [],
+                "slideProperties": {"notesPage": {
+                    "notesProperties": {"speakerNotesObjectId": "n1"},
+                    "pageElements": [{
+                        "objectId": "n1",
+                        "shape": {"text": {"textElements": [
+                            {"textRun": {"content": "talk track\n"}}]}},
+                    }],
+                }},
+            }],
+        }
+
+        result = client.read("p1")
+
+        assert result["slides"][0]["notes"] == "talk track"
+
+
+class TestAddSlidePlaceholders:
+    def test_add_slide_returns_placeholders(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {
+            "replies": [{"createSlide": {"objectId": "new"}}]
+        }
+        presentations.pages.return_value.get.return_value.execute.return_value = {
+            "pageElements": [
+                {"objectId": "t1", "shape": {"placeholder": {"type": "TITLE", "index": 0}}},
+                {"objectId": "b1", "shape": {"placeholder": {"type": "BODY"}}},
+                {"objectId": "x1", "shape": {}},  # non-placeholder shape ignored
+            ]
+        }
+
+        result = client.add_slide("p1", layout="TITLE_AND_BODY")
+
+        ph = result["placeholders"]
+        assert {"type": "TITLE", "objectId": "t1", "index": 0} in ph
+        assert {"type": "BODY", "objectId": "b1"} in ph
+        assert len(ph) == 2
+
+
 class TestSlidesExport:
     """Tests for SlidesClient.export."""
 

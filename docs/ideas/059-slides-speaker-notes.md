@@ -1,12 +1,12 @@
 ---
 id: 059
 title: Slides Speaker Notes
-status: idea
+status: implemented
 effort: S
 value: Set per-slide speaker notes — a core deck use case currently impossible
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
 
 # Idea 059: Slides Speaker Notes

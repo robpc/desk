@@ -175,6 +175,7 @@ def _get_capabilities() -> dict:
                     "move-slide": {"description": "Reorder a slide", "batch": False, "destructive": False, "reversible": True},
                     "insert-text": {"description": "Insert text into a shape", "batch": False, "destructive": False},
                     "replace-text": {"description": "Find and replace text", "batch": False, "destructive": True},
+                    "set-notes": {"description": "Set a slide's speaker notes", "batch": False, "destructive": False},
                     "insert-image": {"description": "Insert an image from a URL", "batch": False, "destructive": False, "reversible": True},
                     "insert-table": {"description": "Insert a table", "batch": False, "destructive": False, "reversible": True},
                     "insert-shape": {"description": "Insert a shape or text box", "batch": False, "destructive": False, "reversible": True},
@@ -426,6 +427,21 @@ def auth_status(as_json: bool, verify: bool) -> None:
         }.get(info["method"], info["method"])
 
         console.print(f"[green]Authenticated[/green] via {method_display}")
+
+        # Proactively flag scope drift (granted token predates a newly added scope).
+        missing = info.get("missing_scopes")
+        if missing:
+            console.print()
+            console.print(
+                f"[yellow]Missing {len(missing)} scope(s):[/yellow] "
+                + ", ".join(s.rsplit('/', 1)[-1] for s in missing)
+            )
+            login_cmd = (
+                "desk auth login --gcloud"
+                if info["method"] == AuthMethod.GCLOUD_ADC
+                else "desk auth login"
+            )
+            console.print(f"Re-authenticate to add them: [cyan]{login_cmd}[/cyan]")
 
         # Show service access if verified
         if info.get("services"):

@@ -1,12 +1,12 @@
 ---
 id: 060
 title: Scope-Mismatch Re-Auth UX
-status: idea
+status: implemented
 effort: S
 value: When a new scope is added, tell the user to re-auth instead of a misleading "request access" error
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
 
 # Idea 060: Scope-Mismatch Re-Auth UX

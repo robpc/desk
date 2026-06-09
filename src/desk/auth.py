@@ -380,6 +380,7 @@ def get_auth_status(verify: bool = False) -> dict:
         "token_path": str(TOKEN_FILE),
         "email": None,
         "services": None,  # Populated if verify=True
+        "missing_scopes": None,  # Populated when granted scopes are known
     }
 
     # Check OAuth token first
@@ -387,6 +388,7 @@ def get_auth_status(verify: bool = False) -> dict:
     if creds:
         status["authenticated"] = True
         status["method"] = AuthMethod.OAUTH_CLIENT
+        status["missing_scopes"] = _missing_scopes(creds)
         if verify:
             status["services"] = verify_service_access(creds)
         return status
@@ -396,11 +398,24 @@ def get_auth_status(verify: bool = False) -> dict:
     if creds:
         status["authenticated"] = True
         status["method"] = AuthMethod.GCLOUD_ADC
+        status["missing_scopes"] = _missing_scopes(creds)
         if verify:
             status["services"] = verify_service_access(creds)
         return status
 
     return status
+
+
+def _missing_scopes(credentials: Credentials) -> list[str] | None:
+    """Return SCOPES the granted token lacks, or None if grant set is unknown.
+
+    Lets `auth status` flag scope drift proactively after Desk adds a scope, so
+    the user is told to re-auth before hitting a 403. See ADR-030.
+    """
+    granted = getattr(credentials, "scopes", None)
+    if not granted:
+        return None
+    return sorted(set(SCOPES) - set(granted))
 
 
 def verify_service_access(credentials: Credentials) -> dict[str, bool]:
@@ -488,5 +503,31 @@ def verify_service_access(credentials: Credentials) -> dict[str, bool]:
     except Exception as e:
         _logger.debug(f"Calendar access check error: {type(e).__name__}: {e}")
         results["cal"] = False
+
+    # Slides - get a non-existent presentation: 404 = scopes OK, 403 = no scope
+    try:
+        service = build("slides", "v1", credentials=credentials)
+        service.presentations().get(presentationId="nonexistent_test_id").execute()
+        results["slides"] = True
+    except HttpError as e:
+        results["slides"] = e.resp.status == 404
+        if e.resp.status not in (404, 403):
+            _logger.debug(f"Slides access check unexpected: {e}")
+    except Exception as e:
+        _logger.debug(f"Slides access check error: {type(e).__name__}: {e}")
+        results["slides"] = False
+
+    # Forms - get a non-existent form: 404 = scopes OK, 403 = no scope
+    try:
+        service = build("forms", "v1", credentials=credentials)
+        service.forms().get(formId="nonexistent_test_id").execute()
+        results["forms"] = True
+    except HttpError as e:
+        results["forms"] = e.resp.status == 404
+        if e.resp.status not in (404, 403):
+            _logger.debug(f"Forms access check unexpected: {e}")
+    except Exception as e:
+        _logger.debug(f"Forms access check error: {type(e).__name__}: {e}")
+        results["forms"] = False
 
     return results

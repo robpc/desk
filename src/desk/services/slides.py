@@ -394,6 +394,7 @@ class SlidesClient:
                     "index": i,
                     "objectId": slide.get("objectId", ""),
                     "text": "\n".join(parts),
+                    "notes": self._slide_notes_text(slide).rstrip("\n"),
                 })
             return {
                 "presentationId": presentation_id,
@@ -403,6 +404,27 @@ class SlidesClient:
             }
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
+
+    @staticmethod
+    def _notes_object_id(slide: dict) -> str | None:
+        """Return a slide's speaker-notes objectId, if present."""
+        return (
+            slide.get("slideProperties", {})
+            .get("notesPage", {})
+            .get("notesProperties", {})
+            .get("speakerNotesObjectId")
+        )
+
+    def _slide_notes_text(self, slide: dict) -> str:
+        """Extract the speaker-notes text for a slide (empty string if none)."""
+        notes_id = self._notes_object_id(slide)
+        if not notes_id:
+            return ""
+        notes_page = slide.get("slideProperties", {}).get("notesPage", {})
+        for element in notes_page.get("pageElements", []):
+            if element.get("objectId") == notes_id and "shape" in element:
+                return self._extract_text_elements(element["shape"].get("text", {}))
+        return ""
 
     def inspect(self, presentation_id: str) -> dict:
         """Inspect presentation structure with objectIds.
@@ -486,7 +508,9 @@ class SlidesClient:
             object_id: Optional client-supplied objectId for the new slide
 
         Returns:
-            Dict with presentationId, objectId (the new slide's id), and layout.
+            Dict with presentationId, objectId (the new slide's id), layout, and
+            placeholders — a list of {type, objectId} for the slide's layout
+            placeholders, so callers can fill them without a separate inspect.
         """
         try:
             request: dict = {
@@ -505,13 +529,36 @@ class SlidesClient:
             if replies:
                 new_id = replies[0].get("createSlide", {}).get("objectId", "")
 
+            placeholders = self._slide_placeholders(presentation_id, new_id) if new_id else []
+
             return {
                 "presentationId": presentation_id,
                 "objectId": new_id,
                 "layout": layout,
+                "placeholders": placeholders,
             }
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
+
+    def _slide_placeholders(self, presentation_id: str, slide_id: str) -> list[dict]:
+        """Fetch a slide's placeholder shapes as [{type, objectId, index}].
+
+        Lets add-slide hand back the objectIds needed to fill the slide,
+        removing the otherwise-mandatory inspect round-trip (ADR-030).
+        """
+        page = self.service.presentations().pages().get(
+            presentationId=presentation_id, pageObjectId=slide_id
+        ).execute()
+        placeholders = []
+        for element in page.get("pageElements", []):
+            shape = element.get("shape", {})
+            ph = shape.get("placeholder")
+            if ph:
+                entry = {"type": ph.get("type"), "objectId": element.get("objectId", "")}
+                if "index" in ph:
+                    entry["index"] = ph["index"]
+                placeholders.append(entry)
+        return placeholders
 
     def delete_slide(self, presentation_id: str, slide: str) -> dict:
         """Delete a slide by 0-based index or objectId.
@@ -673,6 +720,64 @@ class SlidesClient:
             return {
                 "presentationId": presentation_id,
                 "occurrences_changed": occurrences,
+                "status": "ok",
+            }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def set_notes(
+        self, presentation_id: str, slide: str, text: str, mode: str = "replace",
+    ) -> dict:
+        """Set a slide's speaker notes (ADR-030, Idea 059).
+
+        Targets the slide's notes page speaker-notes shape. ``mode="replace"``
+        clears existing notes first; ``mode="append"`` adds to the end.
+
+        Returns:
+            Dict with presentationId, slideObjectId, notesObjectId, mode, status.
+        """
+        try:
+            slide_id = self._resolve_slide_object_id(presentation_id, slide)
+            page = self.service.presentations().pages().get(
+                presentationId=presentation_id, pageObjectId=slide_id
+            ).execute()
+            notes_id = self._notes_object_id(page)
+            if not notes_id:
+                raise RuntimeError(
+                    f"Slide {slide} has no speaker-notes shape to write to."
+                )
+
+            # Current notes length (text bodies carry an implicit trailing newline).
+            notes_page = page.get("slideProperties", {}).get("notesPage", {})
+            current_len = 0
+            for element in notes_page.get("pageElements", []):
+                if element.get("objectId") == notes_id and "shape" in element:
+                    current_len = len(
+                        self._extract_text_elements(element["shape"].get("text", {}))
+                    )
+                    break
+
+            requests: list[dict] = []
+            if mode == "append":
+                insert_index = max(0, current_len - 1)
+                requests.append({"insertText": {
+                    "objectId": notes_id, "text": text, "insertionIndex": insert_index,
+                }})
+            else:  # replace
+                if current_len > 1:
+                    requests.append({"deleteText": {
+                        "objectId": notes_id, "textRange": {"type": "ALL"},
+                    }})
+                requests.append({"insertText": {
+                    "objectId": notes_id, "text": text, "insertionIndex": 0,
+                }})
+
+            self._batch_update(presentation_id, requests)
+            return {
+                "presentationId": presentation_id,
+                "slideObjectId": slide_id,
+                "notesObjectId": notes_id,
+                "mode": mode,
                 "status": "ok",
             }
         except HttpError as error:

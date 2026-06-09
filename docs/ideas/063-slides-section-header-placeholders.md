@@ -1,12 +1,12 @@
 ---
 id: 063
 title: SECTION_HEADER tagline — layout coverage / discoverability
-status: idea
+status: implemented
 effort: S
 value: A section slide with a tagline should be obvious, not require insert-shape
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/030-slides-authoring-refinements-and-scope-ux.md
 ---
 
 # Idea 063: SECTION_HEADER tagline — layout coverage / discoverability
@@ -17,6 +17,11 @@ Adding a slide with `--layout SECTION_HEADER` yields only a `TITLE` placeholder 
 subtitle/body — so a section slide can't hold a tagline without dropping to
 `insert-shape --region bottom` (which works, but isn't obvious). Reported from a real deck
 build (2026-06-09).
+
+> **Resolved (2026-06-09, ADR-030): documentation, not a bug.** Verified live —
+> `SECTION_HEADER` exposes only `TITLE`; `SECTION_TITLE_AND_DESCRIPTION` exposes
+> `TITLE` + `SUBTITLE` + `BODY`. `add-slide --help` now documents the layout→placeholder
+> behavior and points to `SECTION_TITLE_AND_DESCRIPTION` for a tagline.
 
 ## Likely cause (to verify)
 

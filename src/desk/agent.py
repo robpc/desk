@@ -176,6 +176,23 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
 }
 
 
+def is_scope_error(error_str: str) -> bool:
+    """Detect a 403 that's really a missing-OAuth-scope problem.
+
+    Google returns these when the granted token predates a newly added scope.
+    They must NOT be classified as PERMISSION_DENIED (whose advice — "request
+    access from the owner" — is misleading; the user owns the resource and just
+    needs to re-auth). See ADR-030.
+    """
+    lowered = error_str.lower()
+    return (
+        "access_token_scope_insufficient" in lowered
+        or "insufficient authentication scopes" in lowered
+        or "insufficientpermissions" in lowered
+        or "request had insufficient authentication scopes" in lowered
+    )
+
+
 def parse_api_error(error_str: str) -> str:
     """Extract human-readable message from API error strings.
 

@@ -147,6 +147,7 @@ desk (CLI entry point)
 │   ├── move-slide     → Reorder a slide
 │   ├── insert-text    → Insert text into a shape/placeholder
 │   ├── replace-text   → Find and replace text across the deck
+│   ├── set-notes      → Set a slide's speaker notes
 │   ├── insert-image   → Insert an image from a public URL
 │   ├── insert-table   → Insert a table
 │   ├── insert-shape   → Insert a shape or text box (optionally with text)

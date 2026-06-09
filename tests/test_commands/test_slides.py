@@ -482,6 +482,89 @@ class TestArrangeCommand:
         assert result.exit_code != 0  # click.Choice rejects
 
 
+class TestAddSlideEmitsPlaceholders:
+    def test_placeholders_in_json(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.add_slide.return_value = {
+            "presentationId": "p1", "objectId": "new", "layout": "TITLE_AND_BODY",
+            "placeholders": [
+                {"type": "TITLE", "objectId": "t1"},
+                {"type": "BODY", "objectId": "b1"},
+            ],
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["add-slide", "p1", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        phs = output["changes"]["placeholders"]
+        assert {"type": "TITLE", "objectId": "t1"} in phs
+
+
+class TestSetNotesCommand:
+    def test_set_notes(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_notes.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0",
+            "notesObjectId": "n1", "mode": "replace", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["set-notes", "p1", "0", "Talk track", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["operation"] == "set-notes"
+        assert output["changes"]["mode"] == "replace"
+        client.set_notes.assert_called_once_with("p1", "0", "Talk track", mode="replace")
+
+    def test_set_notes_append(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.set_notes.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0",
+            "notesObjectId": "n1", "mode": "append", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["set-notes", "p1", "0", "more", "--mode", "append", "--json"]
+        )
+
+        assert result.exit_code == 0
+        client.set_notes.assert_called_once_with("p1", "0", "more", mode="append")
+
+
+class TestScopeErrorClassification:
+    def test_scope_error_maps_to_insufficient_scopes(
+        self, runner, mock_get_credentials, mock_slides_client_class
+    ):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.read.side_effect = RuntimeError(
+            'Slides API error: <HttpError 403 ... "Request had insufficient '
+            'authentication scopes." ... ACCESS_TOKEN_SCOPE_INSUFFICIENT>'
+        )
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["read", "p1", "--json"])
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INSUFFICIENT_SCOPES"
+        # the misleading "request access from owner" advice must NOT appear
+        joined = " ".join(output["error"]["suggestions"]).lower()
+        assert "desk auth login" in joined
+        assert "request access" not in joined
+
+
 class TestExport:
     def test_export_writes_file(self, runner, mock_get_credentials, mock_slides_client_class, tmp_path):
         from desk.commands.slides import slides

@@ -15,6 +15,7 @@ from rich.markup import escape
 from desk.agent import (
     ERROR_SUGGESTIONS,
     ErrorCode,
+    is_scope_error,
     operation_receipt,
     output_result,
     parse_api_error,
@@ -57,7 +58,11 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
     raw_error = str(e)
     error_msg = parse_api_error(raw_error)
 
-    if "not found" in raw_error.lower() or "404" in raw_error:
+    if is_scope_error(raw_error):
+        # Missing scope (e.g. token predates the presentations scope) — tell the
+        # user to re-auth, not to "request access". See ADR-030.
+        code = ErrorCode.INSUFFICIENT_SCOPES
+    elif "not found" in raw_error.lower() or "404" in raw_error:
         code = ErrorCode.PRESENTATION_NOT_FOUND
     elif "401" in raw_error or "invalid credentials" in raw_error.lower():
         code = ErrorCode.AUTH_EXPIRED
@@ -162,6 +167,8 @@ def read(presentation_id: str, as_json: bool) -> None:
             console.print(slide["text"])
         else:
             console.print("[dim](no text)[/dim]")
+        if slide.get("notes"):
+            console.print(f"[dim]Notes:[/dim] {slide['notes']}")
 
 
 @slides.command("inspect")
@@ -310,14 +317,20 @@ def add_slide(
 ) -> None:
     """Add a slide with a predefined layout.
 
-    After adding, run `desk slides inspect <id>` to find the new slide's
-    placeholder objectIds, then `desk slides insert-text` to fill them.
+    With --json, the response includes the new slide's placeholder objectIds and
+    types, so you can `insert-text` into them directly without a separate inspect.
+
+    Layout note: placeholders depend on the layout. SECTION_HEADER is title-only;
+    for a section slide with a tagline use SECTION_TITLE_AND_DESCRIPTION (TITLE +
+    SUBTITLE + BODY). TITLE_AND_BODY gives TITLE + BODY; BLANK has none.
 
     Examples:
 
         desk slides add-slide <id>
 
         desk slides add-slide <id> --layout TITLE_ONLY
+
+        desk slides add-slide <id> --layout SECTION_TITLE_AND_DESCRIPTION
 
         desk slides add-slide <id> --layout BLANK --index 0
     """
@@ -339,7 +352,13 @@ def add_slide(
     receipt = operation_receipt(
         operation="add-slide",
         target={"id": presentation_id, "slide_object_id": result.get("objectId")},
-        changes={"layout": layout, "index": index},
+        changes={
+            "layout": layout,
+            "index": index,
+            # Hand back placeholder objectIds so the caller can insert-text
+            # without a separate inspect (ADR-030).
+            "placeholders": result.get("placeholders", []),
+        },
         undo_command=(
             f"desk slides delete-object {presentation_id} {result.get('objectId')} --yes"
         ),
@@ -578,6 +597,44 @@ def replace_text(
             "ignore_case": ignore_case,
             "occurrences_changed": result["occurrences_changed"],
         },
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("set-notes")
+@click.argument("presentation_id")
+@click.argument("slide")
+@click.argument("text")
+@click.option(
+    "--mode", type=click.Choice(["replace", "append"]), default="replace",
+    help="Replace existing notes (default) or append to them",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def set_notes(
+    presentation_id: str, slide: str, text: str, mode: str, quiet: bool, as_json: bool,
+) -> None:
+    """Set a slide's speaker notes.
+
+    SLIDE is a 0-based index or a slide objectId. Use `desk slides read` to see
+    existing notes per slide.
+
+    Examples:
+
+        desk slides set-notes <id> 0 "Open with the Q3 revenue number."
+
+        desk slides set-notes <id> 2 "Also mention churn." --mode append
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.set_notes(presentation_id, slide, text, mode=mode)
+    except Exception as e:
+        _handle_api_error(e, as_json, {"presentation_id": presentation_id, "slide": slide})
+
+    receipt = operation_receipt(
+        operation="set-notes",
+        target={"id": presentation_id, "slide_object_id": result.get("slideObjectId")},
+        changes={"mode": mode, "text_length": len(text)},
     )
     output_result(receipt, as_json, quiet)
 

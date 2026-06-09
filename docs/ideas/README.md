@@ -45,11 +45,11 @@ idea → exploring → planned → adr-created → (implemented)
 | 056 | [Slides Phase 3 — Styling & Layout](056-slides-styling-layout.md) | adr-created | L | Text/element styling, backgrounds, layouts |
 | 057 | [Slides Phase 4 — Outline-First Authoring](057-slides-outline-authoring.md) | questioned | L | Generate a deck from a markdown outline (ADR-003 concern) |
 | 058 | [Bug — docs export supportsAllDrives](058-docs-export-supportsalldrives-bug.md) | idea | S | Fix probable latent crash in docs export |
-| 059 | [Slides Speaker Notes](059-slides-speaker-notes.md) | idea | S | Set per-slide speaker notes (core deck gap) |
-| 060 | [Scope-Mismatch Re-Auth UX](060-scope-mismatch-reauth-ux.md) | idea | S | Tell users to re-auth on new-scope 403s, not "request access" |
-| 061 | [Slides Authoring Ergonomics](061-slides-authoring-ergonomics.md) | idea | M | Fewer round-trips per slide (11-slide build = ~30+ calls) |
-| 062 | [add-slide emit placeholder ids](062-slides-add-slide-emit-placeholder-ids.md) | idea | S | Remove the mandatory inspect between add-slide and insert-text |
-| 063 | [SECTION_HEADER tagline coverage](063-slides-section-header-placeholders.md) | idea | S | Likely docs: point to SECTION_TITLE_AND_DESCRIPTION |
+| 059 | [Slides Speaker Notes](059-slides-speaker-notes.md) | implemented | S | Set per-slide speaker notes (core deck gap) |
+| 060 | [Scope-Mismatch Re-Auth UX](060-scope-mismatch-reauth-ux.md) | implemented | S | Tell users to re-auth on new-scope 403s, not "request access" |
+| 061 | [Slides Authoring Ergonomics](061-slides-authoring-ergonomics.md) | idea | M | Fewer round-trips per slide; (a) done via 062, (b) inline fill open |
+| 062 | [add-slide emit placeholder ids](062-slides-add-slide-emit-placeholder-ids.md) | implemented | S | Remove the mandatory inspect between add-slide and insert-text |
+| 063 | [SECTION_HEADER tagline coverage](063-slides-section-header-placeholders.md) | implemented | S | Resolved as docs: use SECTION_TITLE_AND_DESCRIPTION |
 
 ## Adding an Idea
 
