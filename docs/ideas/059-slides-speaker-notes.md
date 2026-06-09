@@ -41,13 +41,16 @@ Consider a `--mode append|replace` flag and surfacing existing notes in `read`/`
 
 - [ ] Does the default/blank notes page already have a `speakerNotesObjectId`, or must it
       be created first? (If absent, may need `createParagraphBullets`-style provisioning or
-      it may be auto-present.)
-- [ ] Should `read` include notes text per slide? Likely yes (round-trips the talk track).
+      it may be auto-present.) Reach it via `slides.pages.get` →
+      `slideProperties.notesPage` → `notesProperties.speakerNotesObjectId`.
+- [x] Should `read` include notes text per slide? **Yes** — confirmed wanted (round-trips
+      the talk track). Make it opt-in or always-on in `read`.
 - [ ] Replace vs append default — append is safer; replace is the common authoring case.
 
 ## Value Signal
 
-Direct user feedback calling this the biggest gap. Notes are table-stakes for decks.
+Confirmed the **#1 gap** across two rounds of feedback, including a real 11-slide deck
+build (2026-06-09): notes are table-stakes for any deck meant to be delivered.
 
 ## Effort Guess
 
