@@ -118,6 +118,27 @@ captured as Phase 3b.
   service operations — consistent with ADR-002's spirit (the alternative is raw geometry,
   which is worse for agents)
 
+## Vocabulary tension — explicit resolution
+
+The named-region / `place` vocabulary (and `arrange`, ADR-029) sits in direct tension with
+**ADR-002 (No Invented Vocabulary)**: the Slides API has no "top-right" or "columns"
+concept — only affine transforms in EMU — so this layer is genuinely invented, not a
+rename of an existing service concept.
+
+The resolution, decided with the maintainer (2026-06-09): **agent-first (ADR-004) takes
+precedence over no-invented-vocabulary (ADR-002) when the invented vocabulary exists
+specifically to serve a concrete agent failing.** Raw EMU geometry is a known
+LLM-failure mode (off-slide / overlapping elements from arithmetic the model gets wrong).
+Inventing a layout vocabulary that hides that math is the toolkit handing agents a usable
+primitive, not a pre-built workflow (so it stays on the right side of ADR-003, which
+targets cross-service, use-case-encoding commands).
+
+This precedence is **narrow**: it justifies invented vocabulary only when (a) it addresses
+a specific agent weakness, (b) it uses universal/portable terms (not desk-coined jargon),
+and (c) it remains a single-service primitive, not a workflow. It is not license to invent
+vocabulary for convenience. Whether agents actually use regions/`arrange` well is being
+validated empirically against a real use case.
+
 ## Implementation Notes
 
 - `src/desk/services/slides.py`: `style_text`, `format_element`, region helpers
