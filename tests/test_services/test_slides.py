@@ -1148,6 +1148,79 @@ class TestSetCell:
             client.set_cell("p1", "sh", 0, 0, "x")
 
 
+class TestStackElements:
+    """Tests for SlidesClient.stack_elements (ADR-031)."""
+
+    def _pres(self, presentations, elements, page=(720, 405)):
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": page[0], "unit": "PT"},
+                         "height": {"magnitude": page[1], "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": elements}],
+        }
+
+    @staticmethod
+    def _el(oid, w, h, sx=1, sy=1):
+        return {
+            "objectId": oid, "shape": {},
+            "size": {"width": {"magnitude": w, "unit": "PT"},
+                     "height": {"magnitude": h, "unit": "PT"}},
+            "transform": {"scaleX": sx, "scaleY": sy, "translateX": 0, "translateY": 0, "unit": "PT"},
+        }
+
+    def test_vertical_stack_moves_not_resizes(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [self._el("a", 100, 40), self._el("b", 100, 40)])
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.stack_elements("p1", ["a", "b"], "vertical", align="start", gap=10)
+
+        reqs = presentations.batchUpdate.call_args[1]["body"]["requests"]
+        ta = reqs[0]["updatePageElementTransform"]["transform"]
+        tb = reqs[1]["updatePageElementTransform"]["transform"]
+        # scale preserved (move-only), b is gap+height below a
+        assert ta["scaleX"] == 1 and ta["scaleY"] == 1
+        assert tb["translateY"] == ta["translateY"] + 40 + 10
+        assert ta["translateX"] == tb["translateX"]  # same x (start-aligned)
+
+    def test_center_align_horizontal_centers_cross_axis(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [self._el("a", 100, 50)])
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.stack_elements("p1", ["a"], "horizontal", align="center")
+
+        t = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]
+        # content area is (24,24,672,357); centered y = 24 + (357-50)/2
+        assert abs(t["translateY"] - (24 + (357 - 50) / 2)) < 1e-6
+
+    def test_preserves_existing_scale(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [self._el("a", 100, 50, sx=2, sy=2)])
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.stack_elements("p1", ["a"], "vertical")
+
+        t = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]
+        assert t["scaleX"] == 2 and t["scaleY"] == 2  # not rescaled
+
+    def test_empty_and_bad_args_raise(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="at least one"):
+            client.stack_elements("p1", [], "vertical")
+        with pytest.raises(ValueError, match="--dir"):
+            client.stack_elements("p1", ["a"], "sideways")
+        with pytest.raises(ValueError, match="--align"):
+            client.stack_elements("p1", ["a"], "vertical", align="middle")
+
+    def test_missing_object_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres(presentations, [self._el("a", 100, 50)])
+        with pytest.raises(RuntimeError, match="Object not found"):
+            client.stack_elements("p1", ["a", "ghost"], "vertical")
+
+
 class TestSetText:
     """Tests for SlidesClient.set_text (Idea 072)."""
 

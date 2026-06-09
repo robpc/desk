@@ -37,6 +37,7 @@ proposed → accepted → [deprecated | superseded]
 | 028 | [Slides Styling and Relative Layout (Phase 3a)](028-slides-styling-and-relative-layout.md) | accepted | 2026-06-09 |
 | 029 | [Slides Multi-Element Arrange and Richer Regions (Phase 3b-i)](029-slides-arrange-and-richer-regions.md) | accepted | 2026-06-09 |
 | 030 | [Slides Authoring Refinements + Scope Re-Auth UX](030-slides-authoring-refinements-and-scope-ux.md) | accepted | 2026-06-09 |
+| 031 | [Slides `stack` — flow layout](031-slides-stack-flow-layout.md) | accepted | 2026-06-09 |
 
 ## Creating a New ADR
 

@@ -28,6 +28,8 @@ from desk.services.slides import (
     PREDEFINED_LAYOUTS,
     REGIONS,
     SHAPE_TYPES,
+    STACK_ALIGN,
+    STACK_DIRECTIONS,
     SlidesClient,
 )
 
@@ -1228,6 +1230,60 @@ def arrange_cmd(
 
     receipt = operation_receipt(
         operation="arrange",
+        target={"id": presentation_id, "object_ids": list(object_ids)},
+        changes=changes,
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("stack")
+@click.argument("presentation_id")
+@click.argument("object_ids", nargs=-1, required=True)
+@click.option("--dir", "direction", type=click.Choice(STACK_DIRECTIONS), required=True,
+              help="Flow direction: vertical or horizontal")
+@click.option("--align", type=click.Choice(STACK_ALIGN), default="start",
+              help="Cross-axis alignment (start/center/end). Default start.")
+@click.option("--gap", type=float, default=12.0, help="Spacing between elements in points")
+@click.option("--region", type=click.Choice(REGIONS), default=None,
+              help="Confine the stack to a region (default: whole slide content area)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def stack_cmd(
+    presentation_id: str, object_ids: tuple[str, ...], direction: str,
+    align: str, gap: float, region: str | None, quiet: bool, as_json: bool,
+) -> None:
+    """Flow elements in a line at their natural size, with alignment and spacing.
+
+    Unlike `arrange` (which stretches elements to fill a grid), `stack` keeps each
+    element's size and lays them out along --dir with --gap between them, aligned
+    on the cross-axis. Order is preserved. Find objectIds with `desk slides inspect`.
+
+    Examples:
+
+        desk slides stack <id> a b c d e --dir vertical --align center
+
+        desk slides stack <id> a b c --dir horizontal --gap 20 --region bottom-half
+    """
+    client = _get_client(as_json)
+    try:
+        client.stack_elements(
+            presentation_id, list(object_ids), direction,
+            align=align, gap=gap, region=region,
+        )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json,
+            {"presentation_id": presentation_id, "dir": direction, "count": len(object_ids)},
+        )
+
+    changes: dict = {"dir": direction, "align": align, "gap": gap, "count": len(object_ids)}
+    if region:
+        changes["region"] = region
+
+    receipt = operation_receipt(
+        operation="stack",
         target={"id": presentation_id, "object_ids": list(object_ids)},
         changes=changes,
     )

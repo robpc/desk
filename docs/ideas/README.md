@@ -63,6 +63,8 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 073 | [Slides set-background](073-slides-set-background.md) | implemented | S | Set a slide's page background color (no rectangle hack) |
 
+| 074 | [Slides stack — flow layout](074-slides-stack-flow-layout.md) | implemented | M | Flow N elements at natural size (align + gap) — 'centered, stacked' |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`

@@ -821,6 +821,43 @@ class TestScopeErrorClassification:
         assert "request access" not in joined
 
 
+class TestStackCommand:
+    def test_stack(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.stack_elements.return_value = {
+            "presentationId": "p1", "objectIds": ["a", "b", "c"],
+            "direction": "vertical", "align": "center", "gap": 12.0,
+            "region": None, "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["stack", "p1", "a", "b", "c", "--dir", "vertical", "--align", "center", "--json"]
+        )
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["operation"] == "stack"
+        assert out["changes"]["dir"] == "vertical" and out["changes"]["align"] == "center"
+        client.stack_elements.assert_called_once_with(
+            "p1", ["a", "b", "c"], "vertical", align="center", gap=12.0, region=None
+        )
+
+    def test_stack_requires_dir(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["stack", "p1", "a", "b"])  # no --dir
+        assert result.exit_code != 0
+
+    def test_stack_bad_align_rejected(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["stack", "p1", "a", "--dir", "vertical", "--align", "middle"])
+        assert result.exit_code != 0  # click.Choice rejects
+
+
 class TestExport:
     def test_export_writes_file(self, runner, mock_get_credentials, mock_slides_client_class, tmp_path):
         from desk.commands.slides import slides

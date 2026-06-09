@@ -69,6 +69,10 @@ REGIONS = [
 # Element distribution modes for `arrange` (ADR-029).
 ARRANGE_MODES = ["columns", "rows", "grid"]
 
+# Flow layout for `stack` (ADR-031): direction + cross-axis alignment.
+STACK_DIRECTIONS = ["vertical", "horizontal"]
+STACK_ALIGN = ["start", "center", "end"]
+
 # Layout geometry, in points: outer margin and inter-cell gutter.
 _REGION_MARGIN = 24.0
 _REGION_GUTTER = 12.0
@@ -1511,6 +1515,114 @@ class SlidesClient:
             self._batch_update(presentation_id, requests)
             return {"presentationId": presentation_id, "objectIds": object_ids,
                     "mode": mode, "region": region, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def _move_transform_request(self, element: dict, x: float, y: float) -> dict:
+        """ABSOLUTE transform that MOVES an element to (x, y) pt without resizing.
+
+        Preserves the element's current scale/shear (unlike _fit_transform_request,
+        which rescales to fill a box). Used by `stack` for natural-size flow.
+        """
+        t = element.get("transform", {})
+        transform = {
+            "scaleX": t.get("scaleX", 1) or 1,
+            "scaleY": t.get("scaleY", 1) or 1,
+            "translateX": x, "translateY": y, "unit": "PT",
+        }
+        if t.get("shearX"):
+            transform["shearX"] = t["shearX"]
+        if t.get("shearY"):
+            transform["shearY"] = t["shearY"]
+        return {
+            "updatePageElementTransform": {
+                "objectId": element.get("objectId", ""),
+                "applyMode": "ABSOLUTE",
+                "transform": transform,
+            }
+        }
+
+    def stack_elements(
+        self, presentation_id: str, object_ids: list[str], direction: str,
+        align: str = "start", gap: float = 12.0, region: str | None = None,
+    ) -> dict:
+        """Flow elements in a line at their natural size (ADR-031).
+
+        Unlike `arrange` (which stretches each element to fill a grid cell),
+        `stack` keeps each element's size, places them along ``direction``
+        (vertical/horizontal) with ``gap`` between them, and aligns them on the
+        cross-axis (``align`` = start/center/end) within the target area (a named
+        region, or the slide content area by default). Elements move only — no
+        resize — so it's safe for tables too. Math is internal.
+
+        Returns:
+            Dict with presentationId, objectIds, direction, align, gap, region, status.
+        """
+        if not object_ids:
+            raise ValueError("stack requires at least one object id.")
+        if direction not in STACK_DIRECTIONS:
+            raise ValueError(f"--dir must be one of {', '.join(STACK_DIRECTIONS)}.")
+        if align not in STACK_ALIGN:
+            raise ValueError(f"--align must be one of {', '.join(STACK_ALIGN)}.")
+        if gap < 0:
+            raise ValueError("--gap must be >= 0.")
+
+        pres = self._get(presentation_id)
+        index: dict[str, dict] = {}
+        for slide in pres.get("slides", []):
+            for element in slide.get("pageElements", []):
+                index[element.get("objectId", "")] = element
+
+        elements = []
+        for oid in object_ids:
+            if oid not in index:
+                raise RuntimeError(
+                    f"Object not found: {oid}. "
+                    f"Use 'desk slides inspect {presentation_id}' to list objectIds."
+                )
+            elements.append(index[oid])
+
+        boxes = [self._element_box(el) for el in elements]
+        for oid, box in zip(object_ids, boxes):
+            if box is None:
+                raise RuntimeError(f"Object {oid} has no resolvable size; can't stack it.")
+
+        size = pres.get("pageSize", {})
+        page_w = self._dimension_pt(size.get("width"), 720.0)
+        page_h = self._dimension_pt(size.get("height"), 405.0)
+        ax, ay, aw, ah = _region_box(page_w, page_h, region or "full")
+
+        requests = []
+        if direction == "vertical":
+            cursor = ay
+            for el, b in zip(elements, boxes):
+                w, h = b["width"], b["height"]
+                if align == "center":
+                    x = ax + (aw - w) / 2
+                elif align == "end":
+                    x = ax + aw - w
+                else:
+                    x = ax
+                requests.append(self._move_transform_request(el, round(x, 2), round(cursor, 2)))
+                cursor += h + gap
+        else:  # horizontal
+            cursor = ax
+            for el, b in zip(elements, boxes):
+                w, h = b["width"], b["height"]
+                if align == "center":
+                    y = ay + (ah - h) / 2
+                elif align == "end":
+                    y = ay + ah - h
+                else:
+                    y = ay
+                requests.append(self._move_transform_request(el, round(cursor, 2), round(y, 2)))
+                cursor += w + gap
+
+        try:
+            self._batch_update(presentation_id, requests)
+            return {"presentationId": presentation_id, "objectIds": object_ids,
+                    "direction": direction, "align": align, "gap": gap,
+                    "region": region, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 
