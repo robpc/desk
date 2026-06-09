@@ -250,7 +250,7 @@ class TestInsertImage:
         assert output["targets"][0]["object_id"] == "img1"
         assert "delete-object" in output["undo"]["command"]
         client.insert_image.assert_called_once_with(
-            "p1", "0", "https://x/y.png", x=None, y=None, width=None, height=None
+            "p1", "0", "https://x/y.png", x=None, y=None, width=None, height=None, region=None
         )
 
     def test_insert_image_requires_url(self, runner, mock_get_credentials, mock_slides_client_class):
@@ -278,7 +278,7 @@ class TestInsertTable:
         output = json.loads(result.output)
         assert output["changes"]["rows"] == 3
         client.insert_table.assert_called_once_with(
-            "p1", "0", 3, 4, x=None, y=None, width=None, height=None
+            "p1", "0", 3, 4, x=None, y=None, width=None, height=None, region=None
         )
 
     def test_insert_table_rejects_zero_rows(self, runner, mock_get_credentials, mock_slides_client_class):
@@ -313,7 +313,7 @@ class TestInsertShape:
         assert output["changes"]["text_length"] == 4
         client.insert_shape.assert_called_once_with(
             "p1", "0", shape_type="TEXT_BOX", text="Note",
-            x=None, y=None, width=None, height=None,
+            x=None, y=None, width=None, height=None, region=None,
         )
 
     def test_insert_shape_rejects_bad_type(self, runner, mock_get_credentials, mock_slides_client_class):
@@ -321,6 +321,128 @@ class TestInsertShape:
 
         result = runner.invoke(slides, ["insert-shape", "p1", "0", "--type", "BOGUS"])
         assert result.exit_code != 0
+
+
+class TestStyleCommand:
+    def test_style(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.style_text.return_value = {"presentationId": "p1", "objectId": "sh", "status": "ok"}
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["style", "p1", "sh", "--bold", "--font-size", "24", "--color", "#FF0000", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["bold"] is True
+        assert output["changes"]["color"] == "#FF0000"
+
+    def test_style_partial_range_rejected(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["style", "p1", "sh", "--start", "0", "--json"])
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+    def test_style_bad_color_rejected(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.style_text.side_effect = ValueError("Invalid color: mauve.")
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["style", "p1", "sh", "--color", "mauve", "--json"])
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+
+
+class TestFormatCommand:
+    def test_format_shape(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.format_element.return_value = {
+            "presentationId": "p1", "objectId": "sh", "elementType": "shape", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides, ["format", "p1", "sh", "--fill", "#FFF3CD", "--outline", "ACCENT1", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["element_type"] == "shape"
+        assert output["changes"]["fill"] == "#FFF3CD"
+
+
+class TestPlaceCommand:
+    def test_place(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.place_element.return_value = {
+            "presentationId": "p1", "objectId": "el", "region": "center", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["place", "p1", "el", "--region", "center", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["changes"]["region"] == "center"
+        client.place_element.assert_called_once_with("p1", "el", "center")
+
+    def test_place_bad_region_rejected(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["place", "p1", "el", "--region", "nowhere"])
+        assert result.exit_code != 0  # click.Choice rejects
+
+
+class TestRegionOnInsert:
+    def test_region_and_coords_mutually_exclusive(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides,
+            ["insert-shape", "p1", "0", "--region", "center", "--x", "10", "--json"],
+        )
+
+        assert result.exit_code == 1
+        output = json.loads(result.output)
+        assert output["error"]["code"] == "INVALID_INPUT"
+        client.insert_shape.assert_not_called()
+
+    def test_region_passed_through(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.insert_image.return_value = {
+            "presentationId": "p1", "slideObjectId": "s0", "objectId": "img", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(
+            slides,
+            ["insert-image", "p1", "0", "--url", "https://x/y.png", "--region", "right-half", "--json"],
+        )
+
+        assert result.exit_code == 0
+        client.insert_image.assert_called_once_with(
+            "p1", "0", "https://x/y.png",
+            x=None, y=None, width=None, height=None, region="right-half",
+        )
 
 
 class TestExport:

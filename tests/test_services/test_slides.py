@@ -401,6 +401,227 @@ class TestVisualElements:
         assert result["objectId"] == reqs[0]["createShape"]["objectId"]
 
 
+class TestParseColor:
+    """Tests for _parse_color (Phase 3a)."""
+
+    def test_hex_six(self):
+        from desk.services.slides import _parse_color
+
+        c = _parse_color("#1A73E8")
+        rgb = c["rgbColor"]
+        assert abs(rgb["red"] - 26 / 255) < 1e-6
+        assert abs(rgb["green"] - 115 / 255) < 1e-6
+        assert abs(rgb["blue"] - 232 / 255) < 1e-6
+
+    def test_hex_three_expands(self):
+        from desk.services.slides import _parse_color
+
+        assert _parse_color("#fff") == _parse_color("#ffffff")
+
+    def test_theme_name(self):
+        from desk.services.slides import _parse_color
+
+        assert _parse_color("accent1") == {"themeColor": "ACCENT1"}
+
+    def test_invalid_color_raises(self):
+        from desk.services.slides import _parse_color
+
+        with pytest.raises(ValueError, match="Invalid color"):
+            _parse_color("chartreuse")
+
+    def test_invalid_hex_raises(self):
+        from desk.services.slides import _parse_color
+
+        with pytest.raises(ValueError, match="Invalid hex"):
+            _parse_color("#12")
+
+
+class TestRegionBox:
+    """Tests for _region_box geometry (Phase 3a)."""
+
+    def test_full_is_inside_margins(self):
+        from desk.services.slides import _region_box
+
+        x, y, w, h = _region_box(720, 405, "full")
+        assert x == 24 and y == 24
+        assert w == 720 - 48 and h == 405 - 48
+
+    def test_right_half_is_right_of_center(self):
+        from desk.services.slides import _region_box
+
+        lx, _, lw, _ = _region_box(720, 405, "left-half")
+        rx, _, rw, _ = _region_box(720, 405, "right-half")
+        assert rx > lx + lw  # right half starts past the left half + gutter
+        assert abs(lw - rw) < 1e-9
+
+    def test_grid_cells_distinct(self):
+        from desk.services.slides import _region_box
+
+        tl = _region_box(720, 405, "top-left")
+        br = _region_box(720, 405, "bottom-right")
+        assert br[0] > tl[0] and br[1] > tl[1]
+
+    def test_unknown_region_raises(self):
+        from desk.services.slides import _region_box
+
+        with pytest.raises(ValueError, match="Unknown region"):
+            _region_box(720, 405, "middle-ish")
+
+
+class TestStyleText:
+    """Tests for SlidesClient.style_text (Phase 3a)."""
+
+    def test_style_whole_text_default_range(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.style_text("p1", "sh", bold=True, font_size=24)
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["updateTextStyle"]
+        assert req["objectId"] == "sh"
+        assert req["textRange"] == {"type": "ALL"}
+        assert req["style"]["bold"] is True
+        assert req["style"]["fontSize"]["magnitude"] == 24
+        assert "bold" in req["fields"] and "fontSize" in req["fields"]
+
+    def test_style_color_and_range(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.style_text("p1", "sh", color="#FF0000", start=0, end=5)
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["updateTextStyle"]
+        assert req["textRange"] == {"type": "FIXED_RANGE", "startIndex": 0, "endIndex": 5}
+        rgb = req["style"]["foregroundColor"]["opaqueColor"]["rgbColor"]
+        assert rgb["red"] == 1.0
+
+    def test_style_no_fields_is_noop(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+
+        result = client.style_text("p1", "sh")
+
+        assert result["status"] == "ok"
+        presentations.batchUpdate.assert_not_called()
+
+
+class TestFormatElement:
+    """Tests for SlidesClient.format_element (Phase 3a)."""
+
+    def _pres_with_element(self, presentations, element):
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0", "pageElements": [element]}]
+        }
+
+    def test_format_shape_fill_and_outline(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres_with_element(presentations, {"objectId": "sh", "shape": {}})
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.format_element("p1", "sh", fill="#FFFFFF", outline="ACCENT1", outline_weight=2)
+
+        assert result["elementType"] == "shape"
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["updateShapeProperties"]
+        props = req["shapeProperties"]
+        # SolidFill.color is an OpaqueColor directly — NOT wrapped in opaqueColor.
+        fill_color = props["shapeBackgroundFill"]["solidFill"]["color"]
+        assert "rgbColor" in fill_color and "opaqueColor" not in fill_color
+        outline_color = props["outline"]["outlineFill"]["solidFill"]["color"]
+        assert outline_color == {"themeColor": "ACCENT1"}
+        assert props["outline"]["weight"]["magnitude"] == 2
+
+    def test_format_image_rejects_fill(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres_with_element(presentations, {"objectId": "img", "image": {}})
+
+        with pytest.raises(ValueError, match="no fill"):
+            client.format_element("p1", "img", fill="#FFFFFF")
+
+    def test_format_image_outline(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._pres_with_element(presentations, {"objectId": "img", "image": {}})
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.format_element("p1", "img", outline="#000000")
+
+        assert result["elementType"] == "image"
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
+        assert "updateImageProperties" in req
+
+    def test_format_missing_object_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {"slides": []}
+
+        with pytest.raises(RuntimeError, match="Object not found"):
+            client.format_element("p1", "nope", fill="#FFFFFF")
+
+
+class TestPlaceElement:
+    """Tests for SlidesClient.place_element (Phase 3a)."""
+
+    def test_place_computes_absolute_transform(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        # First get() (find element) and second get() (page size) both return this.
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {
+                "width": {"magnitude": 720, "unit": "PT"},
+                "height": {"magnitude": 405, "unit": "PT"},
+            },
+            "slides": [{
+                "objectId": "s0",
+                "pageElements": [{
+                    "objectId": "el",
+                    "size": {
+                        "width": {"magnitude": 100, "unit": "PT"},
+                        "height": {"magnitude": 50, "unit": "PT"},
+                    },
+                }],
+            }],
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.place_element("p1", "el", "full")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
+        t = req["updatePageElementTransform"]
+        assert t["applyMode"] == "ABSOLUTE"
+        # full box is 672x357 pt; base is 100x50 → scale 6.72 x 7.14
+        assert abs(t["transform"]["scaleX"] - (672 / 100)) < 1e-6
+        assert abs(t["transform"]["scaleY"] - (357 / 50)) < 1e-6
+        assert t["transform"]["translateX"] == 24
+
+    def test_place_without_size_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": [{"objectId": "el"}]}],
+        }
+
+        with pytest.raises(RuntimeError, match="no resolvable size"):
+            client.place_element("p1", "el", "center")
+
+
+class TestInsertWithRegion:
+    """Region overrides explicit coordinates on insert (Phase 3a)."""
+
+    def test_insert_shape_region_sets_box(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0"}],
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {"replies": [{}]}
+
+        client.insert_shape("p1", "s0", region="full")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["createShape"]
+        size = req["elementProperties"]["size"]
+        # full width 672pt, height 357pt
+        assert abs(size["width"]["magnitude"] - 672) < 1e-6
+        assert abs(size["height"]["magnitude"] - 357) < 1e-6
+
+
 class TestSlidesExport:
     """Tests for SlidesClient.export."""
 

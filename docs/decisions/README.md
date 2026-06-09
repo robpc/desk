@@ -34,6 +34,7 @@ proposed → accepted → [deprecated | superseded]
 | 019 | [Errors to stderr](019-errors-to-stderr.md) | accepted | 2026-05-06 |
 | 026 | [Google Slides Support](026-google-slides-support.md) | accepted | 2026-06-09 |
 | 027 | [Slides Visual Elements (Phase 2)](027-slides-visual-elements.md) | accepted | 2026-06-09 |
+| 028 | [Slides Styling and Relative Layout (Phase 3a)](028-slides-styling-and-relative-layout.md) | accepted | 2026-06-09 |
 
 ## Creating a New ADR
 

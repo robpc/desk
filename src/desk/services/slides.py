@@ -46,6 +46,99 @@ SHAPE_TYPES = [
     "RIGHT_ARROW",
 ]
 
+# Theme color names accepted by `--color`/`--fill`/`--outline` alongside hex.
+# Map to a themeColor so a deck stays on-palette. See ADR-028.
+THEME_COLORS = [
+    "DARK1", "LIGHT1", "DARK2", "LIGHT2",
+    "ACCENT1", "ACCENT2", "ACCENT3", "ACCENT4", "ACCENT5", "ACCENT6",
+    "HYPERLINK", "FOLLOWED_HYPERLINK",
+]
+
+# Named layout regions for the math-free positioning vocabulary (ADR-028).
+# Each resolves to a concrete box computed from the slide's real dimensions.
+REGIONS = [
+    "top-left", "top", "top-right",
+    "left", "center", "right",
+    "bottom-left", "bottom", "bottom-right",
+    "left-half", "right-half", "top-half", "bottom-half",
+    "full",
+]
+
+# Layout geometry, in points: outer margin and inter-cell gutter.
+_REGION_MARGIN = 24.0
+_REGION_GUTTER = 12.0
+_EMU_PER_PT = 12700.0
+
+
+def _parse_color(color: str) -> dict:
+    """Parse a color string into a Slides OpaqueColor.
+
+    Accepts ``#RGB`` / ``#RRGGBB`` hex (→ rgbColor) or a theme color name
+    (→ themeColor). Raises ValueError on anything else.
+    """
+    if color.startswith("#"):
+        hex_digits = color[1:]
+        if len(hex_digits) == 3:
+            hex_digits = "".join(c * 2 for c in hex_digits)
+        if len(hex_digits) != 6:
+            raise ValueError(f"Invalid hex color: {color}. Use #RGB or #RRGGBB.")
+        try:
+            r = int(hex_digits[0:2], 16) / 255.0
+            g = int(hex_digits[2:4], 16) / 255.0
+            b = int(hex_digits[4:6], 16) / 255.0
+        except ValueError:
+            raise ValueError(f"Invalid hex color: {color}.")
+        return {"rgbColor": {"red": r, "green": g, "blue": b}}
+
+    name = color.upper()
+    if name in THEME_COLORS:
+        return {"themeColor": name}
+
+    raise ValueError(
+        f"Invalid color: {color}. Use #RRGGBB hex or a theme name "
+        f"({', '.join(THEME_COLORS)})."
+    )
+
+
+def _region_box(
+    page_w: float, page_h: float, region: str,
+) -> tuple[float, float, float, float]:
+    """Resolve a region name to an (x, y, width, height) box in points.
+
+    Geometry lives here so agents and commands only ever speak region names.
+    """
+    m, g = _REGION_MARGIN, _REGION_GUTTER
+    cx, cy = m, m
+    cw, ch = page_w - 2 * m, page_h - 2 * m
+
+    if region == "full":
+        return cx, cy, cw, ch
+
+    half_w = (cw - g) / 2
+    half_h = (ch - g) / 2
+    if region == "left-half":
+        return cx, cy, half_w, ch
+    if region == "right-half":
+        return cx + half_w + g, cy, half_w, ch
+    if region == "top-half":
+        return cx, cy, cw, half_h
+    if region == "bottom-half":
+        return cx, cy + half_h + g, cw, half_h
+
+    grid = {
+        "top-left": (0, 0), "top": (1, 0), "top-right": (2, 0),
+        "left": (0, 1), "center": (1, 1), "right": (2, 1),
+        "bottom-left": (0, 2), "bottom": (1, 2), "bottom-right": (2, 2),
+    }
+    if region not in grid:
+        raise ValueError(f"Unknown region: {region}. Valid: {', '.join(REGIONS)}.")
+    col, row = grid[region]
+    col_w = (cw - 2 * g) / 3
+    row_h = (ch - 2 * g) / 3
+    x = cx + col * (col_w + g)
+    y = cy + row * (row_h + g)
+    return x, y, col_w, row_h
+
 
 class SlidesClient:
     """Client for Google Slides API operations."""
@@ -134,6 +227,49 @@ class SlidesClient:
                 "unit": "PT",
             },
         }
+
+    @staticmethod
+    def _dimension_pt(dim: dict | None, fallback: float) -> float:
+        """Convert a Slides Dimension ({magnitude, unit}) to points."""
+        if not dim or "magnitude" not in dim:
+            return fallback
+        magnitude = dim["magnitude"]
+        if dim.get("unit") == "EMU":
+            return magnitude / _EMU_PER_PT
+        return magnitude  # PT (or unspecified — treat as PT)
+
+    def _page_size_pt(self, presentation_id: str) -> tuple[float, float]:
+        """Return the slide (width, height) in points.
+
+        Falls back to 16:9 (720x405 pt) if pageSize is absent.
+        """
+        pres = self._get(presentation_id)
+        size = pres.get("pageSize", {})
+        w = self._dimension_pt(size.get("width"), 720.0)
+        h = self._dimension_pt(size.get("height"), 405.0)
+        return w, h
+
+    def _resolve_region_box(
+        self, presentation_id: str, region: str,
+    ) -> tuple[float, float, float, float]:
+        """Resolve a region name to a concrete (x, y, w, h) box in points."""
+        w, h = self._page_size_pt(presentation_id)
+        return _region_box(w, h, region)
+
+    def _find_element(self, presentation_id: str, object_id: str) -> dict:
+        """Find a page element by objectId across all slides.
+
+        Returns the raw element dict. Raises RuntimeError if not found.
+        """
+        pres = self._get(presentation_id)
+        for slide in pres.get("slides", []):
+            for element in slide.get("pageElements", []):
+                if element.get("objectId") == object_id:
+                    return element
+        raise RuntimeError(
+            f"Object not found: {object_id}. "
+            f"Use 'desk slides inspect {presentation_id}' to list objectIds."
+        )
 
     def _resolve_slide_object_id(self, presentation_id: str, slide: str) -> str:
         """Resolve a slide reference to its objectId.
@@ -494,6 +630,7 @@ class SlidesClient:
         self, presentation_id: str, slide: str, url: str,
         x: float | None = None, y: float | None = None,
         width: float | None = None, height: float | None = None,
+        region: str | None = None,
     ) -> dict:
         """Insert an image onto a slide from a public URL.
 
@@ -503,12 +640,15 @@ class SlidesClient:
             url: Publicly accessible image URL
             x, y: Top-left position in points (default ~50,50)
             width, height: Size in points (default 300x200)
+            region: A named region (overrides x/y/width/height). See REGIONS.
 
         Returns:
             Dict with presentationId, slideObjectId, objectId (the image), status.
         """
         try:
             page_id = self._resolve_slide_object_id(presentation_id, slide)
+            if region:
+                x, y, width, height = self._resolve_region_box(presentation_id, region)
             props = self._element_properties(
                 page_id, x, y, width, height, default_w=300.0, default_h=200.0,
             )
@@ -533,6 +673,7 @@ class SlidesClient:
         self, presentation_id: str, slide: str, rows: int, columns: int,
         x: float | None = None, y: float | None = None,
         width: float | None = None, height: float | None = None,
+        region: str | None = None,
     ) -> dict:
         """Insert a table onto a slide.
 
@@ -543,12 +684,15 @@ class SlidesClient:
             columns: Number of columns
             x, y: Top-left position in points (default ~50,50)
             width, height: Size in points; when omitted the API sizes the table
+            region: A named region (overrides x/y/width/height). See REGIONS.
 
         Returns:
             Dict with presentationId, slideObjectId, objectId (the table), status.
         """
         try:
             page_id = self._resolve_slide_object_id(presentation_id, slide)
+            if region:
+                x, y, width, height = self._resolve_region_box(presentation_id, region)
             element_props: dict = {"pageObjectId": page_id}
             # Only constrain size/position when the caller asked; otherwise let
             # the API place and size the table by its content.
@@ -584,6 +728,7 @@ class SlidesClient:
         text: str | None = None,
         x: float | None = None, y: float | None = None,
         width: float | None = None, height: float | None = None,
+        region: str | None = None,
     ) -> dict:
         """Insert a shape (default text box) onto a slide, optionally with text.
 
@@ -591,11 +736,15 @@ class SlidesClient:
         objectId and the text inserted in the same batchUpdate, so a labelled
         box is one round-trip. See ADR-027.
 
+        ``region`` (see REGIONS) overrides x/y/width/height with a computed box.
+
         Returns:
             Dict with presentationId, slideObjectId, objectId (the shape), status.
         """
         try:
             page_id = self._resolve_slide_object_id(presentation_id, slide)
+            if region:
+                x, y, width, height = self._resolve_region_box(presentation_id, region)
             props = self._element_properties(
                 page_id, x, y, width, height, default_w=300.0, default_h=100.0,
             )
@@ -622,6 +771,193 @@ class SlidesClient:
                 "objectId": object_id,
                 "status": "ok",
             }
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    # ── Styling & layout (Phase 3a, ADR-028) ────────────────────────────
+
+    def style_text(
+        self, presentation_id: str, object_id: str,
+        bold: bool | None = None, italic: bool | None = None,
+        underline: bool | None = None,
+        font_size: float | None = None, font_family: str | None = None,
+        color: str | None = None,
+        start: int | None = None, end: int | None = None,
+    ) -> dict:
+        """Apply text styling to a shape's text.
+
+        Styles the whole shape's text by default; pass start/end for a range.
+        ``color`` accepts hex (#RRGGBB) or a theme name (see _parse_color).
+
+        Returns:
+            Dict with presentationId, objectId, and status.
+        """
+        style: dict = {}
+        fields: list[str] = []
+        if bold is not None:
+            style["bold"] = bold
+            fields.append("bold")
+        if italic is not None:
+            style["italic"] = italic
+            fields.append("italic")
+        if underline is not None:
+            style["underline"] = underline
+            fields.append("underline")
+        if font_size is not None:
+            style["fontSize"] = {"magnitude": font_size, "unit": "PT"}
+            fields.append("fontSize")
+        if font_family is not None:
+            style["fontFamily"] = font_family
+            fields.append("fontFamily")
+        if color is not None:
+            style["foregroundColor"] = {"opaqueColor": _parse_color(color)}
+            fields.append("foregroundColor")
+
+        if not fields:
+            return {"presentationId": presentation_id, "objectId": object_id,
+                    "status": "ok", "note": "no styles specified"}
+
+        if start is not None and end is not None:
+            text_range = {"type": "FIXED_RANGE", "startIndex": start, "endIndex": end}
+        else:
+            text_range = {"type": "ALL"}
+
+        try:
+            self._batch_update(
+                presentation_id,
+                [{
+                    "updateTextStyle": {
+                        "objectId": object_id,
+                        "style": style,
+                        "textRange": text_range,
+                        "fields": ",".join(fields),
+                    }
+                }],
+            )
+            return {"presentationId": presentation_id, "objectId": object_id, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def format_element(
+        self, presentation_id: str, object_id: str,
+        fill: str | None = None, outline: str | None = None,
+        outline_weight: float | None = None,
+    ) -> dict:
+        """Apply fill/outline to a shape or image.
+
+        Shapes get a background fill + outline; images get an outline only
+        (the API has no image fill). Dispatches by the element's actual type.
+
+        Returns:
+            Dict with presentationId, objectId, elementType, and status.
+        """
+        element = self._find_element(presentation_id, object_id)
+
+        # SolidFill.color is an OpaqueColor directly (unlike text's
+        # foregroundColor, which is an OptionalColor wrapping opaqueColor).
+        outline_obj: dict = {}
+        outline_fields: list[str] = []
+        if outline is not None:
+            outline_obj["outlineFill"] = {
+                "solidFill": {"color": _parse_color(outline)}
+            }
+            outline_fields.append("outline.outlineFill.solidFill.color")
+        if outline_weight is not None:
+            outline_obj["weight"] = {"magnitude": outline_weight, "unit": "PT"}
+            outline_fields.append("outline.weight")
+
+        try:
+            if "shape" in element:
+                props: dict = {}
+                fields: list[str] = []
+                if fill is not None:
+                    props["shapeBackgroundFill"] = {
+                        "solidFill": {"color": _parse_color(fill)}
+                    }
+                    fields.append("shapeBackgroundFill.solidFill.color")
+                if outline_obj:
+                    props["outline"] = outline_obj
+                    fields.extend(outline_fields)
+                if not fields:
+                    return {"presentationId": presentation_id, "objectId": object_id,
+                            "elementType": "shape", "status": "ok",
+                            "note": "no formatting specified"}
+                request = {"updateShapeProperties": {
+                    "objectId": object_id,
+                    "shapeProperties": props,
+                    "fields": ",".join(fields),
+                }}
+                element_type = "shape"
+            elif "image" in element:
+                if fill is not None:
+                    raise ValueError("Images have no fill; use --outline instead.")
+                if not outline_obj:
+                    return {"presentationId": presentation_id, "objectId": object_id,
+                            "elementType": "image", "status": "ok",
+                            "note": "no formatting specified"}
+                request = {"updateImageProperties": {
+                    "objectId": object_id,
+                    "imageProperties": {"outline": outline_obj},
+                    "fields": ",".join(outline_fields),
+                }}
+                element_type = "image"
+            else:
+                raise ValueError(
+                    "format supports shapes and images; "
+                    f"object {object_id} is neither."
+                )
+
+            self._batch_update(presentation_id, [request])
+            return {"presentationId": presentation_id, "objectId": object_id,
+                    "elementType": element_type, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def place_element(
+        self, presentation_id: str, object_id: str, region: str,
+    ) -> dict:
+        """Move and fit an existing element into a named region.
+
+        Reads the element's current base size and computes the transform to
+        fill the region box — the caller never does geometry. See ADR-028.
+
+        Returns:
+            Dict with presentationId, objectId, region, and status.
+        """
+        element = self._find_element(presentation_id, object_id)
+        size = element.get("size", {})
+        base_w = self._dimension_pt(size.get("width"), 0.0)
+        base_h = self._dimension_pt(size.get("height"), 0.0)
+        if base_w <= 0 or base_h <= 0:
+            raise RuntimeError(
+                f"Cannot place object {object_id}: it has no resolvable size."
+            )
+
+        page_w, page_h = self._page_size_pt(presentation_id)
+        box_x, box_y, box_w, box_h = _region_box(page_w, page_h, region)
+
+        # Element's existing transform may already carry scale; the API's
+        # base size is the un-scaled size, so scale = target / base.
+        scale_x = box_w / base_w
+        scale_y = box_h / base_h
+
+        try:
+            self._batch_update(
+                presentation_id,
+                [{
+                    "updatePageElementTransform": {
+                        "objectId": object_id,
+                        "applyMode": "ABSOLUTE",
+                        "transform": {
+                            "scaleX": scale_x, "scaleY": scale_y,
+                            "translateX": box_x, "translateY": box_y,
+                            "unit": "PT",
+                        },
+                    }
+                }],
+            )
+            return {"presentationId": presentation_id, "objectId": object_id,
+                    "region": region, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 

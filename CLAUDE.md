@@ -149,7 +149,10 @@ desk (CLI entry point)
 │   ├── replace-text   → Find and replace text across the deck
 │   ├── insert-image   → Insert an image from a public URL
 │   ├── insert-table   → Insert a table
-│   └── insert-shape   → Insert a shape or text box (optionally with text)
+│   ├── insert-shape   → Insert a shape or text box (optionally with text)
+│   ├── style          → Style a shape's text (bold/color/font/size)
+│   ├── format         → Fill/outline a shape or image
+│   └── place          → Move/fit an element into a named region (top-right, etc.)
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events

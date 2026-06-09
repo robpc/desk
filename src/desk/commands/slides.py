@@ -22,7 +22,12 @@ from desk.agent import (
 )
 from desk.auth import get_credentials, get_last_auth_failure
 from desk.console import error_console
-from desk.services.slides import PREDEFINED_LAYOUTS, SHAPE_TYPES, SlidesClient
+from desk.services.slides import (
+    PREDEFINED_LAYOUTS,
+    REGIONS,
+    SHAPE_TYPES,
+    SlidesClient,
+)
 
 console = Console()
 
@@ -582,6 +587,8 @@ def replace_text(
 @click.argument("presentation_id")
 @click.argument("slide")
 @click.option("--url", required=True, help="Publicly accessible image URL")
+@click.option("--region", type=click.Choice(REGIONS), default=None,
+              help="Named layout region (overrides --x/--y/--width/--height)")
 @click.option("--x", type=float, default=None, help="Left position in points")
 @click.option("--y", type=float, default=None, help="Top position in points")
 @click.option("--width", type=float, default=None, help="Width in points")
@@ -589,25 +596,29 @@ def replace_text(
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_image(
-    presentation_id: str, slide: str, url: str,
+    presentation_id: str, slide: str, url: str, region: str | None,
     x: float | None, y: float | None, width: float | None, height: float | None,
     quiet: bool, as_json: bool,
 ) -> None:
     """Insert an image onto a slide from a public URL.
 
     SLIDE is a 0-based index or a slide objectId (see `desk slides inspect`).
-    Position/size are in points and optional.
+    Position by --region (e.g. right-half) or in points; both are optional.
 
     Examples:
 
         desk slides insert-image <id> 0 --url "https://example.com/logo.png"
 
+        desk slides insert-image <id> 0 --url "https://x/y.png" --region top-right
+
         desk slides insert-image <id> 1 --url "https://x/y.png" --x 100 --y 80 --width 200
     """
+    _reject_region_with_coords(region, x, y, width, height, as_json)
     client = _get_client(as_json)
     try:
         result = client.insert_image(
             presentation_id, slide, url, x=x, y=y, width=width, height=height,
+            region=region,
         )
     except Exception as e:
         _handle_api_error(
@@ -630,6 +641,8 @@ def insert_image(
 @click.argument("slide")
 @click.option("--rows", required=True, type=int, help="Number of rows")
 @click.option("--cols", required=True, type=int, help="Number of columns")
+@click.option("--region", type=click.Choice(REGIONS), default=None,
+              help="Named layout region (overrides --x/--y/--width/--height)")
 @click.option("--x", type=float, default=None, help="Left position in points")
 @click.option("--y", type=float, default=None, help="Top position in points")
 @click.option("--width", type=float, default=None, help="Width in points")
@@ -637,21 +650,24 @@ def insert_image(
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_table(
-    presentation_id: str, slide: str, rows: int, cols: int,
+    presentation_id: str, slide: str, rows: int, cols: int, region: str | None,
     x: float | None, y: float | None, width: float | None, height: float | None,
     quiet: bool, as_json: bool,
 ) -> None:
     """Insert a table onto a slide.
 
-    SLIDE is a 0-based index or a slide objectId. Omit position/size to let the
-    API place and size the table.
+    SLIDE is a 0-based index or a slide objectId. Position by --region or in
+    points; omit both to let the API place and size the table.
 
     Examples:
 
         desk slides insert-table <id> 0 --rows 3 --cols 4
 
+        desk slides insert-table <id> 0 --rows 3 --cols 4 --region bottom-half
+
         desk slides insert-table <id> 1 --rows 2 --cols 2 --x 50 --y 100
     """
+    _reject_region_with_coords(region, x, y, width, height, as_json)
     if rows < 1 or cols < 1:
         msg = f"Invalid table dimensions: rows={rows}, cols={cols}. Both must be >= 1."
         if as_json:
@@ -665,6 +681,7 @@ def insert_table(
     try:
         result = client.insert_table(
             presentation_id, slide, rows, cols, x=x, y=y, width=width, height=height,
+            region=region,
         )
     except Exception as e:
         _handle_api_error(
@@ -693,6 +710,8 @@ def insert_table(
     help="Shape type",
 )
 @click.option("--text", default=None, help="Text to place in the shape")
+@click.option("--region", type=click.Choice(REGIONS), default=None,
+              help="Named layout region (overrides --x/--y/--width/--height)")
 @click.option("--x", type=float, default=None, help="Left position in points")
 @click.option("--y", type=float, default=None, help="Top position in points")
 @click.option("--width", type=float, default=None, help="Width in points")
@@ -701,24 +720,28 @@ def insert_table(
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def insert_shape(
     presentation_id: str, slide: str, shape_type: str, text: str | None,
+    region: str | None,
     x: float | None, y: float | None, width: float | None, height: float | None,
     quiet: bool, as_json: bool,
 ) -> None:
     """Insert a shape (default text box) onto a slide, optionally with text.
 
-    SLIDE is a 0-based index or a slide objectId.
+    SLIDE is a 0-based index or a slide objectId. Position by --region or points.
 
     Examples:
 
         desk slides insert-shape <id> 0 --text "Key takeaway"
 
+        desk slides insert-shape <id> 0 --text "Footnote" --region bottom
+
         desk slides insert-shape <id> 1 --type ELLIPSE --x 200 --y 120 --width 150
     """
+    _reject_region_with_coords(region, x, y, width, height, as_json)
     client = _get_client(as_json)
     try:
         result = client.insert_shape(
             presentation_id, slide, shape_type=shape_type, text=text,
-            x=x, y=y, width=width, height=height,
+            x=x, y=y, width=width, height=height, region=region,
         )
     except Exception as e:
         _handle_api_error(
@@ -741,7 +764,190 @@ def insert_shape(
     output_result(receipt, as_json, quiet)
 
 
+# ── Styling & layout (Phase 3a, ADR-028) ────────────────────────────────────
+
+@slides.command("style")
+@click.argument("presentation_id")
+@click.argument("object_id")
+@click.option("--bold/--no-bold", default=None, help="Set bold")
+@click.option("--italic/--no-italic", default=None, help="Set italic")
+@click.option("--underline/--no-underline", default=None, help="Set underline")
+@click.option("--font-size", type=float, default=None, help="Font size in points")
+@click.option("--font", default=None, help="Font family name")
+@click.option("--color", default=None, help="Text color: #RRGGBB or a theme name")
+@click.option("--start", type=int, default=None, help="Start char index (range)")
+@click.option("--end", type=int, default=None, help="End char index (range)")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def style_cmd(
+    presentation_id: str, object_id: str,
+    bold: bool | None, italic: bool | None, underline: bool | None,
+    font_size: float | None, font: str | None, color: str | None,
+    start: int | None, end: int | None,
+    quiet: bool, as_json: bool,
+) -> None:
+    """Style the text of a shape (by objectId).
+
+    Styles the whole shape's text by default; pass --start/--end for a range.
+    Find objectIds with `desk slides inspect <id>`.
+
+    Examples:
+
+        desk slides style <id> <object-id> --bold --font-size 24
+
+        desk slides style <id> <object-id> --color "#1A73E8" --font "Roboto"
+
+        desk slides style <id> <object-id> --italic --color ACCENT1
+    """
+    if (start is None) != (end is None):
+        _emit_invalid_input("Provide both --start and --end, or neither.", as_json)
+
+    client = _get_client(as_json)
+    try:
+        client.style_text(
+            presentation_id, object_id,
+            bold=bold, italic=italic, underline=underline,
+            font_size=font_size, font_family=font, color=color,
+            start=start, end=end,
+        )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "object_id": object_id}
+        )
+
+    changes: dict = {}
+    for key, val in (
+        ("bold", bold), ("italic", italic), ("underline", underline),
+        ("font_size", font_size), ("font", font), ("color", color),
+    ):
+        if val is not None:
+            changes[key] = val
+    if start is not None:
+        changes["start"], changes["end"] = start, end
+
+    receipt = operation_receipt(
+        operation="style",
+        target={"id": presentation_id, "object_id": object_id},
+        changes=changes,
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("format")
+@click.argument("presentation_id")
+@click.argument("object_id")
+@click.option("--fill", default=None, help="Fill color (#RRGGBB or theme name; shapes only)")
+@click.option("--outline", default=None, help="Outline color (#RRGGBB or theme name)")
+@click.option("--outline-weight", type=float, default=None, help="Outline weight in points")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def format_cmd(
+    presentation_id: str, object_id: str,
+    fill: str | None, outline: str | None, outline_weight: float | None,
+    quiet: bool, as_json: bool,
+) -> None:
+    """Apply fill/outline to a shape or image (by objectId).
+
+    Shapes accept --fill and --outline; images accept --outline only.
+
+    Examples:
+
+        desk slides format <id> <object-id> --fill "#FFF3CD" --outline "#856404"
+
+        desk slides format <id> <object-id> --outline ACCENT2 --outline-weight 2
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.format_element(
+            presentation_id, object_id,
+            fill=fill, outline=outline, outline_weight=outline_weight,
+        )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "object_id": object_id}
+        )
+
+    changes: dict = {"element_type": result.get("elementType")}
+    if fill is not None:
+        changes["fill"] = fill
+    if outline is not None:
+        changes["outline"] = outline
+    if outline_weight is not None:
+        changes["outline_weight"] = outline_weight
+
+    receipt = operation_receipt(
+        operation="format",
+        target={"id": presentation_id, "object_id": object_id},
+        changes=changes,
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("place")
+@click.argument("presentation_id")
+@click.argument("object_id")
+@click.option("--region", type=click.Choice(REGIONS), required=True,
+              help="Named layout region to move/fit the element into")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def place_cmd(
+    presentation_id: str, object_id: str, region: str, quiet: bool, as_json: bool,
+) -> None:
+    """Move and fit an existing element into a named region.
+
+    Describe where you want it ("top-right", "left-half"); the command computes
+    the geometry. Find objectIds with `desk slides inspect <id>`.
+
+    Examples:
+
+        desk slides place <id> <object-id> --region center
+
+        desk slides place <id> <object-id> --region right-half
+    """
+    client = _get_client(as_json)
+    try:
+        client.place_element(presentation_id, object_id, region)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json,
+            {"presentation_id": presentation_id, "object_id": object_id, "region": region},
+        )
+
+    receipt = operation_receipt(
+        operation="place",
+        target={"id": presentation_id, "object_id": object_id},
+        changes={"region": region},
+    )
+    output_result(receipt, as_json, quiet)
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────
+
+def _emit_invalid_input(msg: str, as_json: bool) -> None:
+    if as_json:
+        error = structured_error(ErrorCode.INVALID_INPUT, msg)
+        print(json.dumps(error, indent=2), file=sys.stderr)
+    else:
+        error_console.print(f"[red]Error: {msg}[/red]")
+    sys.exit(1)
+
+
+def _reject_region_with_coords(
+    region: str | None,
+    x: float | None, y: float | None,
+    width: float | None, height: float | None,
+    as_json: bool,
+) -> None:
+    """Region and explicit coordinates are mutually exclusive (ADR-028)."""
+    if region and any(v is not None for v in (x, y, width, height)):
+        _emit_invalid_input(
+            "--region cannot be combined with --x/--y/--width/--height.", as_json
+        )
+
 
 def _confirm_destructive(prompt: str, yes: bool, as_json: bool) -> bool:
     """Confirm a destructive action. Returns True to proceed, False to cancel.

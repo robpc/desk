@@ -42,7 +42,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 035 | [Performance Optimization - Batch Fetch](035-performance-optimization.md) | implemented | M | 5-10x speedup for listing commands |
 | 054 | [Slides Phase 1 — Content CRUD](054-slides-content-crud.md) | adr-created | M | Read, draft, and edit Slides decks |
 | 055 | [Slides Phase 2 — Visual Elements](055-slides-visual-elements.md) | adr-created | M | Images, tables, shapes on slides |
-| 056 | [Slides Phase 3 — Styling & Layout](056-slides-styling-layout.md) | idea | L | Text/element styling, backgrounds, layouts |
+| 056 | [Slides Phase 3 — Styling & Layout](056-slides-styling-layout.md) | adr-created | L | Text/element styling, backgrounds, layouts |
 | 057 | [Slides Phase 4 — Outline-First Authoring](057-slides-outline-authoring.md) | idea | L | Generate a deck from a markdown outline |
 | 058 | [Bug — docs export supportsAllDrives](058-docs-export-supportsalldrives-bug.md) | idea | S | Fix probable latent crash in docs export |
 

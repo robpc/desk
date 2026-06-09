@@ -1,13 +1,19 @@
 ---
 id: 056
 title: Slides Phase 3 — Styling & Layout
-status: idea
+status: adr-created
 effort: L
 value: Agents can style text and elements, set backgrounds, and apply layouts
 created: 2026-06-09
 updated: 2026-06-09
-adr: null
+adr: docs/decisions/028-slides-styling-and-relative-layout.md
 ---
+
+> **Phase 3a shipped** (ADR-028): text styling (`style`), shape/image fill+outline
+> (`format`), and a math-free relative-layout vocabulary (`--region` on inserts +
+> `place`). **Phase 3b remains** (see Open Questions / Notes): paragraph bullets,
+> element transforms beyond region-fit, slide backgrounds, layout/master apply, and
+> table-cell styling.
 
 # Idea 056: Slides Phase 3 — Styling & Layout
 
@@ -58,4 +64,10 @@ split into sub-PRs.
 
 - Follows Ideas 054–055
 - Parallels the Docs styling work: ADR-008, ADR-017, ADR-024
-- Candidate for further sub-phasing (text styling first, element/background later)
+- Sub-phased: **3a** (text styling + element fill/outline + relative layout) shipped via
+  ADR-028 on branch `feat/slides-support`; **3b** carries the remainder below.
+- Phase 3a notable design win: layout-by-named-region (`top-right`, `left-half`, …) so
+  agents describe placement in words and the command does the geometry — no EMU/point math.
+- Phase 3b backlog: paragraph bullets/alignment in shapes; element move/resize/rotate
+  beyond `place`'s region-fit; slide backgrounds; layout/master apply; table-cell fill and
+  table-cell text styling (needs a cell-range addressing scheme).
