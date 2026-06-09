@@ -1,7 +1,7 @@
 ---
 id: 026
 title: Google Slides Support
-status: proposed
+status: accepted
 date: 2026-06-09
 supersedes: []
 superseded_by: null

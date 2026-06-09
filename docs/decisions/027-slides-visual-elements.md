@@ -1,7 +1,7 @@
 ---
 id: 027
 title: Slides Visual Elements (Phase 2)
-status: proposed
+status: accepted
 date: 2026-06-09
 supersedes: []
 superseded_by: null

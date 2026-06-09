@@ -652,8 +652,11 @@ class SlidesClient:
             )
 
         try:
+            # Note: files().export does not accept supportsAllDrives (unlike
+            # files().get/files().export_media's sibling params); passing it
+            # raises a client-side TypeError.
             return self._drive.files().export(
-                fileId=presentation_id, mimeType=mime, supportsAllDrives=True
+                fileId=presentation_id, mimeType=mime
             ).execute()
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")

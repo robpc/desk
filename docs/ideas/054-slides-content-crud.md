@@ -48,8 +48,9 @@ lands cleanly.
 - [x] `read` text extraction → flattened to plain text per slide; tables rendered as
       `cell | cell` rows.
 - [x] One scope (`auth/presentations`) covers create + batchUpdate + get. ✓
-- [ ] Live-verify against the API once the Slides API is enabled in the user's Cloud
-      project and credentials are re-authed for the new scope.
+- [x] Live-verified end-to-end against the API (all 11 commands; create/add-slide/
+      inspect/insert-text/replace-text/read/duplicate/move/delete-object/delete-slide/
+      export). Export needed a fix: `files().export` rejects `supportsAllDrives`.
 
 ## Value Signal
 

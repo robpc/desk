@@ -44,6 +44,7 @@ idea → exploring → planned → adr-created → (implemented)
 | 055 | [Slides Phase 2 — Visual Elements](055-slides-visual-elements.md) | adr-created | M | Images, tables, shapes on slides |
 | 056 | [Slides Phase 3 — Styling & Layout](056-slides-styling-layout.md) | idea | L | Text/element styling, backgrounds, layouts |
 | 057 | [Slides Phase 4 — Outline-First Authoring](057-slides-outline-authoring.md) | idea | L | Generate a deck from a markdown outline |
+| 058 | [Bug — docs export supportsAllDrives](058-docs-export-supportsalldrives-bug.md) | idea | S | Fix probable latent crash in docs export |
 
 ## Adding an Idea
 
