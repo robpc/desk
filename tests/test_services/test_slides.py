@@ -832,6 +832,63 @@ class TestPlaceElement:
         with pytest.raises(RuntimeError, match="no resolvable size"):
             client.place_element("p1", "el", "center")
 
+    def _shape_at(self, presentations, x, y, w, h):
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": [{
+                "objectId": "el", "shape": {},
+                "size": {"width": {"magnitude": w, "unit": "PT"},
+                         "height": {"magnitude": h, "unit": "PT"}},
+                "transform": {"scaleX": 1, "scaleY": 1, "translateX": x, "translateY": y, "unit": "PT"},
+            }]}],
+        }
+
+    def test_place_by_xy_moves_preserving_size(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._shape_at(presentations, 10, 10, 100, 50)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.place_element("p1", "el", x=200, y=120)
+
+        t = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]
+        assert (t["translateX"], t["translateY"]) == (200, 120)
+        assert t["scaleX"] == 1 and t["scaleY"] == 1  # move-only, size kept
+
+    def test_place_width_height_resizes(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        self._shape_at(presentations, 10, 10, 100, 50)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        client.place_element("p1", "el", width=200, height=200)
+
+        t = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]
+        # base 100x50 → scale 2x, 4y; position preserved (x=10,y=10)
+        assert t["scaleX"] == 2 and t["scaleY"] == 4
+        assert (t["translateX"], t["translateY"]) == (10, 10)
+
+    def test_place_region_and_coords_conflict(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="not both"):
+            client.place_element("p1", "el", region="center", x=10)
+
+    def test_place_nothing_specified_raises(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="Provide --region"):
+            client.place_element("p1", "el")
+
+    def test_place_resize_table_raises(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": [{"objectId": "tbl", "table": {}}]}],
+        }
+        with pytest.raises(ValueError, match="can't be resized"):
+            client.place_element("p1", "tbl", width=300)
+
 
 class TestInsertWithRegion:
     """Region overrides explicit coordinates on insert (Phase 3a)."""

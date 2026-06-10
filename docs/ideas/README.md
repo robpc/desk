@@ -65,6 +65,8 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 074 | [Slides stack — flow layout](074-slides-stack-flow-layout.md) | implemented | M | Flow N elements at natural size (align + gap) — 'centered, stacked' |
 
+| 075 | [Slides place by coords](075-slides-place-coords-resize.md) | implemented | S | place --x/--y (move) + --width/--height (resize) |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`

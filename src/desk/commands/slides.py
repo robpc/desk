@@ -1149,37 +1149,57 @@ def format_cmd(
 @slides.command("place")
 @click.argument("presentation_id")
 @click.argument("object_id")
-@click.option("--region", type=click.Choice(REGIONS), required=True,
+@click.option("--region", type=click.Choice(REGIONS), default=None,
               help="Named layout region to move/fit the element into")
+@click.option("--x", type=float, default=None, help="Left position in points")
+@click.option("--y", type=float, default=None, help="Top position in points")
+@click.option("--width", type=float, default=None, help="Width in points (resize)")
+@click.option("--height", type=float, default=None, help="Height in points (resize)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def place_cmd(
-    presentation_id: str, object_id: str, region: str, quiet: bool, as_json: bool,
+    presentation_id: str, object_id: str, region: str | None,
+    x: float | None, y: float | None, width: float | None, height: float | None,
+    quiet: bool, as_json: bool,
 ) -> None:
-    """Move and fit an existing element into a named region.
+    """Position or size an existing element — by named region OR exact points.
 
-    Describe where you want it ("top-right", "left-half"); the command computes
-    the geometry. Find objectIds with `desk slides inspect <id>`.
+    Use --region for math-free placement, or exact coords: --x/--y move (size
+    kept), --width/--height resize. Omitted coords keep the current value.
+    Tables can't be resized (move with --x/--y). Find objectIds with
+    `desk slides inspect <id>`.
 
     Examples:
 
         desk slides place <id> <object-id> --region center
 
-        desk slides place <id> <object-id> --region right-half
+        desk slides place <id> <object-id> --x 120 --y 80
+
+        desk slides place <id> <object-id> --width 300 --height 160
     """
     client = _get_client(as_json)
     try:
-        client.place_element(presentation_id, object_id, region)
+        result = client.place_element(
+            presentation_id, object_id, region=region, x=x, y=y, width=width, height=height,
+        )
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
     except Exception as e:
         _handle_api_error(
             e, as_json,
-            {"presentation_id": presentation_id, "object_id": object_id, "region": region},
+            {"presentation_id": presentation_id, "object_id": object_id},
         )
+
+    changes: dict = {}
+    if region:
+        changes["region"] = region
+    if result.get("box"):
+        changes["box"] = result["box"]
 
     receipt = operation_receipt(
         operation="place",
         target={"id": presentation_id, "object_id": object_id},
-        changes={"region": region},
+        changes=changes,
     )
     output_result(receipt, as_json, quiet)
 

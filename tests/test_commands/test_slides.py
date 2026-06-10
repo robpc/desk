@@ -500,7 +500,41 @@ class TestPlaceCommand:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert output["changes"]["region"] == "center"
-        client.place_element.assert_called_once_with("p1", "el", "center")
+        client.place_element.assert_called_once_with(
+            "p1", "el", region="center", x=None, y=None, width=None, height=None
+        )
+
+    def test_place_by_coords_move(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.place_element.return_value = {
+            "presentationId": "p1", "objectId": "el", "status": "ok",
+            "box": {"x": 120, "y": 80, "width": 100, "height": 50},
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["place", "p1", "el", "--x", "120", "--y", "80", "--json"])
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["changes"]["box"]["x"] == 120
+        client.place_element.assert_called_once_with(
+            "p1", "el", region=None, x=120.0, y=80.0, width=None, height=None
+        )
+
+    def test_place_table_resize_rejected(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.place_element.side_effect = ValueError(
+            "Tables can't be resized via the API; move with --x/--y instead."
+        )
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["place", "p1", "tbl", "--width", "300", "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.output)["error"]["code"] == "INVALID_INPUT"
 
     def test_place_bad_region_rejected(self, runner, mock_get_credentials, mock_slides_client_class):
         from desk.commands.slides import slides

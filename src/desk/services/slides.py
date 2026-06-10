@@ -1445,25 +1445,58 @@ class SlidesClient:
         }
 
     def place_element(
-        self, presentation_id: str, object_id: str, region: str,
+        self, presentation_id: str, object_id: str, region: str | None = None,
+        x: float | None = None, y: float | None = None,
+        width: float | None = None, height: float | None = None,
     ) -> dict:
-        """Move and fit an existing element into a named region.
+        """Position/size an existing element — by named region OR exact points.
 
-        Reads the element's current base size and computes the transform to
-        fill the region box — the caller never does geometry. See ADR-028.
+        - ``region`` → fit the element to that region box (resize to fill).
+        - explicit coords → ``--x/--y`` move (size preserved); ``--width/--height``
+          resize. Omitted coords keep the element's current value. All in points.
+
+        Tables can't be resized (the API rejects scaled transforms), so passing
+        ``width``/``height`` for a table raises ValueError; ``x``/``y`` move works.
+        Provide exactly one of ``region`` or coords. See ADR-028.
 
         Returns:
-            Dict with presentationId, objectId, region, and status.
+            Dict with presentationId, objectId, and status (plus region or box).
         """
+        if region and any(v is not None for v in (x, y, width, height)):
+            raise ValueError("Provide either --region or coordinates, not both.")
+        if not region and all(v is None for v in (x, y, width, height)):
+            raise ValueError("Provide --region or at least one of --x/--y/--width/--height.")
+
         element = self._find_element(presentation_id, object_id)
-        page_w, page_h = self._page_size_pt(presentation_id)
-        box = _region_box(page_w, page_h, region)
-        request = self._fit_transform_request(element, box)
+        result: dict = {"presentationId": presentation_id, "objectId": object_id, "status": "ok"}
+
+        if region:
+            page_w, page_h = self._page_size_pt(presentation_id)
+            request = self._fit_transform_request(element, _region_box(page_w, page_h, region))
+            result["region"] = region
+        else:
+            resizing = width is not None or height is not None
+            if resizing and "table" in element:
+                raise ValueError(
+                    "Tables can't be resized via the API; move with --x/--y instead."
+                )
+            cur = self._element_box(element)
+            if cur is None:
+                raise RuntimeError(f"Object {object_id} has no resolvable size.")
+            tx = x if x is not None else cur["x"]
+            ty = y if y is not None else cur["y"]
+            if resizing:
+                tw = width if width is not None else cur["width"]
+                th = height if height is not None else cur["height"]
+                request = self._fit_transform_request(element, (tx, ty, tw, th))
+                result["box"] = {"x": tx, "y": ty, "width": tw, "height": th}
+            else:
+                request = self._move_transform_request(element, tx, ty)
+                result["box"] = {"x": tx, "y": ty, "width": cur["width"], "height": cur["height"]}
 
         try:
             self._batch_update(presentation_id, [request])
-            return {"presentationId": presentation_id, "objectId": object_id,
-                    "region": region, "status": "ok"}
+            return result
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 
