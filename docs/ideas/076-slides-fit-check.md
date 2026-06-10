@@ -41,8 +41,13 @@ fix centering via `style --align` / `format --valign` → re-run. Render only fo
 
 - Live-verified: a 36pt headline in a 40pt box → `overflow 313.9pt`; a roomy "Fits fine"
   box → `ok`; empty placeholders → no phantom text.
-- **Block-level top-left matching** was the key fix — an initial span-level/x-range matcher
-  mis-attributed a tall overflow's wrapped lines to the box below it (caught in live verify).
+- **Matching evolved via two real test catches:** (1) an initial span/x-range matcher
+  mis-attributed a tall overflow's wrapped lines to the box below → switched to block
+  ownership (top-left). (2) `deck-builder` then hit side-by-side columns sharing a baseline
+  (PyMuPDF merges them into one line → false right-overflow on the leftmost) → final design:
+  block ownership for vertical flow + **per-span x-column re-attribution** so merged lines
+  split back to their columns. Verified: 3 same-baseline cards → all ok; isolated overflow →
+  still flagged. Remaining ambiguity: vertically-stacked boxes in one x-column.
 - No Desk change needed (uses existing `export` + `inspect`). The optional `inspect`
   text/font enrichment was NOT done (skill works without it).
 - Limits: overlapping text shapes can still be ambiguous; tables skipped; render-dependent
