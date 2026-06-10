@@ -158,7 +158,9 @@ desk (CLI entry point)
 │   ├── format         → Fill/outline a shape or image
 │   ├── place          → Position/size an element by region or exact x/y/w/h
 │   ├── arrange        → Distribute elements as columns/rows/grid (fill)
-│   └── stack          → Flow elements in a line at natural size (align + gap)
+│   ├── stack          → Flow elements in a line at natural size (align + gap)
+│   ├── group          → Group elements into one group object
+│   └── ungroup        → Ungroup a group back into its members
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events

@@ -37,6 +37,13 @@ rendering, like `workspace-image`). `fit_check.py`:
 Fix loop: run → fix overflow via `style --font-size` / `set-text` / `place --width/--height`,
 fix centering via `style --align` / `format --valign` → re-run. Render only for color/aesthetics.
 
+**Update (2026-06-10):** added `suggestedHeight` (box height that hugs the text at its current
+font, keeping the box's horizontal inset as top/bottom padding) and `suggestedFontScale` (factor
+to shrink the font to fit the current box height; ≥1 = already fits). This is the composition
+answer to deck-builder's autofit ask — the Slides API can't *set* autofit, so the checker emits
+the two concrete fix numbers (grow the box, or shrink the font) instead of adding a new command.
+Live-verified: a 28pt headline in a 40pt box → `box height 210.3pt OR font ×0.134`.
+
 ## Notes
 
 - Live-verified: a 36pt headline in a 40pt box → `overflow 313.9pt`; a roomy "Fits fine"

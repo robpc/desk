@@ -187,6 +187,8 @@ def _get_capabilities() -> dict:
                     "place": {"description": "Move/fit an element into a region", "batch": False, "destructive": False},
                     "arrange": {"description": "Distribute elements as columns/rows/grid", "batch": True, "destructive": False},
                     "stack": {"description": "Flow elements in a line (natural size, aligned)", "batch": True, "destructive": False},
+                    "group": {"description": "Group elements into one group object", "batch": True, "destructive": False},
+                    "ungroup": {"description": "Ungroup a group back into its members", "batch": False, "destructive": False},
                 },
             },
         },

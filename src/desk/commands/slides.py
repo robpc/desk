@@ -1310,6 +1310,75 @@ def stack_cmd(
     output_result(receipt, as_json, quiet)
 
 
+@slides.command("group")
+@click.argument("presentation_id")
+@click.argument("object_ids", nargs=-1, required=True)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def group_cmd(
+    presentation_id: str, object_ids: tuple[str, ...], quiet: bool, as_json: bool,
+) -> None:
+    """Group page elements into one group object.
+
+    Returns the new group's objectId — which then works with `place`/`arrange`/
+    `stack`/`inspect` as a single unit (group-center, group-move, group-resize).
+    Needs >=2 objects. `ungroup` reverses it. Find objectIds with `inspect`.
+
+    Examples:
+
+        desk slides group <id> objA objB objC
+
+        # then center the whole group:
+        desk slides place <id> <group-id> --region center
+    """
+    client = _get_client(as_json)
+    try:
+        result = client.group_elements(presentation_id, list(object_ids))
+    except ValueError as e:
+        _emit_invalid_input(str(e), as_json)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "count": len(object_ids)}
+        )
+
+    receipt = operation_receipt(
+        operation="group",
+        target={"id": presentation_id, "group_object_id": result.get("groupObjectId")},
+        changes={"object_ids": list(object_ids)},
+        undo_command=f"desk slides ungroup {presentation_id} {result.get('groupObjectId')}",
+    )
+    output_result(receipt, as_json, quiet)
+
+
+@slides.command("ungroup")
+@click.argument("presentation_id")
+@click.argument("group_id")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def ungroup_cmd(
+    presentation_id: str, group_id: str, quiet: bool, as_json: bool,
+) -> None:
+    """Ungroup a group object back into its members.
+
+    Examples:
+
+        desk slides ungroup <id> <group-id>
+    """
+    client = _get_client(as_json)
+    try:
+        client.ungroup_elements(presentation_id, group_id)
+    except Exception as e:
+        _handle_api_error(
+            e, as_json, {"presentation_id": presentation_id, "group_id": group_id}
+        )
+
+    receipt = operation_receipt(
+        operation="ungroup",
+        target={"id": presentation_id, "group_object_id": group_id},
+    )
+    output_result(receipt, as_json, quiet)
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _emit_invalid_input(msg: str, as_json: bool) -> None:

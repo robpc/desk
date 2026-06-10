@@ -441,6 +441,10 @@ class SlidesClient:
         ignored (rare for agent-placed elements); returns None when size or
         transform is absent.
         """
+        # A group has no size of its own — its box is the union of its children's
+        # boxes (computed in group-local space) mapped through the group transform.
+        if "elementGroup" in element:
+            return SlidesClient._group_box(element)
         size = element.get("size")
         transform = element.get("transform")
         if not size or not transform:
@@ -458,6 +462,44 @@ class SlidesClient:
             "x": round(tx, 1), "y": round(ty, 1),
             "width": round(base_w * scale_x, 1),
             "height": round(base_h * scale_y, 1),
+        }
+
+    @staticmethod
+    def _group_local_extent(element: dict) -> tuple[float, float, float, float] | None:
+        """Union of a group's children in GROUP-LOCAL space (before the group
+        transform): (x0, y0, width, height). The children's translates are
+        local, so this is the group's intrinsic extent. None if no sized child."""
+        children = element.get("elementGroup", {}).get("children", [])
+        child_boxes = [b for c in children if (b := SlidesClient._element_box(c))]
+        if not child_boxes:
+            return None
+        x0 = min(b["x"] for b in child_boxes)
+        y0 = min(b["y"] for b in child_boxes)
+        x1 = max(b["x"] + b["width"] for b in child_boxes)
+        y1 = max(b["y"] + b["height"] for b in child_boxes)
+        return x0, y0, x1 - x0, y1 - y0
+
+    @staticmethod
+    def _group_box(element: dict) -> dict | None:
+        """Rendered bounding box of a group: its local extent mapped through the
+        group's own transform (scale + translate)."""
+        extent = SlidesClient._group_local_extent(element)
+        if extent is None:
+            return None
+        x0, y0, lw, lh = extent
+        t = element.get("transform", {}) or {}
+        gsx = t.get("scaleX", 1) or 1
+        gsy = t.get("scaleY", 1) or 1
+        gtx = t.get("translateX", 0) or 0
+        gty = t.get("translateY", 0) or 0
+        if t.get("unit") == "EMU":
+            gtx /= _EMU_PER_PT
+            gty /= _EMU_PER_PT
+        return {
+            "x": round(gsx * x0 + gtx, 1),
+            "y": round(gsy * y0 + gty, 1),
+            "width": round(gsx * lw, 1),
+            "height": round(gsy * lh, 1),
         }
 
     @staticmethod
@@ -559,6 +601,9 @@ class SlidesClient:
                         elem = {"objectId": object_id, "type": "image"}
                     elif "line" in element:
                         elem = {"objectId": object_id, "type": "line"}
+                    elif "elementGroup" in element:
+                        elem = {"objectId": object_id, "type": "group",
+                                "children": len(element["elementGroup"].get("children", []))}
                     else:
                         elem = {"objectId": object_id, "type": "other"}
 
@@ -1419,9 +1464,23 @@ class SlidesClient:
         """
         object_id = element.get("objectId", "")
         box_x, box_y, box_w, box_h = box
+        translate_x, translate_y = box_x, box_y
 
         if "table" in element:
             scale_x = scale_y = 1
+        elif "elementGroup" in element:
+            # A group has no base size; scale relative to its local extent and
+            # offset the translate so the rendered box top-left lands at (box_x,
+            # box_y), since the group's local origin is not its top-left.
+            extent = self._group_local_extent(element)
+            if extent is None or extent[2] <= 0 or extent[3] <= 0:
+                raise RuntimeError(
+                    f"Cannot place object {object_id}: it has no resolvable size."
+                )
+            lx0, ly0, lw, lh = extent
+            scale_x, scale_y = box_w / lw, box_h / lh
+            translate_x = box_x - scale_x * lx0
+            translate_y = box_y - scale_y * ly0
         else:
             size = element.get("size", {})
             base_w = self._dimension_pt(size.get("width"), 0.0)
@@ -1438,7 +1497,7 @@ class SlidesClient:
                 "applyMode": "ABSOLUTE",
                 "transform": {
                     "scaleX": scale_x, "scaleY": scale_y,
-                    "translateX": box_x, "translateY": box_y,
+                    "translateX": translate_x, "translateY": translate_y,
                     "unit": "PT",
                 },
             }
@@ -1558,10 +1617,20 @@ class SlidesClient:
         which rescales to fill a box). Used by `stack` for natural-size flow.
         """
         t = element.get("transform", {})
+        gsx = t.get("scaleX", 1) or 1
+        gsy = t.get("scaleY", 1) or 1
+        tx, ty = x, y
+        if "elementGroup" in element:
+            # Group translate maps its local origin, not its top-left — offset so
+            # the rendered box lands at (x, y) with the current scale preserved.
+            extent = self._group_local_extent(element)
+            if extent is not None:
+                tx = x - gsx * extent[0]
+                ty = y - gsy * extent[1]
         transform = {
-            "scaleX": t.get("scaleX", 1) or 1,
-            "scaleY": t.get("scaleY", 1) or 1,
-            "translateX": x, "translateY": y, "unit": "PT",
+            "scaleX": gsx,
+            "scaleY": gsy,
+            "translateX": tx, "translateY": ty, "unit": "PT",
         }
         if t.get("shearX"):
             transform["shearX"] = t["shearX"]
@@ -1656,6 +1725,45 @@ class SlidesClient:
             return {"presentationId": presentation_id, "objectIds": object_ids,
                     "direction": direction, "align": align, "gap": gap,
                     "region": region, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    # ── Grouping (ADR-032) ───────────────────────────────────────────────
+
+    def group_elements(self, presentation_id: str, object_ids: list[str]) -> dict:
+        """Group page elements into one group object (`groupObjects`).
+
+        The returned group objectId is itself a page element with a box, so it
+        composes with everything else: `place`/`stack`/`arrange`/`inspect` treat
+        the group as a single unit (group-center, group-move, group-resize).
+
+        Returns:
+            Dict with presentationId, groupObjectId, objectIds, status.
+        """
+        if len(object_ids) < 2:
+            raise ValueError("group requires at least two object ids.")
+        group_id = f"group_{uuid.uuid4().hex[:16]}"
+        try:
+            self._batch_update(
+                presentation_id,
+                [{"groupObjects": {"childrenObjectIds": object_ids, "groupObjectId": group_id}}],
+            )
+            return {"presentationId": presentation_id, "groupObjectId": group_id,
+                    "objectIds": object_ids, "status": "ok"}
+        except HttpError as error:
+            raise RuntimeError(f"Slides API error: {error}")
+
+    def ungroup_elements(self, presentation_id: str, group_id: str) -> dict:
+        """Ungroup a group object back into its members (`ungroupObjects`).
+
+        Returns:
+            Dict with presentationId, groupObjectId, status.
+        """
+        try:
+            self._batch_update(
+                presentation_id, [{"ungroupObjects": {"objectIds": [group_id]}}]
+            )
+            return {"presentationId": presentation_id, "groupObjectId": group_id, "status": "ok"}
         except HttpError as error:
             raise RuntimeError(f"Slides API error: {error}")
 

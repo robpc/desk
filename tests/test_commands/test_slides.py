@@ -892,6 +892,50 @@ class TestStackCommand:
         assert result.exit_code != 0  # click.Choice rejects
 
 
+class TestGroupCommand:
+    def test_group(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.group_elements.return_value = {
+            "presentationId": "p1", "groupObjectId": "group_abc",
+            "objectIds": ["a", "b", "c"], "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["group", "p1", "a", "b", "c", "--json"])
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["operation"] == "group"
+        assert out["targets"][0]["group_object_id"] == "group_abc"
+        assert out["undo"]["command"] == "desk slides ungroup p1 group_abc"
+        client.group_elements.assert_called_once_with("p1", ["a", "b", "c"])
+
+    def test_group_requires_object_ids(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        result = runner.invoke(slides, ["group", "p1"])  # no object ids
+        assert result.exit_code != 0
+
+    def test_ungroup(self, runner, mock_get_credentials, mock_slides_client_class):
+        from desk.commands.slides import slides
+
+        client = MagicMock()
+        client.ungroup_elements.return_value = {
+            "presentationId": "p1", "groupObjectId": "group_abc", "status": "ok",
+        }
+        mock_slides_client_class.return_value = client
+
+        result = runner.invoke(slides, ["ungroup", "p1", "group_abc", "--json"])
+
+        assert result.exit_code == 0
+        out = json.loads(result.output)
+        assert out["operation"] == "ungroup"
+        assert out["targets"][0]["group_object_id"] == "group_abc"
+        client.ungroup_elements.assert_called_once_with("p1", "group_abc")
+
+
 class TestExport:
     def test_export_writes_file(self, runner, mock_get_credentials, mock_slides_client_class, tmp_path):
         from desk.commands.slides import slides

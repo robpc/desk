@@ -1278,6 +1278,81 @@ class TestStackElements:
             client.stack_elements("p1", ["a", "ghost"], "vertical")
 
 
+class TestGroupElements:
+    """Tests for SlidesClient.group_elements / ungroup_elements (ADR-032)."""
+
+    def test_group_issues_group_objects_request(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.group_elements("p1", ["a", "b", "c"])
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
+        go = req["groupObjects"]
+        assert go["childrenObjectIds"] == ["a", "b", "c"]
+        assert go["groupObjectId"].startswith("group_")
+        assert result["groupObjectId"] == go["groupObjectId"]
+        assert result["status"] == "ok"
+
+    def test_group_requires_two_objects(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        with pytest.raises(ValueError, match="at least two"):
+            client.group_elements("p1", ["a"])
+
+    def test_ungroup_issues_ungroup_objects_request(self, mock_credentials):
+        client, presentations = _make_client(mock_credentials)
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.ungroup_elements("p1", "group_abc")
+
+        req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
+        assert req["ungroupObjects"]["objectIds"] == ["group_abc"]
+        assert result["groupObjectId"] == "group_abc"
+        assert result["status"] == "ok"
+
+    @staticmethod
+    def _group(children):
+        # group has no size of its own; identity transform
+        return {"objectId": "g1", "transform": {"scaleX": 1, "scaleY": 1, "unit": "PT"},
+                "elementGroup": {"children": children}}
+
+    @staticmethod
+    def _child(oid, x, y, w, h):
+        return {"objectId": oid, "shape": {},
+                "size": {"width": {"magnitude": w, "unit": "PT"},
+                         "height": {"magnitude": h, "unit": "PT"}},
+                "transform": {"scaleX": 1, "scaleY": 1, "translateX": x, "translateY": y, "unit": "PT"}}
+
+    def test_group_box_is_union_of_children(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        # two 60x40 children at x=50 and x=120 → union (50,50)..(180,90) = 130x40
+        grp = self._group([self._child("a", 50, 50, 60, 40), self._child("b", 120, 50, 60, 40)])
+        box = client._element_box(grp)
+        assert box == {"x": 50.0, "y": 50.0, "width": 130.0, "height": 40.0}
+
+    def test_fit_group_offsets_translate_to_box_top_left(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        grp = self._group([self._child("a", 50, 50, 60, 40), self._child("b", 120, 50, 60, 40)])
+        # local extent x0=50,y0=50,w=130,h=40; fit into (252,147,216,111)
+        req = client._fit_transform_request(grp, (252.0, 147.0, 216.0, 111.0))
+        t = req["updatePageElementTransform"]["transform"]
+        assert abs(t["scaleX"] - 216.0 / 130.0) < 1e-9
+        assert abs(t["scaleY"] - 111.0 / 40.0) < 1e-9
+        # rendered top-left = scaleX*x0 + translateX == 252
+        assert abs(t["scaleX"] * 50.0 + t["translateX"] - 252.0) < 1e-9
+        assert abs(t["scaleY"] * 50.0 + t["translateY"] - 147.0) < 1e-9
+
+    def test_move_group_offsets_translate(self, mock_credentials):
+        client, _ = _make_client(mock_credentials)
+        grp = self._group([self._child("a", 50, 50, 60, 40), self._child("b", 120, 50, 60, 40)])
+        req = client._move_transform_request(grp, 300.0, 200.0)
+        t = req["updatePageElementTransform"]["transform"]
+        assert t["scaleX"] == 1 and t["scaleY"] == 1  # move-only
+        # rendered top-left lands at (300, 200): 1*50 + translateX == 300
+        assert t["translateX"] == 300.0 - 50.0
+        assert t["translateY"] == 200.0 - 50.0
+
+
 class TestSetText:
     """Tests for SlidesClient.set_text (Idea 072)."""
 
