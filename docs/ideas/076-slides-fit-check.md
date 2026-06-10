@@ -1,0 +1,51 @@
+---
+id: 076
+title: Headless slides fit/overflow check (skill)
+status: implemented
+effort: M
+value: Detect text overflow/dead-space/off-center headlessly — replaces ~60-70% of render-and-eyeball cycles
+created: 2026-06-10
+updated: 2026-06-10
+adr: null
+---
+
+# Idea 076: Headless slides fit/overflow check
+
+## Problem
+
+Building a polished deck, the recurring failure was "box looks funny" — text
+overflowing its box, dead space, or mis-centered — with **no programmatic signal**.
+The Slides API exposes box geometry (via `inspect`, Idea 064) but **no rendered text
+metrics**, so the only check was export → rasterize (Quartz) → eyeball. The test session
+confirmed a headless geometry report would replace ~60-70% of its render cycles; vision is
+still needed only for color/aesthetics.
+
+## What was implemented
+
+A **personal skill** `~/.claude/skills/slides-fit/` (not Desk-core — it needs a PDF lib and
+rendering, like `workspace-image`). `fit_check.py`:
+
+1. `desk slides export <id>` → PDF; `desk slides inspect <id> --json` → per-shape boxes.
+2. Parse the PDF **text layer** (PyMuPDF). Slides pt == PDF pt, same origin, page == slide
+   size, so boxes and text bboxes compare **1:1** (verified).
+3. Match each text **block** to the shape its top-left starts inside (smallest box wins
+   ties) — robust to overflow lines and vertical stacking.
+4. Per shape: `overflowPt` + per-edge overflow (hard signal), `deadSpaceBelow/Above`,
+   `offCenterInBox` dx/dy, `fillRatio`, `status` (soft hints). JSON or human; nonzero exit
+   on any overflow (for fix loops).
+
+Fix loop: run → fix overflow via `style --font-size` / `set-text` / `place --width/--height`,
+fix centering via `style --align` / `format --valign` → re-run. Render only for color/aesthetics.
+
+## Notes
+
+- Live-verified: a 36pt headline in a 40pt box → `overflow 313.9pt`; a roomy "Fits fine"
+  box → `ok`; empty placeholders → no phantom text.
+- **Block-level top-left matching** was the key fix — an initial span-level/x-range matcher
+  mis-attributed a tall overflow's wrapped lines to the box below it (caught in live verify).
+- No Desk change needed (uses existing `export` + `inspect`). The optional `inspect`
+  text/font enrichment was NOT done (skill works without it).
+- Limits: overlapping text shapes can still be ambiguous; tables skipped; render-dependent
+  (one export per run). Geometry only — color/aesthetic/composition stay with vision.
+- Resolves feedback #3. Related: [[slides-phased-rollout]]; Idea 064 (inspect boxes), 075
+  (place resize — a fix lever).

@@ -67,6 +67,8 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 075 | [Slides place by coords](075-slides-place-coords-resize.md) | implemented | S | place --x/--y (move) + --width/--height (resize) |
 
+| 076 | [Headless slides fit/overflow check](076-slides-fit-check.md) | implemented | M | slides-fit skill: overflow/dead-space/off-center, no rendering |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`
