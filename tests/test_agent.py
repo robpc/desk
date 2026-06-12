@@ -503,3 +503,21 @@ class TestUndoCommands:
                 info = UNDO_COMMANDS[op]
                 assert info["template"] is None
                 assert info["reversible"] is False
+
+
+class TestIsScopeError:
+    """Tests for is_scope_error (ADR-030)."""
+
+    def test_detects_scope_insufficient_variants(self):
+        from desk.agent import is_scope_error
+
+        assert is_scope_error("... ACCESS_TOKEN_SCOPE_INSUFFICIENT ...")
+        assert is_scope_error('returned "Request had insufficient authentication scopes."')
+        assert is_scope_error("Reason: insufficientPermissions")
+
+    def test_plain_permission_denied_is_not_scope_error(self):
+        from desk.agent import is_scope_error
+
+        # A genuine sharing/permission 403 must NOT be treated as a scope problem
+        assert not is_scope_error('returned "The caller does not have permission"')
+        assert not is_scope_error("404 not found")

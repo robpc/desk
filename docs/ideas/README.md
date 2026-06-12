@@ -40,6 +40,34 @@ idea → exploring → planned → adr-created → (implemented)
 | 013 | [Safety Confirmations](013-safety-confirmations.md) | implemented | M | Prevent accidental destructive actions |
 | 014 | [Test Suite](014-test-suite.md) | implemented | L | Confidence in changes, prevent regressions |
 | 035 | [Performance Optimization - Batch Fetch](035-performance-optimization.md) | implemented | M | 5-10x speedup for listing commands |
+| 054 | [Slides Phase 1 — Content CRUD](054-slides-content-crud.md) | adr-created | M | Read, draft, and edit Slides decks |
+| 055 | [Slides Phase 2 — Visual Elements](055-slides-visual-elements.md) | adr-created | M | Images, tables, shapes on slides |
+| 056 | [Slides Phase 3 — Styling & Layout](056-slides-styling-layout.md) | adr-created | L | Text/element styling, backgrounds, layouts |
+| 057 | [Slides Phase 4 — Outline-First Authoring](057-slides-outline-authoring.md) | questioned | L | Generate a deck from a markdown outline (ADR-003 concern) |
+| 058 | [Bug — docs export supportsAllDrives](058-docs-export-supportsalldrives-bug.md) | idea | S | Fix probable latent crash in docs export |
+| 059 | [Slides Speaker Notes](059-slides-speaker-notes.md) | implemented | S | Set per-slide speaker notes (core deck gap) |
+| 060 | [Scope-Mismatch Re-Auth UX](060-scope-mismatch-reauth-ux.md) | implemented | S | Tell users to re-auth on new-scope 403s, not "request access" |
+| 061 | [Slides Authoring Ergonomics](061-slides-authoring-ergonomics.md) | partially-implemented | M | (a) placeholder ids + (b) inline fill done; (c)/(d) open |
+| 062 | [add-slide emit placeholder ids](062-slides-add-slide-emit-placeholder-ids.md) | implemented | S | Remove the mandatory inspect between add-slide and insert-text |
+| 063 | [SECTION_HEADER tagline coverage](063-slides-section-header-placeholders.md) | implemented | S | Resolved as docs: use SECTION_TITLE_AND_DESCRIPTION |
+| 064 | [Slides Placement Verification](064-slides-placement-verification.md) | implemented | M | inspect reports bounding boxes + off-slide/overlap flags |
+| 065 | [Slides Relative Anchoring](065-slides-relative-anchoring.md) | idea | M | Position "under the title" vs slide-absolute regions (holding) |
+| 066 | [Slides Table Cell Fill](066-slides-table-cell-fill.md) | implemented | S | set-cell fills table cells (were write-only) |
+| 067 | [Service-Agnostic INVALID_INPUT Suggestions](067-error-suggestions-service-agnostic.md) | implemented | S | Non-mail errors stop leaking Gmail help |
+| 068 | [Local / Drive Image Source](068-local-and-drive-image-source.md) | parked | M | SOLVED via GCS signed URLs (proven); compose step, packaging TBD |
+| 069 | [Slides — list theme palette](069-slides-list-theme-palette.md) | implemented | S | Show what ACCENT1..6/DARK1/LIGHT1 resolve to |
+| 070 | [Slides Table Enhancements](070-slides-table-enhancements.md) | implemented | M | Reposition (move) + bulk --data fill; region-sizing N/A |
+| 071 | [Slides Shape Text Alignment](071-slides-shape-text-alignment.md) | implemented | S | Center/align text in a shape (h/v) |
+
+| 072 | [Slides set-text + full-bleed](072-slides-set-text-and-full-bleed.md) | implemented | S | Replace a shape's text; true edge-to-edge region |
+
+| 073 | [Slides set-background](073-slides-set-background.md) | implemented | S | Set a slide's page background color (no rectangle hack) |
+
+| 074 | [Slides stack — flow layout](074-slides-stack-flow-layout.md) | implemented | M | Flow N elements at natural size (align + gap) — 'centered, stacked' |
+
+| 075 | [Slides place by coords](075-slides-place-coords-resize.md) | implemented | S | place --x/--y (move) + --width/--height (resize) |
+
+| 076 | [Headless slides fit/overflow check](076-slides-fit-check.md) | implemented | M | slides-fit skill: overflow/dead-space/off-center, no rendering |
 
 ## Adding an Idea
 

@@ -35,6 +35,7 @@ class ErrorCode(str, Enum):
     DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
     SPREADSHEET_NOT_FOUND = "SPREADSHEET_NOT_FOUND"
     FORM_NOT_FOUND = "FORM_NOT_FOUND"
+    PRESENTATION_NOT_FOUND = "PRESENTATION_NOT_FOUND"
 
     # Permission errors
     PERMISSION_DENIED = "PERMISSION_DENIED"
@@ -108,6 +109,10 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "Run `desk forms read` to check the form ID",
         "The form may have been deleted or you may not have access",
     ],
+    ErrorCode.PRESENTATION_NOT_FOUND: [
+        "Run `desk slides read <id>` to check the presentation ID",
+        "The presentation may have been deleted or you may not have access",
+    ],
     ErrorCode.PERMISSION_DENIED: [
         "You may not have access to this resource",
         "Request access from the owner",
@@ -122,9 +127,9 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
         "See Gmail search operators: https://support.google.com/mail/answer/7190",
     ],
     ErrorCode.INVALID_INPUT: [
-        "Message IDs are hex strings like '19c3aa4804ae3ab4'",
-        "Use `desk mail search` to find valid message IDs",
-        "Check for typos or truncated IDs",
+        "Check the command's arguments and any IDs you passed",
+        "IDs must match the target resource and not be truncated",
+        "See the command's --help for the expected inputs",
     ],
     ErrorCode.OPERATION_FAILED: [
         "Check the error message for details",
@@ -171,6 +176,23 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
 }
 
 
+def is_scope_error(error_str: str) -> bool:
+    """Detect a 403 that's really a missing-OAuth-scope problem.
+
+    Google returns these when the granted token predates a newly added scope.
+    They must NOT be classified as PERMISSION_DENIED (whose advice — "request
+    access from the owner" — is misleading; the user owns the resource and just
+    needs to re-auth). See ADR-030.
+    """
+    lowered = error_str.lower()
+    return (
+        "access_token_scope_insufficient" in lowered
+        or "insufficient authentication scopes" in lowered
+        or "insufficientpermissions" in lowered
+        or "request had insufficient authentication scopes" in lowered
+    )
+
+
 def parse_api_error(error_str: str) -> str:
     """Extract human-readable message from API error strings.
 
@@ -205,6 +227,7 @@ def parse_api_error(error_str: str) -> str:
         "Sheets API error: ",
         "Docs API error: ",
         "Forms API error: ",
+        "Slides API error: ",
     ]
     for prefix in prefixes_to_remove:
         if cleaned.startswith(prefix):

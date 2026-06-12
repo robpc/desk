@@ -32,6 +32,12 @@ proposed → accepted → [deprecated | superseded]
 | 001 | [OAuth and Credential Strategy](001-oauth-credential-strategy.md) | accepted | 2025-02-06 |
 | 002 | [Command Composability via Generic Modify](002-command-composability.md) | accepted | 2025-02-06 |
 | 019 | [Errors to stderr](019-errors-to-stderr.md) | accepted | 2026-05-06 |
+| 026 | [Google Slides Support](026-google-slides-support.md) | accepted | 2026-06-09 |
+| 027 | [Slides Visual Elements (Phase 2)](027-slides-visual-elements.md) | accepted | 2026-06-09 |
+| 028 | [Slides Styling and Relative Layout (Phase 3a)](028-slides-styling-and-relative-layout.md) | accepted | 2026-06-09 |
+| 029 | [Slides Multi-Element Arrange and Richer Regions (Phase 3b-i)](029-slides-arrange-and-richer-regions.md) | accepted | 2026-06-09 |
+| 030 | [Slides Authoring Refinements + Scope Re-Auth UX](030-slides-authoring-refinements-and-scope-ux.md) | accepted | 2026-06-09 |
+| 031 | [Slides `stack` — flow layout](031-slides-stack-flow-layout.md) | accepted | 2026-06-09 |
 
 ## Creating a New ADR
 

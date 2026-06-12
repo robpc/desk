@@ -14,6 +14,7 @@ from desk.agent import (
     ErrorCode,
     dry_run_preview,
     get_undo_info,
+    is_scope_error,
     operation_receipt,
     output_result,
     parse_api_error,
@@ -142,7 +143,9 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
     error_msg = parse_api_error(raw_error)
 
     # Determine error code based on error message
-    if "not found" in raw_error.lower() or "404" in raw_error:
+    if is_scope_error(raw_error):
+        code = ErrorCode.INSUFFICIENT_SCOPES
+    elif "not found" in raw_error.lower() or "404" in raw_error:
         code = ErrorCode.MESSAGE_NOT_FOUND
     elif "401" in raw_error or "invalid credentials" in raw_error.lower():
         code = ErrorCode.AUTH_EXPIRED
@@ -157,6 +160,14 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
 
     # Get suggestions for this error code
     suggestions = ERROR_SUGGESTIONS.get(code, [])
+    # Mail keeps its message-ID-specific guidance for invalid-input API errors;
+    # the global INVALID_INPUT default is service-agnostic (see ADR-030 follow-up).
+    if code == ErrorCode.INVALID_INPUT:
+        suggestions = [
+            "Message IDs are hex strings like '19c3aa4804ae3ab4'",
+            "Use `desk mail search` to find valid message IDs",
+            "Check for typos or truncated IDs",
+        ]
 
     if as_json:
         error = structured_error(

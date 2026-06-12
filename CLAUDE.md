@@ -136,6 +136,32 @@ desk (CLI entry point)
 │   ├── delete-item    → Delete a question or section
 │   ├── publish        → Publish form and accept responses
 │   └── unpublish      → Unpublish form (stops accepting)
+├── slides             → Google Slides operations
+│   ├── create         → Create a new presentation
+│   ├── read           → Read presentation text, slide by slide
+│   ├── inspect        → Show structure with object IDs
+│   ├── export         → Export as PDF/PPTX/TXT
+│   ├── add-slide      → Add a slide with a predefined layout
+│   ├── delete-slide   → Delete a slide (by index or object ID)
+│   ├── delete-object  → Delete a page element by object ID
+│   ├── duplicate-slide → Duplicate a slide
+│   ├── move-slide     → Reorder a slide
+│   ├── insert-text    → Insert text into a shape/placeholder
+│   ├── replace-text   → Find and replace text across the deck
+│   ├── set-notes      → Set a slide's speaker notes
+│   ├── set-cell       → Set a table cell's text (by row/col)
+│   ├── set-text       → Replace a shape's entire text
+│   ├── set-background → Set a slide's page background color
+│   ├── insert-image   → Insert an image from a public URL
+│   ├── insert-table   → Insert a table
+│   ├── insert-shape   → Insert a shape or text box (optionally with text)
+│   ├── style          → Style a shape's text (bold/color/font/size)
+│   ├── format         → Fill/outline a shape or image
+│   ├── place          → Position/size an element by region or exact x/y/w/h
+│   ├── arrange        → Distribute elements as columns/rows/grid (fill)
+│   ├── stack          → Flow elements in a line at natural size (align + gap)
+│   ├── group          → Group elements into one group object
+│   └── ungroup        → Ungroup a group back into its members
 └── cal                → Google Calendar operations
     ├── today          → Today's events
     ├── week           → This week's events
@@ -162,12 +188,14 @@ Config/Tokens: ~/.desk/
 - `src/desk/commands/docs.py` - Docs commands
 - `src/desk/commands/cal.py` - Calendar commands
 - `src/desk/commands/forms.py` - Forms commands
+- `src/desk/commands/slides.py` - Slides commands
 - `src/desk/services/gmail.py` - GmailClient API wrapper
 - `src/desk/services/drive.py` - DriveClient API wrapper
 - `src/desk/services/sheets.py` - SheetsClient API wrapper
 - `src/desk/services/docs.py` - DocsClient API wrapper
 - `src/desk/services/calendar.py` - CalendarClient API wrapper
 - `src/desk/services/forms.py` - FormsClient API wrapper
+- `src/desk/services/slides.py` - SlidesClient API wrapper
 
 ## Adding a New Service
 

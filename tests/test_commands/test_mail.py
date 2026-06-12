@@ -416,3 +416,26 @@ class TestMailCreateLabel:
 
         assert result.exit_code == 0
         assert "NewLabel" in result.output
+
+
+class TestMailInvalidInputSuggestionsPreserved:
+    """Mail keeps its message-ID guidance after the global INVALID_INPUT default
+    was made service-agnostic (ADR-030 follow-up)."""
+
+    def test_invalid_input_error_suggests_mail_search(
+        self, runner, mock_get_credentials, mock_gmail_client_class
+    ):
+        from desk.commands.mail import mail
+
+        client = MagicMock()
+        client.read.side_effect = RuntimeError('Gmail API error: 400 returned "Invalid id value"')
+        mock_gmail_client_class.return_value = client
+
+        result = runner.invoke(mail, ["read", "bogus", "--json"])
+
+        assert result.exit_code == 1
+        out = json.loads(result.output)
+        assert out["error"]["code"] == "INVALID_INPUT"
+        joined = " ".join(out["error"]["suggestions"]).lower()
+        assert "desk mail search" in joined
+        assert "message ids are hex" in joined

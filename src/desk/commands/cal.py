@@ -12,6 +12,7 @@ from desk.agent import (
     ERROR_SUGGESTIONS,
     ErrorCode,
     dry_run_preview,
+    is_scope_error,
     operation_receipt,
     output_result,
     parse_api_error,
@@ -142,7 +143,9 @@ def _handle_api_error(e: Exception, as_json: bool, context: dict | None = None) 
     raw_error = str(e)
     error_msg = parse_api_error(raw_error)
 
-    if "not found" in raw_error.lower() or "404" in raw_error:
+    if is_scope_error(raw_error):
+        code = ErrorCode.INSUFFICIENT_SCOPES
+    elif "not found" in raw_error.lower() or "404" in raw_error:
         code = ErrorCode.EVENT_NOT_FOUND
     elif "401" in raw_error or "invalid credentials" in raw_error.lower():
         code = ErrorCode.AUTH_EXPIRED
