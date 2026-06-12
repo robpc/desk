@@ -164,7 +164,7 @@ def read(presentation_id: str, as_json: bool) -> None:
     console.print(f"[dim]{result['slideCount']} slide(s)[/dim]")
     for slide in result["slides"]:
         console.print()
-        console.print(f"[cyan]Slide {slide['index']}[/cyan] [dim]({slide['objectId']})[/dim]")
+        console.print(f"[cyan]Slide {slide['number']}[/cyan] [dim]({slide['objectId']})[/dim]")
         if slide["text"]:
             console.print(slide["text"])
         else:
@@ -219,7 +219,7 @@ def inspect_cmd(presentation_id: str, show_theme: bool, quiet: bool, as_json: bo
     for slide in result["slides"]:
         console.print()
         console.print(
-            f"[cyan]Slide {slide['index']}[/cyan] [dim]{slide['objectId']}[/dim]"
+            f"[cyan]Slide {slide['number']}[/cyan] [dim]{slide['objectId']}[/dim]"
         )
         if not slide["elements"]:
             console.print("  [dim](no elements)[/dim]")
@@ -343,7 +343,7 @@ def export(presentation_id: str, dest: str, fmt: str, quiet: bool, as_json: bool
     default="TITLE_AND_BODY",
     help="Predefined slide layout",
 )
-@click.option("--index", "-i", type=int, default=None, help="0-based insertion position")
+@click.option("--index", "-i", type=int, default=None, help="1-based insertion position (matches the Slides UI)")
 @click.option("--title", default=None, help="Fill the slide's title placeholder")
 @click.option("--subtitle", default=None, help="Fill the slide's subtitle placeholder")
 @click.option("--body", default=None, help="Fill the slide's body placeholder")
@@ -372,10 +372,10 @@ def add_slide(
         desk slides add-slide <id> --layout SECTION_TITLE_AND_DESCRIPTION \\
             --title "Part Two" --subtitle "Where we're headed"
 
-        desk slides add-slide <id> --layout BLANK --index 0
+        desk slides add-slide <id> --layout BLANK --index 1
     """
-    if index is not None and index < 0:
-        msg = "--index must be >= 0"
+    if index is not None and index < 1:
+        msg = "--index must be >= 1 (slide numbers are 1-based)"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
             print(json.dumps(error, indent=2), file=sys.stderr)
@@ -399,7 +399,7 @@ def add_slide(
         target={"id": presentation_id, "slide_object_id": result.get("objectId")},
         changes={
             "layout": layout,
-            "index": index,
+            "position": index,
             # Hand back placeholder objectIds so the caller can insert-text
             # without a separate inspect (ADR-030).
             "placeholders": result.get("placeholders", []),
@@ -421,7 +421,7 @@ def add_slide(
 def delete_slide(
     presentation_id: str, slide: str, yes: bool, quiet: bool, as_json: bool,
 ) -> None:
-    """Delete a slide by 0-based index or objectId.
+    """Delete a slide by 1-based slide number or objectId (matches the UI).
 
     Examples:
 
@@ -490,7 +490,7 @@ def delete_object(
 def duplicate_slide(
     presentation_id: str, slide: str, quiet: bool, as_json: bool,
 ) -> None:
-    """Duplicate a slide by 0-based index or objectId.
+    """Duplicate a slide by 1-based slide number or objectId (matches the UI).
 
     Useful for reusing a template slide's structure.
 
@@ -518,20 +518,20 @@ def duplicate_slide(
 @slides.command("move-slide")
 @click.argument("presentation_id")
 @click.argument("slide")
-@click.option("--to", "insertion_index", required=True, type=int, help="0-based target position")
+@click.option("--to", "insertion_index", required=True, type=int, help="1-based target position (matches the Slides UI)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def move_slide(
     presentation_id: str, slide: str, insertion_index: int, quiet: bool, as_json: bool,
 ) -> None:
-    """Reorder a slide to a new 0-based position.
+    """Reorder a slide to a new 1-based position (matches the Slides UI).
 
     Examples:
 
-        desk slides move-slide <id> 3 --to 0
+        desk slides move-slide <id> 3 --to 1
     """
-    if insertion_index < 0:
-        msg = "--to must be >= 0"
+    if insertion_index < 1:
+        msg = "--to must be >= 1 (slide numbers are 1-based)"
         if as_json:
             error = structured_error(ErrorCode.INVALID_INPUT, msg)
             print(json.dumps(error, indent=2), file=sys.stderr)
@@ -551,7 +551,7 @@ def move_slide(
     receipt = operation_receipt(
         operation="move-slide",
         target={"id": presentation_id, "slide_object_id": result.get("objectId")},
-        changes={"insertion_index": insertion_index},
+        changes={"position": insertion_index},
     )
     output_result(receipt, as_json, quiet)
 
@@ -662,7 +662,7 @@ def set_notes(
 ) -> None:
     """Set a slide's speaker notes.
 
-    SLIDE is a 0-based index or a slide objectId. Use `desk slides read` to see
+    SLIDE is a 1-based slide number or a slide objectId. Use `desk slides read` to see
     existing notes per slide.
 
     Examples:
@@ -784,7 +784,7 @@ def set_background(
 
     Sets the real page background — no need to lay a full-bleed rectangle behind
     everything (the Slides API has no z-order control, so that hack is awkward).
-    SLIDE is a 0-based index or a slide objectId. COLOR is #RRGGBB or a theme
+    SLIDE is a 1-based slide number or a slide objectId. COLOR is #RRGGBB or a theme
     name (ACCENT1, DARK1, ...).
 
     Examples:
@@ -832,7 +832,7 @@ def insert_image(
 ) -> None:
     """Insert an image onto a slide from a public URL.
 
-    SLIDE is a 0-based index or a slide objectId (see `desk slides inspect`).
+    SLIDE is a 1-based slide number or a slide objectId (see `desk slides inspect`).
     Position by --region (e.g. right-half) or in points; both are optional.
 
     Examples:
@@ -889,7 +889,7 @@ def insert_table(
 ) -> None:
     """Insert a table onto a slide, optionally pre-filled.
 
-    SLIDE is a 0-based index or a slide objectId. Give --rows/--cols, or --data
+    SLIDE is a 1-based slide number or a slide objectId. Give --rows/--cols, or --data
     (JSON rows) to build and fill the table in one call. Position by --region or
     in points; omit both to let the API place and size the table.
 
@@ -972,7 +972,7 @@ def insert_shape(
 ) -> None:
     """Insert a shape (default text box) onto a slide, optionally with text.
 
-    SLIDE is a 0-based index or a slide objectId. Position by --region or points.
+    SLIDE is a 1-based slide number or a slide objectId. Position by --region or points.
 
     Examples:
 

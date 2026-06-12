@@ -69,7 +69,7 @@ class TestSlidesRead:
             "presentationId": "p1",
             "title": "Deck",
             "slideCount": 1,
-            "slides": [{"index": 0, "objectId": "s1", "text": "Hello"}],
+            "slides": [{"number": 1, "objectId": "s1", "text": "Hello"}],
         }
         mock_slides_client_class.return_value = client
 
@@ -104,7 +104,7 @@ class TestSlidesInspect:
             "title": "Deck",
             "slideCount": 1,
             "slides": [{
-                "index": 0, "objectId": "s1",
+                "number": 1, "objectId": "s1",
                 "elements": [{
                     "objectId": "t1", "type": "shape",
                     "shapeType": "TEXT_BOX", "placeholder": "TITLE", "text": "Hi",

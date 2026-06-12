@@ -335,20 +335,20 @@ class SlidesClient:
     def _resolve_slide_object_id(self, presentation_id: str, slide: str) -> str:
         """Resolve a slide reference to its objectId.
 
-        ``slide`` may be a 0-based index (all digits) or an objectId. Indices
-        are resolved against the deck's slide order; objectIds pass through
-        untouched (the API validates them).
+        ``slide`` may be a 1-based slide number (all digits, matching the Slides
+        UI — ADR-033) or an objectId. Numbers are resolved against the deck's
+        slide order; objectIds pass through untouched (the API validates them).
         """
         if slide.isdigit():
             pres = self._get(presentation_id)
             slides = pres.get("slides", [])
-            idx = int(slide)
-            if idx >= len(slides):
+            number = int(slide)
+            if number < 1 or number > len(slides):
                 raise RuntimeError(
-                    f"Slide index {idx} out of range "
-                    f"(presentation has {len(slides)} slide(s): 0-{len(slides) - 1})"
+                    f"Slide number {number} out of range "
+                    f"(presentation has {len(slides)} slide(s): 1-{len(slides)})"
                 )
-            return slides[idx]["objectId"]
+            return slides[number - 1]["objectId"]
         return slide
 
     # ── Presentation CRUD ───────────────────────────────────────────────
@@ -398,7 +398,7 @@ class SlidesClient:
                     if text.strip():
                         parts.append(text.rstrip("\n"))
                 slides.append({
-                    "index": i,
+                    "number": i + 1,
                     "objectId": slide.get("objectId", ""),
                     "text": "\n".join(parts),
                     "notes": self._slide_notes_text(slide).rstrip("\n"),
@@ -630,7 +630,7 @@ class SlidesClient:
                     elem["overlaps"] = hits
 
                 slides.append({
-                    "index": i,
+                    "number": i + 1,
                     "objectId": slide.get("objectId", ""),
                     "elements": elements,
                 })
@@ -672,7 +672,8 @@ class SlidesClient:
         Args:
             presentation_id: The presentation ID
             layout: A predefined layout (see PREDEFINED_LAYOUTS)
-            index: 0-based insertion position, or None to append
+            index: 1-based insertion position (the new slide becomes slide
+                ``index``; matches the Slides UI — ADR-033), or None to append
             object_id: Optional client-supplied objectId for the new slide
             title/subtitle/body: Optional text to insert into the matching
                 placeholder at creation, so a populated slide is one call
@@ -688,7 +689,8 @@ class SlidesClient:
                 "slideLayoutReference": {"predefinedLayout": layout},
             }
             if index is not None:
-                request["insertionIndex"] = index
+                # 1-based slide number → 0-based API insertionIndex (ADR-033)
+                request["insertionIndex"] = index - 1
             if object_id:
                 request["objectId"] = object_id
 
@@ -761,7 +763,7 @@ class SlidesClient:
         return placeholders
 
     def delete_slide(self, presentation_id: str, slide: str) -> dict:
-        """Delete a slide by 0-based index or objectId.
+        """Delete a slide by 1-based slide number or objectId (ADR-033).
 
         Returns:
             Dict with presentationId, objectId (the deleted slide), and status.
@@ -798,7 +800,7 @@ class SlidesClient:
             raise RuntimeError(f"Slides API error: {error}")
 
     def duplicate_slide(self, presentation_id: str, slide: str) -> dict:
-        """Duplicate a slide by 0-based index or objectId.
+        """Duplicate a slide by 1-based slide number or objectId (ADR-033).
 
         Returns:
             Dict with presentationId, sourceObjectId, objectId (the copy),
@@ -825,10 +827,10 @@ class SlidesClient:
     def move_slide(
         self, presentation_id: str, slide: str, insertion_index: int,
     ) -> dict:
-        """Reorder a slide to a new 0-based position.
+        """Reorder a slide to a new 1-based position (matches the Slides UI — ADR-033).
 
         Returns:
-            Dict with presentationId, objectId, insertionIndex, and status.
+            Dict with presentationId, objectId, position (1-based), and status.
         """
         try:
             object_id = self._resolve_slide_object_id(presentation_id, slide)
@@ -837,14 +839,15 @@ class SlidesClient:
                 [{
                     "updateSlidesPosition": {
                         "slideObjectIds": [object_id],
-                        "insertionIndex": insertion_index,
+                        # 1-based target → 0-based API insertionIndex
+                        "insertionIndex": insertion_index - 1,
                     }
                 }],
             )
             return {
                 "presentationId": presentation_id,
                 "objectId": object_id,
-                "insertionIndex": insertion_index,
+                "position": insertion_index,
                 "status": "ok",
             }
         except HttpError as error:
@@ -1131,7 +1134,7 @@ class SlidesClient:
 
         Args:
             presentation_id: The presentation ID
-            slide: Target slide as 0-based index or objectId
+            slide: Target slide as a 1-based slide number or objectId
             url: Publicly accessible image URL
             x, y: Top-left position in points (default ~50,50)
             width, height: Size in points (default 300x200)
@@ -1176,7 +1179,7 @@ class SlidesClient:
 
         Args:
             presentation_id: The presentation ID
-            slide: Target slide as 0-based index or objectId
+            slide: Target slide as a 1-based slide number or objectId
             rows/columns: Table dimensions. When ``data`` is given they are
                 inferred from it (and validated if also passed).
             x, y: Top-left position in points (default ~50,50)

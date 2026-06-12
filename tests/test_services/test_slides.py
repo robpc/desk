@@ -327,10 +327,11 @@ class TestSlideStructure:
         client, presentations = _make_client(mock_credentials)
         presentations.batchUpdate.return_value.execute.return_value = {"replies": [{}]}
 
-        client.add_slide("pres_123", layout="BLANK", index=0)
+        # 1-based: become slide 3 → 0-based API insertionIndex 2 (ADR-033)
+        client.add_slide("pres_123", layout="BLANK", index=3)
 
         req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
-        assert req["createSlide"]["insertionIndex"] == 0
+        assert req["createSlide"]["insertionIndex"] == 2
 
     def test_delete_slide_by_index_resolves_object_id(self, mock_credentials):
         client, presentations = _make_client(mock_credentials)
@@ -339,7 +340,8 @@ class TestSlideStructure:
         }
         presentations.batchUpdate.return_value.execute.return_value = {}
 
-        result = client.delete_slide("pres_123", "1")
+        # 1-based: slide "2" → slides[1] = s1 (ADR-033)
+        result = client.delete_slide("pres_123", "2")
 
         assert result["objectId"] == "s1"
         req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
@@ -363,6 +365,25 @@ class TestSlideStructure:
         with pytest.raises(RuntimeError, match="out of range"):
             client.delete_slide("pres_123", "5")
 
+    def test_slide_number_one_is_first_slide(self, mock_credentials):
+        """1-based: slide '1' resolves to the first slide (ADR-033)."""
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0"}, {"objectId": "s1"}]
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {}
+        result = client.delete_slide("pres_123", "1")
+        assert result["objectId"] == "s0"
+
+    def test_slide_number_zero_rejected(self, mock_credentials):
+        """1-based: there is no slide 0 (guards against Python negative-index)."""
+        client, presentations = _make_client(mock_credentials)
+        presentations.get.return_value.execute.return_value = {
+            "slides": [{"objectId": "s0"}, {"objectId": "s1"}]
+        }
+        with pytest.raises(RuntimeError, match="out of range"):
+            client.delete_slide("pres_123", "0")
+
     def test_duplicate_slide_returns_copy_id(self, mock_credentials):
         client, presentations = _make_client(mock_credentials)
         presentations.batchUpdate.return_value.execute.return_value = {
@@ -378,11 +399,12 @@ class TestSlideStructure:
         client, presentations = _make_client(mock_credentials)
         presentations.batchUpdate.return_value.execute.return_value = {}
 
-        client.move_slide("pres_123", "slideX", 0)
+        # 1-based: move to position 3 → 0-based API insertionIndex 2 (ADR-033)
+        client.move_slide("pres_123", "slideX", 3)
 
         req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]
         assert req["updateSlidesPosition"]["slideObjectIds"] == ["slideX"]
-        assert req["updateSlidesPosition"]["insertionIndex"] == 0
+        assert req["updateSlidesPosition"]["insertionIndex"] == 2
 
 
 class TestSlidesText:
@@ -426,7 +448,8 @@ class TestVisualElements:
             "replies": [{"createImage": {"objectId": "img1"}}]
         }
 
-        result = client.insert_image("p1", "0", "https://x/y.png", x=100, y=80, width=200)
+        # 1-based: slide "1" → slides[0] = s0 (ADR-033)
+        result = client.insert_image("p1", "1", "https://x/y.png", x=100, y=80, width=200)
 
         assert result["objectId"] == "img1"
         assert result["slideObjectId"] == "s0"
@@ -1434,7 +1457,8 @@ class TestSetBackground:
         }
         presentations.batchUpdate.return_value.execute.return_value = {}
 
-        client.set_background("p1", "1", "#0B5394")
+        # 1-based: slide "2" → slides[1] = s1 (ADR-033)
+        client.set_background("p1", "2", "#0B5394")
 
         req = presentations.batchUpdate.call_args[1]["body"]["requests"][0]["updatePageProperties"]
         assert req["objectId"] == "s1"
