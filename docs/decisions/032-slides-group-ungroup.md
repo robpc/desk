@@ -73,9 +73,17 @@ changes how every later transform behaves.
   geometry is the union of its children's boxes in group-local space, mapped through the group's
   own transform. Added `_group_local_extent` / `_group_box` so `inspect` shows a group's real box
   and `place`/`fit`/`move` work on it. The transform builders offset the translate by the group's
-  local origin (children aren't at local 0,0), so `place <group> --region center` lands the
-  group's *rendered* top-left exactly on the region box (live-verified to match `_region_box`
-  to the point). Without this, `place` failed with "no resolvable size."
+  local origin (children aren't at local 0,0). Without this, `place` failed with "no resolvable
+  size."
+- **`place <group> --region` = translate, not scale** (bug fix, deck-builder live report).
+  For a normal element `--region` fits-to-fill the region cell. A group, however, is a *fixed
+  composition with no intrinsic size* — scaling it to fill an arbitrary grid cell squashes the
+  cluster (a 672×122 group collapsed into a 216×111 cell, children shrunk, text overflowing).
+  So for a group, `--region R` now **centers the group's union bbox within R, preserving child
+  sizes**; resizing a group happens only when `--width/--height` is passed explicitly. This is a
+  deliberate, documented exception to the single-element fit-to-fill semantics. Live-verified: a
+  630×90 cluster `place --region center` → still 630×90, centered on the slide; ungroup leaves
+  the (un-squashed) children in place.
 - `src/desk/commands/slides.py`: `group` (variadic object ids, emits `undo_command` =
   `ungroup …`) and `ungroup` commands. Live-verified: group 3 shapes → `place --region center`
   the group → `ungroup`.

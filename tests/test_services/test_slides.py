@@ -1352,6 +1352,34 @@ class TestGroupElements:
         assert t["translateX"] == 300.0 - 50.0
         assert t["translateY"] == 200.0 - 50.0
 
+    def test_place_group_region_centers_without_scaling(self, mock_credentials):
+        """Bug fix (deck-builder): place <group> --region must CENTER the cluster
+        preserving child sizes, not scale it to fill the region cell."""
+        client, presentations = _make_client(mock_credentials)
+        # wide cluster: union x 60..600 = 540 wide, y 150..250 = 100 tall
+        grp = {"objectId": "g1", "transform": {"scaleX": 1, "scaleY": 1, "unit": "PT"},
+               "elementGroup": {"children": [self._child("a", 60, 150, 200, 100),
+                                             self._child("b", 300, 150, 300, 100)]}}
+        presentations.get.return_value.execute.return_value = {
+            "pageSize": {"width": {"magnitude": 720, "unit": "PT"},
+                         "height": {"magnitude": 405, "unit": "PT"}},
+            "slides": [{"objectId": "s0", "pageElements": [grp]}],
+        }
+        presentations.batchUpdate.return_value.execute.return_value = {}
+
+        result = client.place_element("p1", "g1", "center")
+
+        t = presentations.batchUpdate.call_args[1]["body"]["requests"][0][
+            "updatePageElementTransform"]["transform"]
+        assert t["scaleX"] == 1 and t["scaleY"] == 1  # NOT scaled — preserved
+        # center 540x100 bbox in region (252,147,216,111):
+        # target top-left x = 252 + (216-540)/2 = 90; y = 147 + (111-100)/2 = 152.5
+        # request translate offsets by the group's local origin (60,150):
+        assert abs(t["translateX"] - (90.0 - 60.0)) < 1e-6
+        assert abs(t["translateY"] - (152.5 - 150.0)) < 1e-6
+        # reported box keeps the original size
+        assert result["box"]["width"] == 540.0 and result["box"]["height"] == 100.0
+
 
 class TestSetText:
     """Tests for SlidesClient.set_text (Idea 072)."""

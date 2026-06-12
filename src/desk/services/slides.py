@@ -1511,6 +1511,10 @@ class SlidesClient:
         """Position/size an existing element — by named region OR exact points.
 
         - ``region`` → fit the element to that region box (resize to fill).
+          **Exception — groups:** a group has no intrinsic size and represents a
+          fixed composition, so ``region`` *centers the group's union bbox in the
+          region* (preserving child sizes) rather than scaling it to fill. Resize
+          a group only by passing an explicit ``--width/--height``. (ADR-032)
         - explicit coords → ``--x/--y`` move (size preserved); ``--width/--height``
           resize. Omitted coords keep the element's current value. All in points.
 
@@ -1531,7 +1535,23 @@ class SlidesClient:
 
         if region:
             page_w, page_h = self._page_size_pt(presentation_id)
-            request = self._fit_transform_request(element, _region_box(page_w, page_h, region))
+            rbox = _region_box(page_w, page_h, region)
+            if "elementGroup" in element:
+                # A group is a fixed composition with no intrinsic size — scaling
+                # it to fill a region cell squashes the cluster. Instead, CENTER
+                # the group's union bbox within the region, preserving child sizes.
+                # Resize a group only via an explicit --width/--height. (ADR-032)
+                cur = self._element_box(element)
+                if cur is None:
+                    raise RuntimeError(f"Object {object_id} has no resolvable size.")
+                rx, ry, rw, rh = rbox
+                tx = rx + (rw - cur["width"]) / 2
+                ty = ry + (rh - cur["height"]) / 2
+                request = self._move_transform_request(element, tx, ty)
+                result["box"] = {"x": round(tx, 1), "y": round(ty, 1),
+                                 "width": cur["width"], "height": cur["height"]}
+            else:
+                request = self._fit_transform_request(element, rbox)
             result["region"] = region
         else:
             resizing = width is not None or height is not None
