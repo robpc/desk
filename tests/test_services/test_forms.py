@@ -1,8 +1,8 @@
 """Tests for Forms service client."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 
@@ -15,7 +15,7 @@ class TestFormsClientInit:
             mock_build.return_value = MagicMock()
             from desk.services.forms import FormsClient
 
-            client = FormsClient(mock_credentials)
+            FormsClient(mock_credentials)
 
             assert mock_build.call_count == 1
             assert mock_build.call_args_list[0][0] == ("forms", "v1")

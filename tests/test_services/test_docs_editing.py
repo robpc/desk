@@ -1,6 +1,5 @@
 """Tests for docs editing utilities and markdown conversion."""
 
-import pytest
 
 from desk.services.docs_editing import normalize_text, utf16_len, utf16_offset
 

@@ -1,9 +1,9 @@
 """Tests for Gmail service client."""
 
 import base64
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 
@@ -191,7 +191,6 @@ class TestBatchGet:
                 call_count["n"] += 1
                 batch = MockBatchHttpRequest(callback, response_map=response_map)
                 if call_count["n"] == 1:
-                    original_execute = batch.execute
 
                     def raising_execute():
                         raise RuntimeError("chunk 1 transport failure")

@@ -1,24 +1,21 @@
 """Tests for agent-first utilities in desk.agent module."""
 
 import json
-from datetime import datetime, timezone
-
-import pytest
+from datetime import datetime
 
 from desk.agent import (
-    ErrorCode,
     ERROR_SUGGESTIONS,
-    structured_error,
-    operation_receipt,
+    UNDO_COMMANDS,
+    ErrorCode,
     dry_run_preview,
-    get_undo_info,
-    parse_api_error,
+    format_dry_run_for_human,
     format_error_for_human,
     format_receipt_for_human,
-    format_dry_run_for_human,
-    UNDO_COMMANDS,
+    get_undo_info,
+    operation_receipt,
+    parse_api_error,
+    structured_error,
 )
-
 
 # -----------------------------------------------------------------------------
 # structured_error tests

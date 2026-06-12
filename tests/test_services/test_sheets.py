@@ -1,8 +1,8 @@
 """Tests for Sheets service client."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 
@@ -15,7 +15,7 @@ class TestSheetsClientInit:
             mock_build.return_value = MagicMock()
             from desk.services.sheets import SheetsClient
 
-            client = SheetsClient(mock_credentials)
+            SheetsClient(mock_credentials)
 
             mock_build.assert_called_once_with("sheets", "v4", credentials=mock_credentials)
 
@@ -395,7 +395,7 @@ class TestSheetsAppend:
                 ["NewRow1", "Data1", "Data2"],
                 ["NewRow2", "Data3", "Data4"],
             ]
-            result = client.append("spreadsheet_id", "Sheet1", values)
+            client.append("spreadsheet_id", "Sheet1", values)
 
             values_mock.append.assert_called_once()
 

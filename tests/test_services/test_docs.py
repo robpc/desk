@@ -1,8 +1,8 @@
 """Tests for Docs service client."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 
@@ -15,7 +15,7 @@ class TestDocsClientInit:
             mock_build.return_value = MagicMock()
             from desk.services.docs import DocsClient
 
-            client = DocsClient(mock_credentials)
+            DocsClient(mock_credentials)
 
             # Only Docs service created eagerly
             assert mock_build.call_count == 1
@@ -687,7 +687,7 @@ class TestDocsFindAndReplace:
             from desk.services.docs import DocsClient
 
             client = DocsClient(mock_credentials)
-            result = client.find_and_replace("doc123", "OLD", "new", match_case=False)
+            client.find_and_replace("doc123", "OLD", "new", match_case=False)
 
             call_kwargs = documents_mock.batchUpdate.call_args
             req = call_kwargs[1]["body"]["requests"][0]["replaceAllText"]
@@ -736,7 +736,7 @@ class TestDocsUpdate:
             from desk.services.docs import DocsClient
 
             client = DocsClient(mock_credentials)
-            result = client.update("doc123", text="New text to append")
+            client.update("doc123", text="New text to append")
 
             documents_mock.batchUpdate.assert_called_once()
 
@@ -759,7 +759,7 @@ class TestDocsUpdate:
             from desk.services.docs import DocsClient
 
             client = DocsClient(mock_credentials)
-            result = client.update("doc123", text="New content", mode="replace")
+            client.update("doc123", text="New content", mode="replace")
 
             documents_mock.batchUpdate.assert_called_once()
 
@@ -810,7 +810,7 @@ class TestDocsFindParagraphBoundary:
 
     def _make_client(self, mock_credentials, body_content):
         """Helper to create a client with mocked document body."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
         with patch("desk.services.docs.build") as mock_build:
             mock_service = MagicMock()
             mock_build.return_value = mock_service
@@ -1033,7 +1033,7 @@ class TestDocsUpdateParagraphStyle:
             from desk.services.docs import DocsClient
 
             client = DocsClient(mock_credentials)
-            result = client.update_paragraph_style("doc123", 1, 20, heading=0)
+            client.update_paragraph_style("doc123", 1, 20, heading=0)
 
             call_kwargs = documents_mock.batchUpdate.call_args
             req = call_kwargs[1]["body"]["requests"][0]["updateParagraphStyle"]
@@ -1050,7 +1050,7 @@ class TestDocsUpdateParagraphStyle:
             from desk.services.docs import DocsClient
 
             client = DocsClient(mock_credentials)
-            result = client.update_paragraph_style("doc123", 1, 50, alignment="CENTER")
+            client.update_paragraph_style("doc123", 1, 50, alignment="CENTER")
 
             call_kwargs = documents_mock.batchUpdate.call_args
             req = call_kwargs[1]["body"]["requests"][0]["updateParagraphStyle"]

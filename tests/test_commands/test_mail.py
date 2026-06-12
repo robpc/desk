@@ -1,9 +1,10 @@
 """Tests for mail CLI commands."""
 
 import json
+from unittest.mock import MagicMock, patch
+
 import pytest
 from click.testing import CliRunner
-from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture

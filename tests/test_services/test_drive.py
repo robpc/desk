@@ -1,9 +1,9 @@
 """Tests for Drive service client."""
 
 import io
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 
@@ -16,7 +16,7 @@ class TestDriveClientInit:
             mock_build.return_value = MagicMock()
             from desk.services.drive import DriveClient
 
-            client = DriveClient(mock_credentials)
+            DriveClient(mock_credentials)
 
             mock_build.assert_called_once_with("drive", "v3", credentials=mock_credentials)
 

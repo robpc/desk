@@ -1,7 +1,8 @@
 """Shared test fixtures for desk CLI tests."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 @pytest.fixture
