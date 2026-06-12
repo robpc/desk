@@ -142,7 +142,7 @@ desk (CLI entry point)
 │   ├── inspect        → Show structure with object IDs
 │   ├── export         → Export as PDF/PPTX/TXT
 │   ├── add-slide      → Add a slide with a predefined layout
-│   ├── delete-slide   → Delete a slide (by index or object ID)
+│   ├── delete-slide   → Delete a slide (by 1-based number or object ID)
 │   ├── delete-object  → Delete a page element by object ID
 │   ├── duplicate-slide → Duplicate a slide
 │   ├── move-slide     → Reorder a slide

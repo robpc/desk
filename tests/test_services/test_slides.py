@@ -1,8 +1,8 @@
 """Tests for Slides service client."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 

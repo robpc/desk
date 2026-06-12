@@ -1,8 +1,8 @@
 """Tests for Calendar service client."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from googleapiclient.errors import HttpError
 
 
@@ -15,7 +15,7 @@ class TestCalendarClientInit:
             mock_build.return_value = MagicMock()
             from desk.services.calendar import CalendarClient
 
-            client = CalendarClient(mock_credentials)
+            CalendarClient(mock_credentials)
 
             mock_build.assert_called_once_with("calendar", "v3", credentials=mock_credentials)
 

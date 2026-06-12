@@ -1,6 +1,5 @@
 """Tests for link utilities: markdown escaping, HTML extraction, and URL classification."""
 
-import pytest
 
 from desk.links import (
     classify_url,
