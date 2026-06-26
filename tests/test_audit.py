@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,20 +15,9 @@ from desk import audit
 @pytest.fixture(autouse=True)
 def reset_logger():
     """The audit logger is a module-level singleton — reset between tests."""
-    logger = logging.getLogger("desk.audit")
-    for h in list(logger.handlers):
-        logger.removeHandler(h)
-        try:
-            h.close()
-        except Exception:
-            pass
+    audit._reset_for_tests()
     yield
-    for h in list(logger.handlers):
-        logger.removeHandler(h)
-        try:
-            h.close()
-        except Exception:
-            pass
+    audit._reset_for_tests()
 
 
 class TestGetAuditLogger:
@@ -60,7 +50,15 @@ class TestGetAuditLogger:
             log1 = audit.get_audit_logger(tmp_path)
             log2 = audit.get_audit_logger(tmp_path)
             assert log1 is log2
-            assert len(log1.handlers) == 1  # Just file handler (syslog mocked out)
+            # Just the file handler (syslog mocked out). Filter to the file
+            # handler we add — test runners may attach their own (e.g. log
+            # capture). SysLogHandler is patched here, so don't isinstance it.
+            file_handlers = [
+                h
+                for h in log1.handlers
+                if isinstance(h, logging.handlers.RotatingFileHandler)
+            ]
+            assert len(file_handlers) == 1
 
     def test_syslog_unavailable_falls_back_to_file_only(self, tmp_path: Path):
         with patch("desk.audit.logging.handlers.SysLogHandler", side_effect=OSError):

@@ -17,6 +17,12 @@ from pathlib import Path
 _TAG = "desk-audit"
 _LOG_NAME = "desk.audit"
 
+# Tracks whether we've already configured our handlers. We can't infer this
+# from ``logger.handlers`` because test runners (e.g. pytest's log capture)
+# attach their own handlers to this logger, which would otherwise trick us
+# into skipping configuration.
+_configured = False
+
 
 def _syslog_address() -> str | tuple[str, int]:
     """Pick the syslog destination for this platform.
@@ -35,8 +41,9 @@ def get_audit_logger(config_dir: Path) -> logging.Logger:
 
     Idempotent: repeat calls return the same configured logger.
     """
+    global _configured
     logger = logging.getLogger(_LOG_NAME)
-    if logger.handlers:
+    if _configured:
         return logger
 
     logger.setLevel(logging.INFO)
@@ -78,4 +85,26 @@ def get_audit_logger(config_dir: Path) -> logging.Logger:
         # Local file alone is acceptable.
         pass
 
+    _configured = True
     return logger
+
+
+def _reset_for_tests() -> None:
+    """Tear down our handlers and reset configuration state.
+
+    Test-only helper. Removes the handlers we added (leaving any attached by
+    the test runner intact) so the next ``get_audit_logger`` reconfigures.
+    """
+    global _configured
+    logger = logging.getLogger(_LOG_NAME)
+    for handler in list(logger.handlers):
+        if isinstance(
+            handler,
+            (logging.handlers.RotatingFileHandler, logging.handlers.SysLogHandler),
+        ):
+            logger.removeHandler(handler)
+            try:
+                handler.close()
+            except Exception:
+                pass
+    _configured = False
