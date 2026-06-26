@@ -6,6 +6,7 @@ bodies, and classifying Google Workspace URLs.
 """
 
 import re
+from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -57,6 +58,88 @@ class _LinkExtractor(HTMLParser):
             self.links.append({"url": self._current_href, "text": text})
             self._current_href = None
             self._current_text_parts = []
+
+
+# ------------------------------------------------------------------
+# HTML -> plain text
+# ------------------------------------------------------------------
+
+# Tags whose text content should be dropped entirely.
+_SKIP_CONTENT_TAGS = {"script", "style", "head", "title"}
+
+# Block-level tags that should produce a line break in the rendered text.
+_BLOCK_TAGS = {
+    "p", "div", "br", "tr", "li", "ul", "ol", "table", "h1", "h2", "h3",
+    "h4", "h5", "h6", "blockquote", "section", "header", "footer", "article",
+}
+
+
+class _TextExtractor(HTMLParser):
+    """HTMLParser subclass that renders HTML to readable plain text.
+
+    Drops script/style content, inserts newlines on block-level tags, and
+    collapses runs of blank lines. Intentionally simple (stdlib only) — good
+    enough to surface the text of HTML-only emails (common for automated
+    senders) that ship no text/plain alternative.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _SKIP_CONTENT_TAGS:
+            self._skip_depth += 1
+        elif tag in _BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _SKIP_CONTENT_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+        elif tag in _BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        return "".join(self._parts)
+
+
+def html_to_text(html: str) -> str:
+    """Render an HTML string to readable plain text.
+
+    Strips tags and script/style content, decodes HTML entities, inserts
+    line breaks on block-level elements, and collapses excessive blank lines.
+
+    Args:
+        html: HTML string (e.g. an email's text/html body).
+
+    Returns:
+        Plain-text rendering. Empty string if input is falsy.
+    """
+    if not html:
+        return ""
+
+    parser = _TextExtractor()
+    parser.feed(html)
+    text = unescape(parser.get_text())
+
+    # Normalize whitespace: trim each line, drop runs of >1 blank line.
+    lines = [line.strip() for line in text.splitlines()]
+    out: list[str] = []
+    blank = False
+    for line in lines:
+        if line:
+            out.append(line)
+            blank = False
+        elif not blank:
+            out.append("")
+            blank = True
+
+    return "\n".join(out).strip()
 
 
 def _unwrap_google_redirect(url: str) -> str:

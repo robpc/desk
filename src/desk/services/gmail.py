@@ -1402,11 +1402,20 @@ class GmailClient:
         self, msg: dict, extra_headers: list[str] | None = None
     ) -> dict:
         """Parse full message including body and links."""
-        from desk.links import extract_links_from_html
+        from desk.links import extract_links_from_html, html_to_text
 
         metadata = self._parse_message_metadata(msg, extra_headers=extra_headers)
         plain, html = self._extract_body_parts(msg.get("payload", {}))
-        metadata["body"] = plain
+
+        # Prefer the text/plain part; fall back to rendering text/html when the
+        # message ships no usable plain-text body (common for automated senders
+        # that send HTML-only multipart/related messages).
+        if plain.strip():
+            metadata["body"] = plain
+        elif html:
+            metadata["body"] = html_to_text(html)
+        else:
+            metadata["body"] = plain
 
         # Extract links from HTML body
         if html:

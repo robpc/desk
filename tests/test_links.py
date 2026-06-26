@@ -8,7 +8,45 @@ from desk.links import (
     extract_links_from_html,
     filter_links_not_in_text,
     format_markdown_link,
+    html_to_text,
 )
+
+
+class TestHtmlToText:
+    """Tests for html_to_text (HTML-only email body fallback)."""
+
+    def test_empty_string(self):
+        assert html_to_text("") == ""
+
+    def test_strips_tags(self):
+        assert html_to_text("<p>Hello <b>world</b></p>") == "Hello world"
+
+    def test_decodes_entities(self):
+        assert html_to_text("<p>A &amp; B &lt;ok&gt;</p>") == "A & B <ok>"
+
+    def test_drops_script_and_style(self):
+        html = "<style>p{color:red}</style><p>Visible</p><script>alert(1)</script>"
+        result = html_to_text(html)
+        assert "Visible" in result
+        assert "color:red" not in result
+        assert "alert" not in result
+
+    def test_block_tags_produce_line_breaks(self):
+        html = "<div>Line one</div><div>Line two</div>"
+        # Content lines preserved in order, on separate lines.
+        non_empty = [line for line in html_to_text(html).splitlines() if line]
+        assert non_empty == ["Line one", "Line two"]
+
+    def test_collapses_blank_lines(self):
+        html = "<p>A</p><br><br><br><p>B</p>"
+        # No run of more than one blank line between content
+        assert "\n\n\n" not in html_to_text(html)
+
+    def test_table_label_value(self):
+        # Mirrors the HTML-only table-based notification shape that returned empty.
+        html = "<table><tr><td>Order Status:</td><td>Shipped</td></tr></table>"
+        assert "Order Status:" in html_to_text(html)
+        assert "Shipped" in html_to_text(html)
 
 
 class TestEscapeLinkText:
