@@ -2042,3 +2042,39 @@ class TestGetBodyExtent:
             start, end = client.get_body_extent("doc123")
 
             assert (start, end) == (1, 1)
+
+
+class TestDocsExport:
+    """Tests for DocsClient.export.
+
+    Regression guard: files().export() does NOT accept supportsAllDrives —
+    passing it raises a client-side TypeError at call time (mocks hide this,
+    so we assert the kwarg is absent rather than relying on the mock).
+    """
+
+    def test_export_does_not_pass_supports_all_drives(self, mock_credentials):
+        with patch("desk.services.docs.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            export = mock_service.files.return_value.export
+            export.return_value.execute.return_value = b"PDF"
+
+            result = client.export("doc_1", fmt="pdf")
+
+            assert result == b"PDF"
+            kwargs = export.call_args.kwargs
+            assert "supportsAllDrives" not in kwargs
+            assert kwargs["fileId"] == "doc_1"
+            assert kwargs["mimeType"] == "application/pdf"
+
+    def test_export_unsupported_format_raises(self, mock_credentials):
+        with patch("desk.services.docs.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.docs import DocsClient
+
+            client = DocsClient(mock_credentials)
+            with pytest.raises(RuntimeError, match="Unsupported format"):
+                client.export("doc_1", fmt="rtf")

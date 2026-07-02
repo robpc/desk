@@ -970,8 +970,10 @@ class DocsClient:
             raise RuntimeError(f"Unsupported format: {fmt}. Use: {', '.join(mime_map)}")
 
         try:
+            # files().export does not accept supportsAllDrives — passing it
+            # raises a client-side TypeError. (See DriveClient._files_export.)
             return self._drive.files().export(
-                fileId=document_id, mimeType=mime, supportsAllDrives=True
+                fileId=document_id, mimeType=mime
             ).execute()
         except HttpError as error:
             raise RuntimeError(f"Docs API error: {error}")
