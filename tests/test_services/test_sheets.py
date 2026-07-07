@@ -177,6 +177,121 @@ class TestSheetsReadHyperlinks:
 
             assert result["values"][0][0] == "Visit [our site](https://example.com) for info"
 
+    def test_read_preserves_whole_cell_smart_chip(self, mock_credentials):
+        """A Drive/Docs smart chip (chipRuns) should be emitted as [text](url)."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["Anyone Notes by Gemini"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [{
+                                    "chipRuns": [{
+                                        "chip": {"richLinkProperties": {
+                                            "uri": "https://docs.google.com/document/d/ABC/edit",
+                                        }},
+                                    }],
+                                }]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == (
+                "[Anyone Notes by Gemini](https://docs.google.com/document/d/ABC/edit)"
+            )
+
+    def test_read_preserves_inline_smart_chip(self, mock_credentials):
+        """A chip spanning part of a cell should wrap only that segment."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["see doc here"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [{
+                                    "chipRuns": [
+                                        {"startIndex": 0},
+                                        {
+                                            "startIndex": 4,
+                                            "chip": {"richLinkProperties": {
+                                                "uri": "https://x.com",
+                                            }},
+                                        },
+                                        {"startIndex": 7},
+                                    ],
+                                }]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == "see [doc](https://x.com) here"
+
+    def test_read_people_chip_without_uri_unchanged(self, mock_credentials):
+        """A people chip (no richLinkProperties URI) should leave text as-is."""
+        with patch("desk.services.sheets.build") as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+            spreadsheets_mock = mock_service.spreadsheets.return_value
+
+            self._setup_read_mocks(
+                spreadsheets_mock,
+                values=[["Alice"]],
+                grid_data={
+                    "sheets": [{
+                        "data": [{
+                            "startRow": 0,
+                            "startColumn": 0,
+                            "rowData": [
+                                {"values": [{
+                                    "chipRuns": [{
+                                        "chip": {"personProperties": {
+                                            "email": "alice@example.com",
+                                        }},
+                                    }],
+                                }]},
+                            ],
+                        }],
+                    }],
+                },
+            )
+
+            from desk.services.sheets import SheetsClient
+
+            client = SheetsClient(mock_credentials)
+            result = client.read("spreadsheet_id")
+
+            assert result["values"][0][0] == "Alice"
+
     def test_read_no_hyperlink_unchanged(self, mock_credentials):
         """Cells without hyperlinks should remain unchanged."""
         with patch("desk.services.sheets.build") as mock_build:
