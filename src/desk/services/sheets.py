@@ -8,11 +8,17 @@ from googleapiclient.errors import HttpError
 
 from desk.links import format_markdown_link
 
-# Narrow fields mask — only hyperlink metadata, no values or formatting.
+# Narrow fields mask — only link metadata, no values or formatting. Covers
+# whole-cell hyperlinks, rich-text inline links (textFormatRuns), and Drive/
+# Docs smart chips (chipRuns), whose target lives in richLinkProperties.
 _HYPERLINK_FIELDS = (
     "sheets.data("
     "startRow,startColumn,"
-    "rowData(values(hyperlink,textFormatRuns(startIndex,format(link(uri)))))"
+    "rowData(values("
+    "hyperlink,"
+    "textFormatRuns(startIndex,format(link(uri))),"
+    "chipRuns(startIndex,chip(richLinkProperties(uri)))"
+    "))"
     ")"
 )
 
@@ -28,18 +34,20 @@ class SheetsClient:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _apply_text_format_runs(text: str, runs: list[dict]) -> str:
-        """Apply textFormatRuns, converting linked runs to ``[text](url)``."""
+    def _apply_link_runs(text: str, runs: list[dict], get_uri) -> str:
+        """Wrap linked segments of *text* as ``[segment](url)``.
+
+        Shared by textFormatRuns and chipRuns handling: *runs* is a list of
+        run dicts covering ``[startIndex, next_startIndex)`` slices of *text*,
+        and *get_uri* extracts a run's link target (or ``None``).
+        """
         if not runs:
             return text
 
         # Ensure runs are sorted by startIndex
         runs = sorted(runs, key=lambda r: r.get("startIndex", 0))
 
-        has_any_link = any(
-            r.get("format", {}).get("link", {}).get("uri") for r in runs
-        )
-        if not has_any_link:
+        if not any(get_uri(r) for r in runs):
             return text
 
         parts: list[str] = []
@@ -47,7 +55,7 @@ class SheetsClient:
             start = run.get("startIndex", 0)
             end = runs[i + 1].get("startIndex", len(text)) if i + 1 < len(runs) else len(text)
             segment = text[start:end]
-            link_uri = run.get("format", {}).get("link", {}).get("uri")
+            link_uri = get_uri(run)
 
             if link_uri and segment:
                 parts.append(format_markdown_link(segment, link_uri))
@@ -62,17 +70,51 @@ class SheetsClient:
         return "".join(parts)
 
     @staticmethod
+    def _apply_text_format_runs(text: str, runs: list[dict]) -> str:
+        """Apply textFormatRuns, converting linked runs to ``[text](url)``."""
+        return SheetsClient._apply_link_runs(
+            text, runs, lambda r: r.get("format", {}).get("link", {}).get("uri")
+        )
+
+    @staticmethod
+    def _apply_chip_runs(text: str, runs: list[dict]) -> str:
+        """Apply chipRuns, converting Drive/Docs smart chips to ``[text](url)``.
+
+        Only rich-link chips carry a URI (``richLinkProperties.uri``); people
+        chips and other chip kinds have no link and are left as-is.
+        """
+        return SheetsClient._apply_link_runs(
+            text,
+            runs,
+            lambda r: r.get("chip", {}).get("richLinkProperties", {}).get("uri"),
+        )
+
+    @staticmethod
     def _extract_cell_hyperlink(cell: dict, display_value: str) -> str:
-        """Return *display_value* with any hyperlinks applied as ``[text](url)``."""
+        """Return *display_value* with any hyperlinks applied as ``[text](url)``.
+
+        Checks, in order of specificity: rich-text inline links
+        (textFormatRuns), smart-chip links (chipRuns), then a whole-cell
+        hyperlink. Falls through when a source is present but carries no link.
+        """
         if not display_value:
             return display_value
 
-        # Inline links take precedence (more specific)
+        # Inline rich-text links.
         text_format_runs = cell.get("textFormatRuns")
         if text_format_runs:
-            return SheetsClient._apply_text_format_runs(display_value, text_format_runs)
+            result = SheetsClient._apply_text_format_runs(display_value, text_format_runs)
+            if result != display_value:
+                return result
 
-        # Whole-cell hyperlink
+        # Smart chips (Drive/Docs link chips) — common in index sheets.
+        chip_runs = cell.get("chipRuns")
+        if chip_runs:
+            result = SheetsClient._apply_chip_runs(display_value, chip_runs)
+            if result != display_value:
+                return result
+
+        # Whole-cell hyperlink.
         hyperlink = cell.get("hyperlink")
         if hyperlink:
             # Skip redundant wrapping when display text is the URL itself
