@@ -38,6 +38,9 @@ proposed → accepted → [deprecated | superseded]
 | 029 | [Slides Multi-Element Arrange and Richer Regions (Phase 3b-i)](029-slides-arrange-and-richer-regions.md) | accepted | 2026-06-09 |
 | 030 | [Slides Authoring Refinements + Scope Re-Auth UX](030-slides-authoring-refinements-and-scope-ux.md) | accepted | 2026-06-09 |
 | 031 | [Slides `stack` — flow layout](031-slides-stack-flow-layout.md) | accepted | 2026-06-09 |
+| 032 | [Slides `group` / `ungroup` — persistent element grouping](032-slides-group-ungroup.md) | accepted | 2026-06-10 |
+| 033 | [Slides use 1-based slide numbers (match the Slides UI)](033-slides-1-based-numbering.md) | accepted | 2026-06-12 |
+| 034 | [Scope-Aware Commands](034-scope-aware-commands.md) | accepted | 2026-07-31 |
 
 ## Creating a New ADR
 

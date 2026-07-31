@@ -42,7 +42,7 @@ def _get_credentials_or_exit():
 
 def _get_capabilities() -> dict:
     """Return structured capabilities for agent introspection."""
-    return {
+    caps = {
         "version": __version__,
         "agent_first": True,
         "services": {
@@ -202,8 +202,34 @@ def _get_capabilities() -> dict:
             "structured_errors": "Errors include code, message, suggestions, and retryable flag",
             "operation_receipts": "Mutating operations return receipts with undo commands",
             "dry_run_preview": "Dry-run shows target details and reversibility",
+            "scope_aware": "Commands report required scopes and whether they're enabled",
         },
     }
+    _annotate_scopes(caps)
+    return caps
+
+
+def _annotate_scopes(caps: dict) -> None:
+    """Add `scope` and `enabled` to every command entry, in place.
+
+    Scopes come from `config.SCOPE_COMMANDS` rather than being written into each
+    entry by hand, so the map stays the single source of truth. `enabled` is
+    tri-state: True, False, or None when the granted set is unknown (an
+    unauthenticated user, or a token predating issue #82). See ADR-034.
+    """
+    from desk.auth import granted_scopes
+    from desk.config import scopes_for_command
+
+    granted = granted_scopes()
+
+    for service, info in caps["services"].items():
+        for cmd_name, cmd in info["commands"].items():
+            scopes = scopes_for_command(service, cmd_name)
+            cmd["scope"] = scopes
+            if granted is None:
+                cmd["enabled"] = None
+            else:
+                cmd["enabled"] = all(s in granted for s in scopes)
 
 
 @click.group(invoke_without_command=True)

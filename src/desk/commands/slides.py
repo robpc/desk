@@ -15,6 +15,7 @@ from rich.markup import escape
 from desk.agent import (
     ERROR_SUGGESTIONS,
     ErrorCode,
+    enforce_scopes,
     is_scope_error,
     operation_receipt,
     output_result,
@@ -22,6 +23,7 @@ from desk.agent import (
     structured_error,
 )
 from desk.auth import get_credentials, get_last_auth_failure
+from desk.config import scopes_for_service
 from desk.console import error_console
 from desk.services.slides import (
     ARRANGE_MODES,
@@ -37,7 +39,13 @@ console = Console()
 
 
 def _get_client(as_json: bool = False) -> SlidesClient:
-    """Get authenticated Slides client or exit."""
+    """Get authenticated Slides client or exit.
+
+    Gates the whole service on the `presentations` scope (ADR-034). Tokens
+    issued before ADR-026 added that scope get a "run `desk auth login`" error
+    here instead of a 403 from the first API call.
+    """
+    enforce_scopes(scopes_for_service("slides"), as_json)
     creds = get_credentials()
     if not creds:
         reason, error_code = get_last_auth_failure()

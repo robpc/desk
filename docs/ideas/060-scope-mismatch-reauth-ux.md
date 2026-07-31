@@ -65,3 +65,10 @@ S — Error reclassification is small; `auth status` scope-diff is a modest addi
   maps to `INSUFFICIENT_SCOPES` ("run `desk auth login`") instead of the misleading
   `PERMISSION_DENIED` everywhere. `auth status` scope-diff (added earlier) covers the
   proactive side.
+- **Correction (2026-07-31):** the proactive side did *not* work. `SCOPES` was passed into
+  `Credentials.from_authorized_user_info()`, making `creds.scopes` the requested set, and
+  the granted set was never persisted at all — so `_missing_scopes()` returned `[]` for
+  every user and no drift was ever reported. Open question 1 above ("are granted scopes
+  reliably available?") turned out to be "no". Filed as issue #82 and fixed in ADR-034,
+  which also builds the scope gate this idea's second bullet gestured at. See
+  [[079-scope-aware-commands]].
