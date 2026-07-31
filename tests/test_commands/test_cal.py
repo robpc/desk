@@ -370,3 +370,249 @@ class TestMultiCalendarFlag:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert [e["id"] for e in output["events"]] == ["k1", "p1"]
+
+
+class TestCalCreateEventFields:
+    """Flags added in ADR-035 (issue #80)."""
+
+    def _client(self, mock_class, event=None):
+        client = MagicMock()
+        client.create.return_value = event or {
+            "id": "e1",
+            "summary": "Training",
+            "htmlLink": "https://cal/e1",
+        }
+        mock_class.return_value = client
+        return client
+
+    def test_meet_flag_reaches_service(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = self._client(mock_calendar_client_class)
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--meet", "--json"],
+        )
+
+        assert result.exit_code == 0
+        assert client.create.call_args.kwargs["meet"] is True
+
+    def test_guest_and_location_flags_reach_service(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = self._client(mock_calendar_client_class)
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--hide-guest-list",
+             "--no-guest-invites", "--guests-can-modify",
+             "--location", "Room 4", "--visibility", "private", "--free", "--json"],
+        )
+
+        assert result.exit_code == 0
+        kwargs = client.create.call_args.kwargs
+        assert kwargs["hide_guest_list"] is True
+        assert kwargs["no_guest_invites"] is True
+        assert kwargs["guests_can_modify"] is True
+        assert kwargs["location"] == "Room 4"
+        assert kwargs["visibility"] == "private"
+        assert kwargs["free"] is True
+
+    def test_send_updates_defaults_to_all(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = self._client(mock_calendar_client_class)
+        runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--json"],
+        )
+
+        assert client.create.call_args.kwargs["send_updates"] == "all"
+
+    def test_send_updates_none(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = self._client(mock_calendar_client_class)
+        runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--send-updates", "none", "--json"],
+        )
+
+        assert client.create.call_args.kwargs["send_updates"] == "none"
+
+    def test_rejects_unknown_send_updates_value(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        self._client(mock_calendar_client_class)
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--send-updates", "externalOnly"],
+        )
+
+        assert result.exit_code != 0
+
+    def test_receipt_reports_meet_link(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        self._client(
+            mock_calendar_client_class,
+            event={
+                "id": "e1",
+                "summary": "Training",
+                "htmlLink": "https://cal/e1",
+                "meetLink": "https://meet.google.com/abc-defg-hij",
+                "conferenceId": "abc-defg-hij",
+            },
+        )
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--meet", "--json"],
+        )
+
+        payload = json.loads(result.output)
+        assert payload["targets"][0]["meetLink"] == "https://meet.google.com/abc-defg-hij"
+        assert payload["targets"][0]["conferenceId"] == "abc-defg-hij"
+
+    def test_receipt_reports_pending_conference(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        """Async conference creation must not be reported as a link that exists."""
+        from desk.commands.cal import cal
+
+        self._client(
+            mock_calendar_client_class,
+            event={
+                "id": "e1",
+                "summary": "Training",
+                "htmlLink": "https://cal/e1",
+                "meetLink": "",
+                "conferenceStatus": "pending",
+            },
+        )
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "--meet", "--json"],
+        )
+
+        payload = json.loads(result.output)
+        assert payload["targets"][0]["meetLink"] is None
+        assert payload["targets"][0]["conferenceStatus"] == "pending"
+
+    def test_dry_run_omits_email_warning_when_quiet(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        self._client(mock_calendar_client_class)
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "-a", "bob@co.com",
+             "--send-updates", "none", "--dry-run", "--json"],
+        )
+
+        payload = json.loads(result.output)
+        assert not payload.get("warnings")
+
+    def test_dry_run_warns_about_emails_by_default(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        self._client(mock_calendar_client_class)
+        result = runner.invoke(
+            cal,
+            ["create", "Training", "--start", "2026-08-01T10:00:00",
+             "--end", "2026-08-01T11:00:00", "-a", "bob@co.com",
+             "--dry-run", "--json"],
+        )
+
+        payload = json.loads(result.output)
+        assert any("invitation emails" in w for w in payload["warnings"])
+
+
+class TestCalUpdateEventFields:
+    def test_meet_added_reported_in_changes(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = MagicMock()
+        client.update.return_value = {
+            "id": "e1",
+            "summary": "Training",
+            "conferenceAdded": True,
+            "meetLink": "https://meet.google.com/abc-defg-hij",
+        }
+        mock_calendar_client_class.return_value = client
+        result = runner.invoke(cal, ["update", "e1", "--meet", "--json"])
+
+        payload = json.loads(result.output)
+        assert payload["changes"]["meet"] == "added"
+
+    def test_existing_conference_reported_as_already_present(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = MagicMock()
+        client.update.return_value = {
+            "id": "e1",
+            "summary": "Training",
+            "conferenceAdded": False,
+        }
+        mock_calendar_client_class.return_value = client
+        result = runner.invoke(cal, ["update", "e1", "--meet", "--json"])
+
+        payload = json.loads(result.output)
+        assert payload["changes"]["meet"] == "already present"
+
+
+class TestCalDeleteSendUpdates:
+    def test_quiet_delete_passes_through(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = MagicMock()
+        client.get_event.return_value = {"id": "e1", "summary": "T", "attendeeCount": 3}
+        mock_calendar_client_class.return_value = client
+        result = runner.invoke(
+            cal, ["delete", "e1", "--send-updates", "none", "--yes", "--json"]
+        )
+
+        assert result.exit_code == 0
+        assert client.delete.call_args.kwargs["send_updates"] == "none"
+
+    def test_dry_run_drops_cancellation_warning_when_quiet(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        client = MagicMock()
+        client.get_event.return_value = {"id": "e1", "summary": "T", "attendeeCount": 3}
+        mock_calendar_client_class.return_value = client
+        result = runner.invoke(
+            cal, ["delete", "e1", "--send-updates", "none", "--dry-run", "--json"]
+        )
+
+        payload = json.loads(result.output)
+        assert not payload.get("warnings")

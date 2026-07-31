@@ -169,9 +169,27 @@ desk cal next --max 5             # Upcoming events
 desk cal list                     # List calendars
 desk cal find "standup"           # Search events
 desk cal create "Meeting" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00
+desk cal create "Training" --start ... --end ... --meet --hide-guest-list
 desk cal update <event-id> --summary "New Title"
-desk cal delete <event-id>
+desk cal update <event-id> --meet            # Add a Meet link to an existing event
+desk cal delete <event-id> --send-updates none   # Delete without mailing attendees
 ```
+
+### Meet
+
+Meeting-space settings — recording and transcription. Needs a scope that predates
+this feature, so run `desk auth login` again if `desk meet` reports a missing scope.
+
+```bash
+# The conferenceId from a cal read addresses the space
+desk cal create "Training" --start ... --end ... --meet --json
+desk meet read abc-defg-hij                  # Current settings
+desk meet update abc-defg-hij --auto-record on --auto-transcript on
+desk meet update abc-defg-hij --auto-record default   # Defer to your Workspace policy
+```
+
+Co-hosts are UI-only — Google restricts the Meet space-members API to its Developer
+Preview Program. See `desk meet --help`.
 
 ### Forms
 

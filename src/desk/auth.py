@@ -618,4 +618,19 @@ def verify_service_access(credentials: Credentials) -> dict[str, bool]:
         _logger.debug(f"Forms access check error: {type(e).__name__}: {e}")
         results["forms"] = False
 
+    # Meet - get a non-existent space: 404 = scopes OK, 403 = no scope.
+    # Expected to report False until the user re-auths for the scope ADR-036
+    # added, which is the honest answer.
+    try:
+        service = build("meet", "v2", credentials=credentials)
+        service.spaces().get(name="spaces/nonexistenttestid").execute()
+        results["meet"] = True
+    except HttpError as e:
+        results["meet"] = e.resp.status == 404
+        if e.resp.status not in (404, 403):
+            _logger.debug(f"Meet access check unexpected: {e}")
+    except Exception as e:
+        _logger.debug(f"Meet access check error: {type(e).__name__}: {e}")
+        results["meet"] = False
+
     return results

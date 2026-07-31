@@ -73,7 +73,11 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 078 | [1-based slide numbers](078-slides-1-based-numbering.md) | implemented | M | Slide numbers match the Slides UI |
 
-| 079 | [Scope-Aware Commands](079-scope-aware-commands.md) | adr-created | M | Ship scope-dependent features without a forced re-auth flag day |
+| 079 | [Scope-Aware Commands](079-scope-aware-commands.md) | implemented | M | Ship scope-dependent features without a forced re-auth flag day |
+
+| 080 | [Calendar Event Fields](080-calendar-event-fields.md) | implemented | M | Meet link, guest permissions, sendUpdates control |
+
+| 081 | [Meet Co-Hosts](081-meet-cohosts-preview.md) | parked | S | BLOCKED: spaces.members is Developer Preview only |
 
 ## Adding an Idea
 

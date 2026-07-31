@@ -1,7 +1,7 @@
 ---
 id: 034
 title: Scope-Aware Commands
-status: accepted
+status: accepted (§2 amended by ADR-036 — the `@requires_scope` decorator was removed as unused)
 date: 2026-07-31
 supersedes: []
 superseded_by: null
@@ -62,9 +62,12 @@ scope, the affected commands, and `desk auth login` — before any API call.
 **Gate service-wide scopes at the service's `_get_client()` helper, not per command.**
 Desk's scopes are service-shaped: `presentations` covers all 25 `slides` commands, and every
 one of them already funnels through `_get_client(as_json)`. One call there gates the whole
-service, versus decorating 25 commands and keeping them in sync. `@requires_scope` remains
-available as a decorator for scopes covering only *part* of a service (the expected shape for
-Meet), and records `_required_scopes` for introspection.
+service, versus decorating 25 commands and keeping them in sync.
+
+*(Amended by ADR-036 §5: this section originally also shipped a `@requires_scope` decorator
+for scopes covering only part of a service, anticipating Meet. ADR-036 made Meet its own
+service group, so the scope is service-wide, the decorator had no user, and it was removed.
+`enforce_scopes()` is the sole mechanism.)*
 
 **Never at decoration/import time.** `desk.cli` imports every command module at startup and
 resolving scopes touches the keyring, so a decoration-time read would make bare
@@ -225,7 +228,7 @@ Key files:
   `_restore_granted_scopes()`, `_save_credentials()`, `_missing_scopes()`
 - `src/desk/config.py` — `SCOPE_COMMANDS`, `scopes_for_service()`,
   `scopes_for_command()`, `commands_for_scopes()`
-- `src/desk/agent.py` — `enforce_scopes()`, `requires_scope` decorator
+- `src/desk/agent.py` — `enforce_scopes()`
 - `src/desk/cli.py` — `_get_capabilities()` / `_annotate_scopes()`
 - `src/desk/commands/slides.py` — `_get_client()` gates on `presentations`
 - `src/desk/keyring_store.py` — read helpers tolerate a missing backend

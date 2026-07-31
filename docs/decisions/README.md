@@ -41,6 +41,8 @@ proposed → accepted → [deprecated | superseded]
 | 032 | [Slides `group` / `ungroup` — persistent element grouping](032-slides-group-ungroup.md) | accepted | 2026-06-10 |
 | 033 | [Slides use 1-based slide numbers (match the Slides UI)](033-slides-1-based-numbering.md) | accepted | 2026-06-12 |
 | 034 | [Scope-Aware Commands](034-scope-aware-commands.md) | accepted | 2026-07-31 |
+| 035 | [Calendar Event Fields — Conferencing, Guest Permissions, Notification Control](035-calendar-event-fields.md) | accepted | 2026-07-31 |
+| 036 | [Google Meet Support — Space Artifact Settings](036-google-meet-support.md) | accepted | 2026-07-31 |
 
 ## Creating a New ADR
 

@@ -22,6 +22,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/forms.body",
     "https://www.googleapis.com/auth/forms.responses.readonly",
     "https://www.googleapis.com/auth/presentations",
+    # Meet space settings (ADR-036). Non-sensitive, and documented as covering
+    # spaces created by other apps — which is how a Calendar conference is
+    # reachable. Existing tokens predate it; `desk meet` is gated accordingly.
+    "https://www.googleapis.com/auth/meetings.space.settings",
 ]
 
 # Scopes for gcloud ADC
@@ -29,7 +33,7 @@ GCLOUD_SCOPES = [
     *SCOPES,
 ]
 
-# Scope -> the commands that need it. Drives the `@requires_scope` gate's
+# Scope -> the commands that need it. Drives the `enforce_scopes()` gate's
 # "affected commands" list and the `enabled` flag in `--capabilities`.
 # See ADR-034.
 #
@@ -46,6 +50,9 @@ SCOPE_COMMANDS: dict[str, list[str]] = {
     # Added in ADR-026 (Slides). Tokens issued before it lack this scope, which
     # is the drift that the dead scope-diff (issue #82) failed to report.
     "https://www.googleapis.com/auth/presentations": ["slides"],
+    # Added in ADR-036. No existing token has this, so `desk meet` reports
+    # itself disabled until the user re-auths — the case this gate exists for.
+    "https://www.googleapis.com/auth/meetings.space.settings": ["meet"],
 }
 
 

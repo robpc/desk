@@ -36,6 +36,7 @@ class ErrorCode(str, Enum):
     SPREADSHEET_NOT_FOUND = "SPREADSHEET_NOT_FOUND"
     FORM_NOT_FOUND = "FORM_NOT_FOUND"
     PRESENTATION_NOT_FOUND = "PRESENTATION_NOT_FOUND"
+    SPACE_NOT_FOUND = "SPACE_NOT_FOUND"
 
     # Permission errors
     PERMISSION_DENIED = "PERMISSION_DENIED"
@@ -112,6 +113,11 @@ ERROR_SUGGESTIONS: dict[ErrorCode, list[str]] = {
     ErrorCode.PRESENTATION_NOT_FOUND: [
         "Run `desk slides read <id>` to check the presentation ID",
         "The presentation may have been deleted or you may not have access",
+    ],
+    ErrorCode.SPACE_NOT_FOUND: [
+        "Check the meeting code — it's the abc-defg-hij part of a Meet URL",
+        "Get it from `desk cal find <query> --json` as `conferenceId`",
+        "A space only exists once the event has a Meet conference attached",
     ],
     ErrorCode.PERMISSION_DENIED: [
         "You may not have access to this resource",
@@ -713,26 +719,7 @@ def enforce_scopes(scopes: list[str] | tuple[str, ...], as_json: bool = False) -
     raise SystemExit(1)
 
 
-def requires_scope(*scopes: str):
-    """Gate a single command on OAuth scopes the user has consented to.
-
-    For a scope covering an entire service, prefer calling `enforce_scopes()`
-    from that service's `_get_client()` helper — one choke point instead of a
-    decorator on every command. This decorator is for scopes that cover only
-    part of a service.
-
-    See `enforce_scopes` for the resolution and fail-open semantics.
-    """
-    import functools
-
-    def decorator(fn):
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
-            enforce_scopes(scopes, kwargs.get("as_json", False))
-            return fn(*args, **kwargs)
-
-        # Exposed for --capabilities introspection
-        wrapper._required_scopes = scopes
-        return wrapper
-
-    return decorator
+# A per-command `@requires_scope` decorator was removed in ADR-036: every scope
+# Desk gates on covers a whole service, so `enforce_scopes()` in that service's
+# `_get_client()` is the only call site. Reintroduce a decorator when a scope
+# genuinely covers only part of a service.
