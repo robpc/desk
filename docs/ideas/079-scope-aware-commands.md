@@ -36,7 +36,8 @@ Port the pattern Cafe landed in its ADR-006 + ADR-024, adapted to Desk:
 1. An `enforce_scopes()` check resolving scopes **at invocation only**, emitting the
    existing `INSUFFICIENT_SCOPES` structured error before any API call, naming the scope
    and the affected commands. Called from a service's `_get_client()` for service-wide
-   scopes; available as a `@requires_scope` decorator for partial-coverage scopes.
+   scopes. (A `@requires_scope` decorator for partial-coverage scopes shipped and was then
+   removed in ADR-036 — Meet became its own service, so nothing needed it.)
 2. A `SCOPE_COMMANDS` map in `config.py` keyed by scope, whose targets are either a service
    name or a `"service command"` pair.
 3. `--capabilities` gains a per-command `scope` list and a tri-state `enabled` flag

@@ -194,6 +194,13 @@ def _get_capabilities() -> dict:
                     "ungroup": {"description": "Ungroup a group back into its members", "batch": False, "destructive": False},
                 },
             },
+            "meet": {
+                "description": "Google Meet operations",
+                "commands": {
+                    "read": {"description": "Read a meeting space's settings", "batch": False, "destructive": False},
+                    "update": {"description": "Set auto-record/transcript/smart-notes", "batch": False, "destructive": False, "reversible": True},
+                },
+            },
         },
         "global_flags": {
             "--json": "Output as JSON (agent-friendly structured output)",
@@ -534,6 +541,7 @@ from desk.commands.docs import docs  # noqa: E402
 from desk.commands.drive import drive  # noqa: E402
 from desk.commands.forms import forms  # noqa: E402
 from desk.commands.mail import mail  # noqa: E402
+from desk.commands.meet import meet  # noqa: E402
 from desk.commands.sheets import sheets  # noqa: E402
 from desk.commands.slides import slides  # noqa: E402
 
@@ -544,6 +552,7 @@ main.add_command(docs)
 main.add_command(cal)
 main.add_command(forms)
 main.add_command(slides)
+main.add_command(meet)
 
 
 if __name__ == "__main__":

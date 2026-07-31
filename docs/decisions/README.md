@@ -44,6 +44,8 @@ proposed → accepted → [deprecated | superseded]
 | 035 | [Calendar Display Name Prefers `summaryOverride`](035-calendar-display-name.md) | accepted | 2026-09-03 |
 | 036 | [Build Provenance in `--version`](036-version-build-provenance.md) | accepted | 2026-09-03 |
 | 034 | [Scope-Aware Commands](034-scope-aware-commands.md) | accepted | 2026-07-31 |
+| 035 | [Calendar Event Fields — Conferencing, Guest Permissions, Notification Control](035-calendar-event-fields.md) | accepted | 2026-07-31 |
+| 036 | [Google Meet Support — Space Artifact Settings](036-google-meet-support.md) | accepted | 2026-07-31 |
 
 ## Creating a New ADR
 

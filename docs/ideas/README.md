@@ -79,7 +79,11 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 081 | [Resolve Person-Calendar Names via Contacts](081-person-calendar-contact-names.md) | idea | M | Name a person's calendar when no `summaryOverride` exists |
 
-| 079 | [Scope-Aware Commands](079-scope-aware-commands.md) | adr-created | M | Ship scope-dependent features without a forced re-auth flag day |
+| 079 | [Scope-Aware Commands](079-scope-aware-commands.md) | implemented | M | Ship scope-dependent features without a forced re-auth flag day |
+
+| 080 | [Calendar Event Fields](080-calendar-event-fields.md) | implemented | M | Meet link, guest permissions, sendUpdates control |
+
+| 081 | [Meet Co-Hosts](081-meet-cohosts-preview.md) | parked | S | BLOCKED: spaces.members is Developer Preview only |
 
 ## Adding an Idea
 
