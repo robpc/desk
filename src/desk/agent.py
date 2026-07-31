@@ -662,3 +662,77 @@ def output_result(
 
     target = error_console if is_error else Console()
     target.print(formatter(result))
+
+
+def enforce_scopes(scopes: list[str] | tuple[str, ...], as_json: bool = False) -> None:
+    """Exit with a structured error if the user hasn't consented to `scopes`.
+
+    Emits `INSUFFICIENT_SCOPES` naming the scope, the commands it affects, and
+    the fix (`desk auth login`) — before any API call, so the user doesn't pay a
+    round trip to learn the call was never going to work.
+
+    Two deliberate properties (ADR-034):
+
+    - **Scopes resolve when the command runs, never at import time.** `desk.cli`
+      imports every command module at startup and resolving scopes reads the
+      keyring, so an import-time check would make bare `desk --help` crash on
+      hosts with no keyring backend.
+    - **Unknown grant sets fail open.** Tokens issued before granted scopes were
+      persisted (issue #82) report None, and so does the gcloud ADC path. A
+      command that might work must never be blocked on a guess.
+    """
+    if not scopes:
+        return
+
+    from desk.auth import granted_scopes
+    from desk.config import commands_for_scopes
+
+    current = granted_scopes()
+    if current is None:
+        return  # Unknown grant set — fail open.
+
+    missing = [s for s in scopes if s not in current]
+    if not missing:
+        return
+
+    scope_list = ", ".join(missing)
+    err = structured_error(
+        ErrorCode.INSUFFICIENT_SCOPES,
+        f"Missing required scope: {scope_list}",
+        suggestions=[
+            f"This command requires the {scope_list} scope",
+            "Run `desk auth status` to see your current scopes",
+            "Run `desk auth login` to re-authenticate and grant it",
+        ],
+        details={
+            "scope_needed": missing,
+            "affected_commands": commands_for_scopes(missing),
+        },
+    )
+    output_result(err, as_json)
+    raise SystemExit(1)
+
+
+def requires_scope(*scopes: str):
+    """Gate a single command on OAuth scopes the user has consented to.
+
+    For a scope covering an entire service, prefer calling `enforce_scopes()`
+    from that service's `_get_client()` helper — one choke point instead of a
+    decorator on every command. This decorator is for scopes that cover only
+    part of a service.
+
+    See `enforce_scopes` for the resolution and fail-open semantics.
+    """
+    import functools
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            enforce_scopes(scopes, kwargs.get("as_json", False))
+            return fn(*args, **kwargs)
+
+        # Exposed for --capabilities introspection
+        wrapper._required_scopes = scopes
+        return wrapper
+
+    return decorator

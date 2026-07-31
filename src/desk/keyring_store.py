@@ -38,7 +38,10 @@ def get_client_credentials() -> dict | None:
 
     Returns the parsed dict (e.g. {"installed": {...}}) or None if not stored.
     """
-    data = keyring.get_password(KEYRING_SERVICE, "client:credentials")
+    try:
+        data = keyring.get_password(KEYRING_SERVICE, "client:credentials")
+    except keyring.errors.NoKeyringError:
+        return None  # No backend at all — nothing can be stored. See ADR-034.
     if data is None:
         return None
     try:
@@ -56,8 +59,17 @@ def get_token() -> dict | None:
     """Read the OAuth token dict from keyring.
 
     Returns the parsed token dict or None if not stored.
+
+    A host with no keyring backend reports "not stored" rather than raising:
+    nothing *can* be stored there, so None is truthful, and read-only paths like
+    `--capabilities` must not crash. Writes still fail loudly — putting a secret
+    nowhere must never be silent. Other keyring errors (locked keychain, denied
+    access) still propagate. See ADR-034.
     """
-    data = keyring.get_password(KEYRING_SERVICE, "oauth:token")
+    try:
+        data = keyring.get_password(KEYRING_SERVICE, "oauth:token")
+    except keyring.errors.NoKeyringError:
+        return None
     if data is None:
         return None
     try:

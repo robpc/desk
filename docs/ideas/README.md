@@ -69,11 +69,17 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 076 | [Headless slides fit/overflow check](076-slides-fit-check.md) | implemented | M | slides-fit skill: overflow/dead-space/off-center, no rendering |
 
+| 077 | [Slides group / ungroup](077-slides-group-ungroup.md) | implemented | S | Persistent element grouping |
+
+| 078 | [1-based slide numbers](078-slides-1-based-numbering.md) | implemented | M | Slide numbers match the Slides UI |
+
 | 079 | [Which Timezone a Naive Datetime Means](079-calendar-timezone-semantics.md) | idea | M | Calendar-zone vs machine-zone for bare `--start`/`--end` |
 
 | 080 | [Move an Event Between Calendars](080-calendar-event-move.md) | idea | S | `events.move` — relocate without delete-and-recreate |
 
 | 081 | [Resolve Person-Calendar Names via Contacts](081-person-calendar-contact-names.md) | idea | M | Name a person's calendar when no `summaryOverride` exists |
+
+| 079 | [Scope-Aware Commands](079-scope-aware-commands.md) | adr-created | M | Ship scope-dependent features without a forced re-auth flag day |
 
 ## Adding an Idea
 
