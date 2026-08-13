@@ -129,8 +129,14 @@ Google's vocabulary too — just the user-facing half.
 - Surprising: creating an invite that nobody is told about is rarely what's meant
 - Diverges from the Calendar UI, which notifies by default
 
-**Why rejected**: too large a behavior change to smuggle into a feature addition. Deliberately
-left as an open question in idea 080 in case field use argues for it.
+**Why rejected**: too large a behavior change to smuggle into a feature addition — and on
+reflection, the premise was weaker than it looked. The Calendar UI's own default action isn't
+a blunt "mail everyone": adding one guest and taking the primary button only notifies that
+guest, not the existing attendee list. That scoping happens inside Google's backend under
+`sendUpdates=all` — the API has no fourth value for "only whoever's actually affected" — so
+`all` likely already reproduces the UI's default lean for the cases that matter (an add) and
+is *correctly* unscoped for the cases where every attendee genuinely needs to know (a deletion,
+a reschedule). Revisited and closed with the user 2026-08-12: leave the default at `all`.
 
 ### Alternative 3: A single `--guest-permissions` taking a comma list
 
