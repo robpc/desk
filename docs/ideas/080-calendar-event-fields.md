@@ -33,9 +33,13 @@ Shipped as ADR-035: `--meet`, `--hide-guest-list`, `--no-guest-invites`,
 
 ## Open Questions
 
-- [ ] Should `--send-updates` default to `none` instead? Safer (mail is irreversible) but a
-      behavior change for every existing script. Deferred — see ADR-035 alternative 2. Worth
-      revisiting if field use shows accidental mail is a recurring problem.
+- [x] Should `--send-updates` default to `none` instead? **Resolved 2026-08-12: no, leave it
+      at `all`.** The premise weakened on inspection — the Calendar UI's own default action
+      (adding a guest, hitting the primary button) only notifies that guest, not everyone;
+      that scoping is Google doing dedup server-side under `sendUpdates=all`, not a distinct
+      API value. `all` already tracks the UI's default lean for adds, and is correctly
+      unscoped for deletes/reschedules where every attendee really is affected. See ADR-035
+      alternative 2.
 - [ ] Boolean flags are one-way: `--hide-guest-list` hides, but there's no `--show-guest-list`
       to undo it. Add the negative forms if anyone needs them.
 - [ ] `--meet` on a recurring event attaches one conference to the series; no per-occurrence
