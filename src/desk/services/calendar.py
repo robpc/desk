@@ -1,10 +1,28 @@
 """Google Calendar API wrapper."""
 
+import hashlib
 from datetime import datetime, timedelta
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+# Notification control. The CLI uses hyphenated values like every other Desk
+# flag; the API spells the middle one `externalOnly`. Translated here so the
+# mapping lives in one place. See ADR-035.
+SEND_UPDATES_CHOICES = ("all", "external-only", "none")
+_SEND_UPDATES_API = {
+    "all": "all",
+    "external-only": "externalOnly",
+    "none": "none",
+}
+
+VISIBILITY_CHOICES = ("default", "public", "private")
+
+
+def _api_send_updates(value: str) -> str:
+    """Translate a CLI --send-updates value into the API's spelling."""
+    return _SEND_UPDATES_API.get(value, "all")
 
 
 class CalendarClient:
@@ -141,6 +159,14 @@ class CalendarClient:
         description: str = "",
         attendees: list[str] | None = None,
         calendar_id: str = "primary",
+        meet: bool = False,
+        location: str | None = None,
+        visibility: str | None = None,
+        free: bool = False,
+        hide_guest_list: bool = False,
+        no_guest_invites: bool = False,
+        guests_can_modify: bool = False,
+        send_updates: str = "all",
     ) -> dict:
         """Create a new event.
 
@@ -151,6 +177,14 @@ class CalendarClient:
             description: Optional event description
             attendees: Optional list of email addresses to invite
             calendar_id: Calendar ID
+            meet: Attach a Google Meet conference
+            location: Event location
+            visibility: "default", "public", or "private"
+            free: Mark the event as free rather than busy
+            hide_guest_list: Hide other guests from attendees
+            no_guest_invites: Prevent guests from inviting others
+            guests_can_modify: Let guests edit the event
+            send_updates: "all", "external-only", or "none". See ADR-035.
 
         Returns:
             Created event dict
@@ -164,6 +198,17 @@ class CalendarClient:
             body["description"] = description
         if attendees:
             body["attendees"] = [{"email": email} for email in attendees]
+        self._apply_event_options(
+            body,
+            location=location,
+            visibility=visibility,
+            free=free,
+            hide_guest_list=hide_guest_list,
+            no_guest_invites=no_guest_invites,
+            guests_can_modify=guests_can_modify,
+        )
+        if meet:
+            body["conferenceData"] = self._conference_create_request(summary, start)
 
         try:
             event = (
@@ -171,14 +216,60 @@ class CalendarClient:
                 .insert(
                     calendarId=calendar_id,
                     body=body,
-                    sendUpdates="all",
+                    sendUpdates=_api_send_updates(send_updates),
                     supportsAttachments=True,
+                    conferenceDataVersion=1,
                 )
                 .execute()
             )
             return self._parse_event(event)
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
+
+    def _apply_event_options(
+        self,
+        body: dict,
+        location: str | None = None,
+        visibility: str | None = None,
+        free: bool = False,
+        hide_guest_list: bool = False,
+        no_guest_invites: bool = False,
+        guests_can_modify: bool = False,
+    ) -> None:
+        """Apply the optional event fields to a request body, in place.
+
+        Each field is only set when asked for, so Google's defaults stand
+        otherwise — important on update, where an unset flag must not silently
+        flip an existing value. See ADR-035.
+        """
+        if location is not None:
+            body["location"] = location
+        if visibility is not None:
+            body["visibility"] = visibility
+        if free:
+            body["transparency"] = "transparent"
+        if hide_guest_list:
+            body["guestsCanSeeOtherGuests"] = False
+        if no_guest_invites:
+            body["guestsCanInviteOthers"] = False
+        if guests_can_modify:
+            body["guestsCanModify"] = True
+
+    def _conference_create_request(self, summary: str, start: str) -> dict:
+        """Build a conferenceData.createRequest for a Google Meet link.
+
+        `requestId` is derived from the event rather than random: Calendar treats
+        it as an idempotency key, so a retried create must not produce a second
+        conference. See ADR-035.
+        """
+        seed = f"{summary}|{start}".encode()
+        request_id = f"desk-{hashlib.sha256(seed).hexdigest()[:16]}"
+        return {
+            "createRequest": {
+                "requestId": request_id,
+                "conferenceSolutionKey": {"type": "hangoutsMeet"},
+            }
+        }
 
     def get_event(self, event_id: str, calendar_id: str = "primary") -> dict:
         """Get a single event by ID.
@@ -198,16 +289,26 @@ class CalendarClient:
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
 
-    def delete(self, event_id: str, calendar_id: str = "primary") -> None:
+    def delete(
+        self,
+        event_id: str,
+        calendar_id: str = "primary",
+        send_updates: str = "all",
+    ) -> None:
         """Delete an event.
 
         Args:
             event_id: The event ID
             calendar_id: Calendar ID
+            send_updates: "all", "external-only", or "none". Deleting an event
+                mails a cancellation to every attendee unless this says
+                otherwise. See ADR-035.
         """
         try:
             self.service.events().delete(
-                calendarId=calendar_id, eventId=event_id, sendUpdates="all"
+                calendarId=calendar_id,
+                eventId=event_id,
+                sendUpdates=_api_send_updates(send_updates),
             ).execute()
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
@@ -222,6 +323,14 @@ class CalendarClient:
         add_attendees: list[str] | None = None,
         remove_attendees: list[str] | None = None,
         calendar_id: str = "primary",
+        meet: bool = False,
+        location: str | None = None,
+        visibility: str | None = None,
+        free: bool = False,
+        hide_guest_list: bool = False,
+        no_guest_invites: bool = False,
+        guests_can_modify: bool = False,
+        send_updates: str = "all",
     ) -> dict:
         """Update an existing event.
 
@@ -234,6 +343,14 @@ class CalendarClient:
             add_attendees: Email addresses to add
             remove_attendees: Email addresses to remove
             calendar_id: Calendar ID
+            meet: Add a Google Meet conference if the event has none
+            location: New location (or None to keep)
+            visibility: "default", "public", or "private" (or None to keep)
+            free: Mark the event as free rather than busy
+            hide_guest_list: Hide other guests from attendees
+            no_guest_invites: Prevent guests from inviting others
+            guests_can_modify: Let guests edit the event
+            send_updates: "all", "external-only", or "none". See ADR-035.
 
         Returns:
             Updated event dict
@@ -269,20 +386,40 @@ class CalendarClient:
                 ]
                 event["attendees"] = kept
 
+            self._apply_event_options(
+                event,
+                location=location,
+                visibility=visibility,
+                free=free,
+                hide_guest_list=hide_guest_list,
+                no_guest_invites=no_guest_invites,
+                guests_can_modify=guests_can_modify,
+            )
+            # Idempotent: an event that already has a conference keeps it rather
+            # than requesting a second one. See ADR-035.
+            conference_added = False
+            if meet and not event.get("conferenceData"):
+                event["conferenceData"] = self._conference_create_request(
+                    event.get("summary", ""), event.get("start", {}).get("dateTime", "")
+                )
+                conference_added = True
+
             result = (
                 self.service.events()
                 .update(
                     calendarId=calendar_id,
                     eventId=event_id,
                     body=event,
-                    sendUpdates="all",
+                    sendUpdates=_api_send_updates(send_updates),
                     supportsAttachments=True,
+                    conferenceDataVersion=1,
                 )
                 .execute()
             )
             parsed = self._parse_event(result)
             if remove_attendees:
                 parsed["removedAttendees"] = actually_removed
+            parsed["conferenceAdded"] = conference_added
             return parsed
         except HttpError as error:
             raise RuntimeError(f"Calendar API error: {error}")
@@ -379,6 +516,7 @@ class CalendarClient:
         start = event.get("start", {})
         end = event.get("end", {})
         attendees = event.get("attendees", [])
+        conference = event.get("conferenceData") or {}
         parsed = {
             "id": event.get("id", ""),
             "summary": event.get("summary", "(no title)"),
@@ -388,6 +526,14 @@ class CalendarClient:
             "description": event.get("description", ""),
             "htmlLink": event.get("htmlLink", ""),
             "status": event.get("status", ""),
+            # Conference details. `conferenceId` is the handle the Meet API
+            # addresses a space by (`spaces/{meetingCode}`), which is what makes
+            # `desk meet` composable from a `desk cal` read. See ADR-035/036.
+            "meetLink": event.get("hangoutLink", ""),
+            "conferenceId": conference.get("conferenceId", ""),
+            "conferenceStatus": (
+                conference.get("createRequest", {}).get("status", {}).get("statusCode", "")
+            ),
             "attendees": [
                 {
                     "email": a.get("email", ""),
@@ -474,6 +620,7 @@ class CalendarClient:
         event_id: str,
         response: str,
         calendar_id: str = "primary",
+        send_updates: str = "all",
     ) -> dict:
         """Respond to an event invitation.
 
@@ -481,6 +628,7 @@ class CalendarClient:
             event_id: The event ID
             response: Response status ('accepted', 'declined', 'tentative')
             calendar_id: Calendar ID
+            send_updates: "all", "external-only", or "none". See ADR-035.
 
         Returns:
             Updated event dict
@@ -514,7 +662,7 @@ class CalendarClient:
                     calendarId=calendar_id,
                     eventId=event_id,
                     body=event,
-                    sendUpdates="all",
+                    sendUpdates=_api_send_updates(send_updates),
                     supportsAttachments=True,
                 )
                 .execute()

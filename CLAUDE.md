@@ -162,15 +162,18 @@ desk (CLI entry point)
 │   ├── stack          → Flow elements in a line at natural size (align + gap)
 │   ├── group          → Group elements into one group object
 │   └── ungroup        → Ungroup a group back into its members
-└── cal                → Google Calendar operations
-    ├── today          → Today's events
-    ├── week           → This week's events
-    ├── next           → Upcoming events
-    ├── list           → List calendars
-    ├── create         → Create an event
-    ├── delete         → Delete an event
-    ├── update         → Update an event
-    └── find           → Search events by text
+├── cal                → Google Calendar operations
+│   ├── today          → Today's events
+│   ├── week           → This week's events
+│   ├── next           → Upcoming events
+│   ├── list           → List calendars
+│   ├── create         → Create an event (--meet, guest perms, --send-updates)
+│   ├── delete         → Delete an event
+│   ├── update         → Update an event (--meet adds a link to an existing event)
+│   └── find           → Search events by text
+└── meet               → Google Meet operations
+    ├── read           → Read a meeting space's settings
+    └── update         → Set auto-record / transcript / smart notes
 
 Config/Tokens: ~/.desk/
 ├── credentials.json  ← User provides (from their Google Cloud project)
@@ -189,6 +192,7 @@ Config/Tokens: ~/.desk/
 - `src/desk/commands/cal.py` - Calendar commands
 - `src/desk/commands/forms.py` - Forms commands
 - `src/desk/commands/slides.py` - Slides commands
+- `src/desk/commands/meet.py` - Meet commands
 - `src/desk/services/gmail.py` - GmailClient API wrapper
 - `src/desk/services/drive.py` - DriveClient API wrapper
 - `src/desk/services/sheets.py` - SheetsClient API wrapper
@@ -196,6 +200,7 @@ Config/Tokens: ~/.desk/
 - `src/desk/services/calendar.py` - CalendarClient API wrapper
 - `src/desk/services/forms.py` - FormsClient API wrapper
 - `src/desk/services/slides.py` - SlidesClient API wrapper
+- `src/desk/services/meet.py` - MeetClient API wrapper
 
 ## Adding a New Service
 

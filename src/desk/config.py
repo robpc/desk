@@ -22,12 +22,66 @@ SCOPES = [
     "https://www.googleapis.com/auth/forms.body",
     "https://www.googleapis.com/auth/forms.responses.readonly",
     "https://www.googleapis.com/auth/presentations",
+    # Meet space settings (ADR-036). Non-sensitive, and documented as covering
+    # spaces created by other apps — which is how a Calendar conference is
+    # reachable. Existing tokens predate it; `desk meet` is gated accordingly.
+    "https://www.googleapis.com/auth/meetings.space.settings",
 ]
 
 # Scopes for gcloud ADC
 GCLOUD_SCOPES = [
     *SCOPES,
 ]
+
+# Scope -> the commands that need it. Drives the `enforce_scopes()` gate's
+# "affected commands" list and the `enabled` flag in `--capabilities`.
+# See ADR-034.
+#
+# An entry is either a bare service name ("slides"), meaning every command in
+# that service, or a specific "service command" pair ("cal create") when a scope
+# only covers part of a service.
+#
+# Only scopes worth gating need an entry. Most of Desk's scopes are requested
+# together at first login, so a user either has all of them or isn't
+# authenticated at all — gating those would add noise without catching anything.
+# The entries that matter are scopes added *after* a release, which existing
+# tokens predate.
+SCOPE_COMMANDS: dict[str, list[str]] = {
+    # Added in ADR-026 (Slides). Tokens issued before it lack this scope, which
+    # is the drift that the dead scope-diff (issue #82) failed to report.
+    "https://www.googleapis.com/auth/presentations": ["slides"],
+    # Added in ADR-036. No existing token has this, so `desk meet` reports
+    # itself disabled until the user re-auths — the case this gate exists for.
+    "https://www.googleapis.com/auth/meetings.space.settings": ["meet"],
+}
+
+
+def scopes_for_service(service: str) -> list[str]:
+    """Return scopes every command in `service` needs.
+
+    Excludes scopes registered against individual commands — those are gated per
+    command, not at the service's client helper.
+    """
+    return sorted(
+        scope for scope, targets in SCOPE_COMMANDS.items() if service in targets
+    )
+
+
+def scopes_for_command(service: str, command: str) -> list[str]:
+    """Return the scopes a given command needs, service-wide entries included."""
+    keys = {service, f"{service} {command}"}
+    return sorted(
+        scope for scope, targets in SCOPE_COMMANDS.items() if keys & set(targets)
+    )
+
+
+def commands_for_scopes(scopes: list[str]) -> list[str]:
+    """Human-readable list of what a set of missing scopes blocks."""
+    affected: set[str] = set()
+    for scope in scopes:
+        for target in SCOPE_COMMANDS.get(scope, []):
+            affected.add(f"{target} (all commands)" if " " not in target else target)
+    return sorted(affected)
 
 
 def ensure_config_dir() -> Path:

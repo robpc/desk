@@ -20,7 +20,11 @@ from desk.agent import (
 )
 from desk.auth import get_credentials, get_last_auth_failure
 from desk.console import error_console
-from desk.services.calendar import CalendarClient
+from desk.services.calendar import (
+    SEND_UPDATES_CHOICES,
+    VISIBILITY_CHOICES,
+    CalendarClient,
+)
 
 console = Console()
 
@@ -419,6 +423,20 @@ def list_calendars(as_json: bool) -> None:
 @click.option("--end", required=True, help="End time (ISO 8601 or YYYY-MM-DD)")
 @click.option("--description", "-d", default="", help="Event description")
 @click.option("--attendee", "-a", "attendees", multiple=True, help="Attendee email (repeatable)")
+@click.option("--meet", is_flag=True, help="Attach a Google Meet conference")
+@click.option("--location", "-l", help="Event location")
+@click.option("--visibility", type=click.Choice(VISIBILITY_CHOICES), help="Event visibility")
+@click.option("--free", is_flag=True, help="Show as free rather than busy")
+@click.option("--hide-guest-list", is_flag=True, help="Hide other guests from attendees")
+@click.option("--no-guest-invites", is_flag=True, help="Prevent guests from inviting others")
+@click.option("--guests-can-modify", is_flag=True, help="Let guests edit the event")
+@click.option(
+    "--send-updates",
+    type=click.Choice(SEND_UPDATES_CHOICES),
+    default="all",
+    show_default=True,
+    help="Who gets invitation emails",
+)
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -428,17 +446,36 @@ def create(
     end: str,
     description: str,
     attendees: tuple[str, ...],
+    meet: bool,
+    location: str | None,
+    visibility: str | None,
+    free: bool,
+    hide_guest_list: bool,
+    no_guest_invites: bool,
+    guests_can_modify: bool,
+    send_updates: str,
     dry_run: bool,
     quiet: bool,
     as_json: bool,
 ) -> None:
     """Create a new event.
 
+    Use --meet to attach a Google Meet link, and --send-updates none to stage an
+    event without mailing anyone yet.
+
+    Note: Google Calendar has no per-guest "co-organizer" role — --guests-can-modify
+    applies to every guest. Meet co-hosts, auto-recording, and auto-transcription
+    are Meet settings, not Calendar ones: see `desk meet --help`.
+
     Examples:
 
         desk cal create "Standup" --start 2024-01-15T10:00:00 --end 2024-01-15T10:30:00
 
         desk cal create "Sync" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00 -a bob@co.com
+
+        desk cal create "Training" --start ... --end ... --meet --hide-guest-list
+
+        desk cal create "Draft" --start ... --end ... -a team@co.com --send-updates none
     """
     client = _get_client(as_json)
 
@@ -450,12 +487,17 @@ def create(
         }
         if attendees:
             target["attendees"] = list(attendees)
+        if meet:
+            target["meet"] = True
+        warnings = []
+        if attendees and send_updates != "none":
+            warnings.append("Attendees will receive invitation emails")
         preview = dry_run_preview(
             operation="create event",
             targets=[target],
             reversible=True,
             undo_command="desk cal delete <event-id>",
-            warnings=["Attendees will receive invitation emails"] if attendees else None,
+            warnings=warnings or None,
         )
         output_result(preview, as_json, quiet)
         return
@@ -467,19 +509,36 @@ def create(
             end,
             description=description,
             attendees=list(attendees) if attendees else None,
+            meet=meet,
+            location=location,
+            visibility=visibility,
+            free=free,
+            hide_guest_list=hide_guest_list,
+            no_guest_invites=no_guest_invites,
+            guests_can_modify=guests_can_modify,
+            send_updates=send_updates,
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"summary": summary, "start": start, "end": end})
 
+    target = {
+        "id": event.get("id"),
+        "summary": event.get("summary"),
+        "start": event.get("start"),
+        "end": event.get("end"),
+        "link": event.get("htmlLink"),
+    }
+    if meet:
+        # Conference creation is asynchronous, so the link can be absent from the
+        # immediate response. Report what Google actually said. See ADR-035.
+        target["meetLink"] = event.get("meetLink") or None
+        target["conferenceId"] = event.get("conferenceId") or None
+        if not event.get("meetLink"):
+            target["conferenceStatus"] = event.get("conferenceStatus") or "pending"
+
     receipt = operation_receipt(
         operation="create",
-        target={
-            "id": event.get("id"),
-            "summary": event.get("summary"),
-            "start": event.get("start"),
-            "end": event.get("end"),
-            "link": event.get("htmlLink"),
-        },
+        target=target,
         undo_command=f"desk cal delete {event.get('id')} --yes",
     )
     output_result(receipt, as_json, quiet)
@@ -488,20 +547,37 @@ def create(
 @cal.command()
 @click.argument("event_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option(
+    "--send-updates",
+    type=click.Choice(SEND_UPDATES_CHOICES),
+    default="all",
+    show_default=True,
+    help="Who gets cancellation emails",
+)
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def delete(
+    event_id: str,
+    yes: bool,
+    send_updates: str,
+    dry_run: bool,
+    quiet: bool,
+    as_json: bool,
+) -> None:
     """Delete an event.
 
     Deleting an event with attendees sends cancellation emails to all attendees.
-    Use --yes to skip confirmation (for scripting).
+    Use --send-updates none to delete quietly, and --yes to skip confirmation
+    (for scripting).
 
     Examples:
 
         desk cal delete <event-id>
 
         desk cal delete <event-id> --yes
+
+        desk cal delete <event-id> --send-updates none --yes
 
         desk cal delete <event-id> --dry-run
     """
@@ -517,7 +593,7 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
 
     if dry_run:
         warnings = []
-        if attendee_count > 0:
+        if attendee_count > 0 and send_updates != "none":
             warnings.append(f"Cancellation emails will be sent to {attendee_count} attendee(s)")
         preview = dry_run_preview(
             operation="delete event",
@@ -555,14 +631,17 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
         console.print(f"[yellow]Start: {event.get('start', '')}[/yellow]")
         console.print(f"[yellow]Attendees: {attendee_count}[/yellow]")
         console.print()
-        console.print("[bold red]Deleting this event will send cancellation emails to all attendees.[/bold red]")
+        if send_updates == "none":
+            console.print("[bold yellow]Deleting this event. No cancellation emails will be sent (--send-updates none).[/bold yellow]")
+        else:
+            console.print("[bold red]Deleting this event will send cancellation emails to all attendees.[/bold red]")
 
         if not click.confirm("Are you sure you want to delete this event?"):
             console.print("Cancelled.")
             return
 
     try:
-        client.delete(event_id)
+        client.delete(event_id, send_updates=send_updates)
     except Exception as e:
         _handle_api_error(e, as_json, {"event_id": event_id})
 
@@ -588,6 +667,20 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
 @click.option(
     "--remove-attendee", "-r", "remove_attendees", multiple=True, help="Email to remove (sends cancellation notification)"
 )
+@click.option("--meet", is_flag=True, help="Add a Google Meet conference (no-op if one exists)")
+@click.option("--location", "-l", help="New location")
+@click.option("--visibility", type=click.Choice(VISIBILITY_CHOICES), help="Event visibility")
+@click.option("--free", is_flag=True, help="Show as free rather than busy")
+@click.option("--hide-guest-list", is_flag=True, help="Hide other guests from attendees")
+@click.option("--no-guest-invites", is_flag=True, help="Prevent guests from inviting others")
+@click.option("--guests-can-modify", is_flag=True, help="Let guests edit the event")
+@click.option(
+    "--send-updates",
+    type=click.Choice(SEND_UPDATES_CHOICES),
+    default="all",
+    show_default=True,
+    help="Who gets update emails",
+)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
@@ -598,12 +691,22 @@ def update(
     description: str | None,
     add_attendees: tuple[str, ...],
     remove_attendees: tuple[str, ...],
+    meet: bool,
+    location: str | None,
+    visibility: str | None,
+    free: bool,
+    hide_guest_list: bool,
+    no_guest_invites: bool,
+    guests_can_modify: bool,
+    send_updates: str,
     quiet: bool,
     as_json: bool,
 ) -> None:
     """Update an existing event.
 
-    Only provided fields are changed.
+    Only provided fields are changed. Boolean flags are one-way — passing
+    --hide-guest-list hides the list, but omitting it leaves the current setting
+    alone rather than un-hiding it.
 
     Examples:
 
@@ -614,6 +717,8 @@ def update(
         desk cal update <id> -a newperson@example.com
 
         desk cal update <id> -r former.employee@example.com
+
+        desk cal update <id> --meet --send-updates none
     """
     client = _get_client(as_json)
     try:
@@ -625,6 +730,14 @@ def update(
             description=description,
             add_attendees=list(add_attendees) if add_attendees else None,
             remove_attendees=list(remove_attendees) if remove_attendees else None,
+            meet=meet,
+            location=location,
+            visibility=visibility,
+            free=free,
+            hide_guest_list=hide_guest_list,
+            no_guest_invites=no_guest_invites,
+            guests_can_modify=guests_can_modify,
+            send_updates=send_updates,
         )
     except Exception as e:
         _handle_api_error(e, as_json, {"event_id": event_id})
@@ -638,6 +751,22 @@ def update(
         changes["end"] = end
     if description:
         changes["description"] = description
+    if location is not None:
+        changes["location"] = location
+    if visibility:
+        changes["visibility"] = visibility
+    if free:
+        changes["transparency"] = "free"
+    if hide_guest_list:
+        changes["guestsCanSeeOtherGuests"] = False
+    if no_guest_invites:
+        changes["guestsCanInviteOthers"] = False
+    if guests_can_modify:
+        changes["guestsCanModify"] = True
+    if meet:
+        changes["meet"] = "added" if event.get("conferenceAdded") else "already present"
+        if event.get("meetLink"):
+            changes["meetLink"] = event["meetLink"]
     if add_attendees:
         changes["added_attendees"] = list(add_attendees)
     if remove_attendees:
@@ -777,9 +906,18 @@ def invitations(max_results: int, limit: int | None, page_token: str | None, as_
     type=click.Choice(["accepted", "declined", "tentative"]),
     help="Your response",
 )
+@click.option(
+    "--send-updates",
+    type=click.Choice(SEND_UPDATES_CHOICES),
+    default="all",
+    show_default=True,
+    help="Who is notified of your response",
+)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def respond(event_id: str, status: str, quiet: bool, as_json: bool) -> None:
+def respond(
+    event_id: str, status: str, send_updates: str, quiet: bool, as_json: bool
+) -> None:
     """Respond to an event invitation.
 
     Accepts, declines, or marks an event as tentative.
@@ -792,11 +930,13 @@ def respond(event_id: str, status: str, quiet: bool, as_json: bool) -> None:
         desk cal respond <event-id> --status declined
 
         desk cal respond <event-id> --status tentative
+
+        desk cal respond <event-id> --status accepted --send-updates none
     """
     client = _get_client(as_json)
 
     try:
-        event = client.respond(event_id, status)
+        event = client.respond(event_id, status, send_updates=send_updates)
     except ValueError as e:
         if as_json:
             error = structured_error(

@@ -28,6 +28,11 @@ from desk.config import (
 # Fields safe to keep in plaintext metadata files (no secrets)
 _TOKEN_SENSITIVE_FIELDS = ("token", "refresh_token", "client_secret")
 
+# Key under which the *granted* (consented) scope set is stored alongside the
+# token. Distinct from google-auth's `scopes`, which records what Desk
+# requested — see issue #82. Non-sensitive, so it survives scrubbing.
+GRANTED_SCOPES_KEY = "granted_scopes"
+
 # Debug logging - enable with DESK_DEBUG=1
 _logger = logging.getLogger("desk.auth")
 if os.environ.get("DESK_DEBUG"):
@@ -80,6 +85,46 @@ def get_credentials() -> Credentials | None:
         return creds
 
     return None
+
+
+def _stored_granted_scopes() -> list[str] | None:
+    """Read the persisted granted scope set, or None if it was never recorded.
+
+    Checks the keyring first, then the scrubbed token file (the granted set is
+    non-sensitive, so it survives in both). Returns None — not an empty list —
+    when no record exists, so callers can distinguish "granted nothing" from
+    "we don't know", and fail open on the latter. See issue #82.
+    """
+    token_data = keyring_store.get_token()
+    if token_data and token_data.get(GRANTED_SCOPES_KEY):
+        return list(token_data[GRANTED_SCOPES_KEY])
+    if TOKEN_FILE.exists():
+        try:
+            file_data = json_module.loads(TOKEN_FILE.read_text())
+        except (json_module.JSONDecodeError, OSError):
+            return None
+        if file_data.get(GRANTED_SCOPES_KEY):
+            return list(file_data[GRANTED_SCOPES_KEY])
+    return None
+
+
+def _restore_granted_scopes(creds: Credentials) -> None:
+    """Attach the persisted granted scope set to a freshly loaded credentials object.
+
+    google-auth populates `granted_scopes` only from a live token response, and
+    `to_json()` doesn't serialize it, so a credentials object loaded from
+    storage always reports None. No-op when nothing was recorded.
+
+    Note: `granted_scopes` is a read-only property, so this writes the backing
+    `_granted_scopes` attribute. If a google-auth upgrade renames it, the
+    granted set silently reads as unknown and the scope gate fails open — which
+    degrades safely, but `tests/test_scopes.py` is what catches it.
+    """
+    if getattr(creds, "granted_scopes", None):
+        return  # Already known (e.g. refreshed this run) — don't overwrite.
+    stored = _stored_granted_scopes()
+    if stored:
+        creds._granted_scopes = stored
 
 
 def _migrate_token_to_keyring() -> None:
@@ -150,6 +195,11 @@ def _get_oauth_credentials() -> Credentials | None:
         _migrate_token_to_keyring()
     else:
         return None
+
+    # `from_authorized_user_*` never restores the granted set, so re-attach it
+    # from storage. Without this, drift is only visible in the window right
+    # after a live refresh. See issue #82.
+    _restore_granted_scopes(creds)
 
     if creds.valid:
         return creds
@@ -353,6 +403,19 @@ def _save_credentials(creds: Credentials) -> None:
     # Preserve quota_project_id for gcloud ADC credentials
     if getattr(creds, "quota_project_id", None):
         data["quota_project_id"] = creds.quota_project_id
+    # Persist the *granted* scope set separately. `to_json()` only serializes
+    # `scopes` (what Desk asked for), so without this the consented set is lost
+    # and scope drift is undetectable. See issue #82, ADR-034.
+    granted = getattr(creds, "granted_scopes", None)
+    if granted:
+        data[GRANTED_SCOPES_KEY] = sorted(granted)
+    else:
+        # This credentials object doesn't know the granted set (loaded from
+        # storage without a refresh this run). Don't wipe a value learned
+        # earlier — carry it forward.
+        previous = _stored_granted_scopes()
+        if previous:
+            data[GRANTED_SCOPES_KEY] = sorted(previous)
     # Store full token in keyring
     keyring_store.set_token(data)
     # Write scrubbed metadata to file for debuggability
@@ -406,16 +469,41 @@ def get_auth_status(verify: bool = False) -> dict:
     return status
 
 
+def granted_scopes(credentials: Credentials | None = None) -> set[str] | None:
+    """Return the scope set the user actually consented to, or None if unknown.
+
+    None means "not recorded" — the caller must fail open rather than treat it
+    as an empty grant. Tokens issued before issue #82 was fixed carry no record;
+    google-auth repopulates it from the next refresh response automatically, so
+    no re-auth is needed to recover.
+
+    Args:
+        credentials: Optional loaded credentials to consult first. Falls back to
+            the persisted record, which is what callers that haven't built a
+            client yet (e.g. the scope gate) rely on.
+    """
+    if credentials is not None:
+        from_creds = getattr(credentials, "granted_scopes", None)
+        if from_creds:
+            return set(from_creds)
+    stored = _stored_granted_scopes()
+    return set(stored) if stored else None
+
+
 def _missing_scopes(credentials: Credentials) -> list[str] | None:
     """Return SCOPES the granted token lacks, or None if grant set is unknown.
 
     Lets `auth status` flag scope drift proactively after Desk adds a scope, so
-    the user is told to re-auth before hitting a 403. See ADR-030.
+    the user is told to re-auth before hitting a 403. See ADR-030, ADR-034.
+
+    Reads `granted_scopes` (what the user consented to), never `scopes` (what
+    Desk requested) — the latter is always the full `SCOPES` constant, which
+    made this function return `[]` unconditionally. See issue #82.
     """
-    granted = getattr(credentials, "scopes", None)
-    if not granted:
+    granted = granted_scopes(credentials)
+    if granted is None:
         return None
-    return sorted(set(SCOPES) - set(granted))
+    return sorted(set(SCOPES) - granted)
 
 
 def verify_service_access(credentials: Credentials) -> dict[str, bool]:
@@ -529,5 +617,20 @@ def verify_service_access(credentials: Credentials) -> dict[str, bool]:
     except Exception as e:
         _logger.debug(f"Forms access check error: {type(e).__name__}: {e}")
         results["forms"] = False
+
+    # Meet - get a non-existent space: 404 = scopes OK, 403 = no scope.
+    # Expected to report False until the user re-auths for the scope ADR-036
+    # added, which is the honest answer.
+    try:
+        service = build("meet", "v2", credentials=credentials)
+        service.spaces().get(name="spaces/nonexistenttestid").execute()
+        results["meet"] = True
+    except HttpError as e:
+        results["meet"] = e.resp.status == 404
+        if e.resp.status not in (404, 403):
+            _logger.debug(f"Meet access check unexpected: {e}")
+    except Exception as e:
+        _logger.debug(f"Meet access check error: {type(e).__name__}: {e}")
+        results["meet"] = False
 
     return results
