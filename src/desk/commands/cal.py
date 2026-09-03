@@ -125,6 +125,35 @@ def _emit_resolution_error(
     sys.exit(1)
 
 
+def _resolve_write_calendar(
+    client: CalendarClient, values: tuple[str, ...], as_json: bool
+) -> str:
+    """Resolve the single ``--calendar`` target for a write command.
+
+    Wraps :func:`_resolve_calendars` for the single-target case. An empty
+    tuple (flag omitted) resolves to ``"primary"``, preserving pre-ADR-034
+    behavior.
+
+    The option is declared ``multiple=True`` purely so a repeated ``-c``
+    can be *rejected*. Click's default for a scalar option is to keep the
+    last value silently, which for a write target means quietly writing to
+    a calendar the caller did not name last on purpose. See ADR-034.
+    """
+    if not values:
+        return "primary"
+    if len(values) > 1:
+        _emit_resolution_error(
+            as_json,
+            ", ".join(values),
+            "A write targets one calendar; --calendar was given more than once.",
+            [
+                "Pass a single -c/--calendar value.",
+                "To write to several calendars, run the command once per calendar.",
+            ],
+        )
+    return _resolve_calendars(client, values, as_json)[0]
+
+
 def _merge_events(per_calendar: list[dict]) -> dict:
     """Merge multiple per-calendar query results into one events dict.
 
@@ -188,6 +217,13 @@ def cal() -> None:
 _CALENDAR_OPTION_HELP = (
     "Calendar ID, friendly name from `desk cal list` (case-insensitive), or "
     "'primary'. Repeatable to merge across calendars (sorted by start time)."
+)
+
+
+_WRITE_CALENDAR_OPTION_HELP = (
+    "Calendar to write to: calendar ID, friendly name from `desk cal list` "
+    "(case-insensitive), or 'primary'. Defaults to 'primary'. Not repeatable "
+    "— a write targets one calendar."
 )
 
 
@@ -419,6 +455,7 @@ def list_calendars(as_json: bool) -> None:
 @click.option("--end", required=True, help="End time (ISO 8601 or YYYY-MM-DD)")
 @click.option("--description", "-d", default="", help="Event description")
 @click.option("--attendee", "-a", "attendees", multiple=True, help="Attendee email (repeatable)")
+@click.option("-c", "--calendar", "calendar", multiple=True, help=_WRITE_CALENDAR_OPTION_HELP)
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -428,6 +465,7 @@ def create(
     end: str,
     description: str,
     attendees: tuple[str, ...],
+    calendar: tuple[str, ...],
     dry_run: bool,
     quiet: bool,
     as_json: bool,
@@ -439,14 +477,18 @@ def create(
         desk cal create "Standup" --start 2024-01-15T10:00:00 --end 2024-01-15T10:30:00
 
         desk cal create "Sync" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00 -a bob@co.com
+
+        desk cal create "Dinner" --start 2024-01-15T18:00:00 --end 2024-01-15T20:00:00 -c Family
     """
     client = _get_client(as_json)
+    calendar_id = _resolve_write_calendar(client, calendar, as_json)
 
     if dry_run:
         target = {
             "summary": summary,
             "start": start,
             "end": end,
+            "calendar_id": calendar_id,
         }
         if attendees:
             target["attendees"] = list(attendees)
@@ -454,7 +496,7 @@ def create(
             operation="create event",
             targets=[target],
             reversible=True,
-            undo_command="desk cal delete <event-id>",
+            undo_command=f"desk cal delete <event-id> -c {calendar_id}",
             warnings=["Attendees will receive invitation emails"] if attendees else None,
         )
         output_result(preview, as_json, quiet)
@@ -467,9 +509,14 @@ def create(
             end,
             description=description,
             attendees=list(attendees) if attendees else None,
+            calendar_id=calendar_id,
         )
     except Exception as e:
-        _handle_api_error(e, as_json, {"summary": summary, "start": start, "end": end})
+        _handle_api_error(
+            e,
+            as_json,
+            {"summary": summary, "start": start, "end": end, "calendar_id": calendar_id},
+        )
 
     receipt = operation_receipt(
         operation="create",
@@ -478,20 +525,29 @@ def create(
             "summary": event.get("summary"),
             "start": event.get("start"),
             "end": event.get("end"),
+            "calendar_id": calendar_id,
             "link": event.get("htmlLink"),
         },
-        undo_command=f"desk cal delete {event.get('id')} --yes",
+        undo_command=f"desk cal delete {event.get('id')} -c {calendar_id} --yes",
     )
     output_result(receipt, as_json, quiet)
 
 
 @cal.command()
 @click.argument("event_id")
+@click.option("-c", "--calendar", "calendar", multiple=True, help=_WRITE_CALENDAR_OPTION_HELP)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option("--dry-run", is_flag=True, help="Preview without executing")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) -> None:
+def delete(
+    event_id: str,
+    calendar: tuple[str, ...],
+    yes: bool,
+    dry_run: bool,
+    quiet: bool,
+    as_json: bool,
+) -> None:
     """Delete an event.
 
     Deleting an event with attendees sends cancellation emails to all attendees.
@@ -504,14 +560,19 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
         desk cal delete <event-id> --yes
 
         desk cal delete <event-id> --dry-run
+
+        desk cal delete <event-id> -c Family
     """
     client = _get_client(as_json)
+    # Resolve once and reuse: the event shown in the confirmation prompt must
+    # be the event that gets deleted (ADR-034).
+    calendar_id = _resolve_write_calendar(client, calendar, as_json)
 
     # Fetch event details for confirmation/preview
     try:
-        event = client.get_event(event_id)
+        event = client.get_event(event_id, calendar_id=calendar_id)
     except RuntimeError as e:
-        _handle_api_error(e, as_json, {"event_id": event_id})
+        _handle_api_error(e, as_json, {"event_id": event_id, "calendar_id": calendar_id})
 
     attendee_count = event.get("attendeeCount", 0)
 
@@ -525,6 +586,7 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
                 "id": event_id,
                 "summary": event.get("summary"),
                 "start": event.get("start"),
+                "calendar_id": calendar_id,
                 "attendees": attendee_count,
             }],
             reversible=False,
@@ -542,7 +604,7 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
                     ErrorCode.INVALID_INPUT,
                     "Event has attendees. Use --yes to confirm deletion in non-interactive mode.",
                     suggestions=["Use --dry-run to preview the operation", "Use --yes to skip confirmation"],
-                    details={"event_id": event_id, "attendees": attendee_count},
+                    details={"event_id": event_id, "calendar_id": calendar_id, "attendees": attendee_count},
                 )
                 print(json.dumps(error, indent=2), file=sys.stderr)
             else:
@@ -562,15 +624,16 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
             return
 
     try:
-        client.delete(event_id)
+        client.delete(event_id, calendar_id=calendar_id)
     except Exception as e:
-        _handle_api_error(e, as_json, {"event_id": event_id})
+        _handle_api_error(e, as_json, {"event_id": event_id, "calendar_id": calendar_id})
 
     receipt = operation_receipt(
         operation="delete",
         target={
             "id": event_id,
             "summary": event.get("summary"),
+            "calendar_id": calendar_id,
         },
     )
     output_result(receipt, as_json, quiet)
@@ -588,6 +651,7 @@ def delete(event_id: str, yes: bool, dry_run: bool, quiet: bool, as_json: bool) 
 @click.option(
     "--remove-attendee", "-r", "remove_attendees", multiple=True, help="Email to remove (sends cancellation notification)"
 )
+@click.option("-c", "--calendar", "calendar", multiple=True, help=_WRITE_CALENDAR_OPTION_HELP)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress success messages")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def update(
@@ -598,6 +662,7 @@ def update(
     description: str | None,
     add_attendees: tuple[str, ...],
     remove_attendees: tuple[str, ...],
+    calendar: tuple[str, ...],
     quiet: bool,
     as_json: bool,
 ) -> None:
@@ -614,8 +679,11 @@ def update(
         desk cal update <id> -a newperson@example.com
 
         desk cal update <id> -r former.employee@example.com
+
+        desk cal update <id> -c Family --summary "New Title"
     """
     client = _get_client(as_json)
+    calendar_id = _resolve_write_calendar(client, calendar, as_json)
     try:
         event = client.update(
             event_id,
@@ -625,9 +693,10 @@ def update(
             description=description,
             add_attendees=list(add_attendees) if add_attendees else None,
             remove_attendees=list(remove_attendees) if remove_attendees else None,
+            calendar_id=calendar_id,
         )
     except Exception as e:
-        _handle_api_error(e, as_json, {"event_id": event_id})
+        _handle_api_error(e, as_json, {"event_id": event_id, "calendar_id": calendar_id})
 
     changes = {}
     if summary:
@@ -652,6 +721,7 @@ def update(
         target={
             "id": event.get("id"),
             "summary": event.get("summary"),
+            "calendar_id": calendar_id,
             "link": event.get("htmlLink"),
         },
         changes=changes,

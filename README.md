@@ -171,6 +171,14 @@ desk cal find "standup"           # Search events
 desk cal create "Meeting" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00
 desk cal update <event-id> --summary "New Title"
 desk cal delete <event-id>
+
+# Any command takes -c/--calendar: a calendar ID, a friendly name from
+# `desk cal list` (case-insensitive), or 'primary' (the default).
+desk cal today -c Family                            # Read a shared calendar
+desk cal create "Dinner" -c Family \
+  --start 2024-01-15T18:00:00 --end 2024-01-15T20:00:00
+desk cal update <event-id> -c Family --summary "Late dinner"
+desk cal delete <event-id> -c Family
 ```
 
 ### Forms

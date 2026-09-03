@@ -461,3 +461,93 @@ class TestParseEventAttachments:
         assert event["attachments"][0]["title"] == ""
         assert event["attachments"][0]["mimeType"] == ""
         assert event["attachments"][0]["fileUrl"] == "https://example.com/file"
+
+
+class TestParseTimeInputTimezone:
+    """Naive datetimes localize per their own date (issue #89).
+
+    The old implementation stamped ``datetime.now().astimezone().tzinfo`` —
+    a *fixed* offset for today — onto the parsed value, so any date on the
+    far side of a DST transition came out an hour wrong. Asserting both a
+    winter and a summer date in one process makes the test independent of
+    when it runs: under the old behavior the two would share an offset and
+    one assertion would always fail.
+    """
+
+    @pytest.fixture
+    def ny_timezone(self):
+        """Pin the process to America/New_York for the duration of a test."""
+        import os
+        import time
+
+        original = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        yield
+        if original is None:
+            del os.environ["TZ"]
+        else:
+            os.environ["TZ"] = original
+        time.tzset()
+
+    @pytest.fixture
+    def client(self, mock_credentials):
+        with patch("desk.services.calendar.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.calendar import CalendarClient
+
+            return CalendarClient(mock_credentials)
+
+    def test_naive_winter_datetime_uses_winter_offset(self, client, ny_timezone):
+        result = client._parse_time_input("2026-11-11T17:30:00")
+
+        # EST, not EDT — and the wall-clock time is preserved.
+        assert result == {"dateTime": "2026-11-11T17:30:00-05:00"}
+
+    def test_naive_summer_datetime_uses_summer_offset(self, client, ny_timezone):
+        result = client._parse_time_input("2026-07-04T17:30:00")
+
+        assert result == {"dateTime": "2026-07-04T17:30:00-04:00"}
+
+    def test_explicit_offset_is_preserved(self, client, ny_timezone):
+        result = client._parse_time_input("2026-11-11T17:30:00-08:00")
+
+        assert result == {"dateTime": "2026-11-11T17:30:00-08:00"}
+
+    def test_date_only_stays_all_day(self, client, ny_timezone):
+        result = client._parse_time_input("2026-11-11")
+
+        assert result == {"date": "2026-11-11"}
+
+    def test_create_sends_date_correct_offset(self, client, ny_timezone):
+        """End-to-end through create(): the event body carries EST in November."""
+        mock_events = MagicMock()
+        mock_events.insert.return_value.execute.return_value = {"id": "e1"}
+        client.service.events.return_value = mock_events
+
+        client.create(
+            "Stuart Gibbs at People's Book",
+            "2026-11-11T17:30:00",
+            "2026-11-11T18:30:00",
+        )
+
+        body = mock_events.insert.call_args.kwargs["body"]
+        assert body["start"]["dateTime"] == "2026-11-11T17:30:00-05:00"
+        assert body["end"]["dateTime"] == "2026-11-11T18:30:00-05:00"
+
+    def test_update_sends_date_correct_offset(self, client, ny_timezone):
+        """cal update shares the same path (issue #89 asked us to check)."""
+        mock_events = MagicMock()
+        mock_events.get.return_value.execute.return_value = {
+            "id": "e1",
+            "summary": "Existing",
+            "attendees": [],
+        }
+        mock_events.update.return_value.execute.return_value = {"id": "e1"}
+        client.service.events.return_value = mock_events
+
+        client.update("e1", start="2026-11-11T17:30:00", end="2026-11-11T18:30:00")
+
+        body = mock_events.update.call_args.kwargs["body"]
+        assert body["start"]["dateTime"] == "2026-11-11T17:30:00-05:00"
+        assert body["end"]["dateTime"] == "2026-11-11T18:30:00-05:00"

@@ -370,3 +370,288 @@ class TestMultiCalendarFlag:
         assert result.exit_code == 0
         output = json.loads(result.output)
         assert [e["id"] for e in output["events"]] == ["k1", "p1"]
+
+
+class TestWriteCalendarFlag:
+    """Tests for --calendar on create/update/delete (ADR-034, issue #88)."""
+
+    @staticmethod
+    def _catalog():
+        return [
+            {"id": "primary", "summary": "Home", "primary": True},
+            {"id": "family@group.calendar.google.com", "summary": "Family"},
+            {"id": "kids@group.calendar.google.com", "summary": "Kids School"},
+        ]
+
+    # --- create ---
+
+    def test_create_defaults_to_primary(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.create.return_value = {"id": "e1", "summary": "Standup"}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Standup", "--start", "2026-11-11T10:00:00",
+             "--end", "2026-11-11T10:30:00", "--json"],
+        )
+
+        assert result.exit_code == 0
+        assert mock_client.create.call_args.kwargs["calendar_id"] == "primary"
+        # No catalog fetch when the flag is omitted.
+        mock_client.list_calendars.assert_not_called()
+
+    def test_create_resolves_friendly_name(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.create.return_value = {"id": "e1", "summary": "Dinner"}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Dinner", "--start", "2026-11-11T18:00:00",
+             "--end", "2026-11-11T20:00:00", "-c", "family", "--json"],
+        )
+
+        assert result.exit_code == 0
+        assert (
+            mock_client.create.call_args.kwargs["calendar_id"]
+            == "family@group.calendar.google.com"
+        )
+
+    def test_create_receipt_carries_calendar_and_undo(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.create.return_value = {"id": "e1", "summary": "Dinner"}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Dinner", "--start", "2026-11-11T18:00:00",
+             "--end", "2026-11-11T20:00:00", "-c", "Family", "--json"],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        cal_id = "family@group.calendar.google.com"
+        assert output["targets"][0]["calendar_id"] == cal_id
+        # The undo command must round-trip to the same calendar.
+        assert f"-c {cal_id}" in output["undo"]["command"]
+
+    def test_create_dry_run_shows_resolved_calendar(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Dinner", "--start", "2026-11-11T18:00:00",
+             "--end", "2026-11-11T20:00:00", "-c", "Family",
+             "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert (
+            output["targets"][0]["calendar_id"]
+            == "family@group.calendar.google.com"
+        )
+        mock_client.create.assert_not_called()
+
+    def test_create_unknown_calendar_is_invalid_input(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Dinner", "--start", "2026-11-11T18:00:00",
+             "--end", "2026-11-11T20:00:00", "-c", "Nope", "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stderr)["error"]["code"] == "INVALID_INPUT"
+        # Resolution fails before anything is written.
+        mock_client.create.assert_not_called()
+
+    def test_create_rejects_repeated_calendar(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        # Both names are resolvable, so a pass here would mean the second -c
+        # silently won rather than the pair being rejected.
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Dinner", "--start", "2026-11-11T18:00:00",
+             "--end", "2026-11-11T20:00:00",
+             "-c", "Family", "-c", "Kids School", "--json"],
+        )
+
+        # A write targets one calendar. Click's scalar-option default would
+        # keep "Kids School" without a word; ADR-034 rejects instead.
+        assert result.exit_code == 1
+        assert json.loads(result.stderr)["error"]["code"] == "INVALID_INPUT"
+        mock_client.create.assert_not_called()
+
+    def test_delete_rejects_repeated_calendar(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["delete", "e1", "-c", "Family", "-c", "Kids School", "--yes", "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stderr)["error"]["code"] == "INVALID_INPUT"
+        # Rejected before the event is even looked up.
+        mock_client.get_event.assert_not_called()
+        mock_client.delete.assert_not_called()
+
+    def test_create_dry_run_undo_carries_calendar(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Dinner", "--start", "2026-11-11T18:00:00",
+             "--end", "2026-11-11T20:00:00", "-c", "Family",
+             "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        # A bare "desk cal delete <event-id>" would undo against primary.
+        assert "-c family@group.calendar.google.com" in output["undo_would_be"]
+
+    # --- update ---
+
+    def test_update_defaults_to_primary(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.update.return_value = {"id": "e1", "summary": "New"}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["update", "e1", "-s", "New", "--json"])
+
+        assert result.exit_code == 0
+        assert mock_client.update.call_args.kwargs["calendar_id"] == "primary"
+
+    def test_update_targets_named_calendar(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.update.return_value = {"id": "e1", "summary": "New"}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal, ["update", "e1", "-s", "New", "-c", "Family", "--json"]
+        )
+
+        assert result.exit_code == 0
+        cal_id = "family@group.calendar.google.com"
+        assert mock_client.update.call_args.kwargs["calendar_id"] == cal_id
+        assert json.loads(result.output)["targets"][0]["calendar_id"] == cal_id
+
+    # --- delete ---
+
+    def test_delete_defaults_to_primary(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.get_event.return_value = {"summary": "Dinner", "attendeeCount": 0}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["delete", "e1", "--yes", "--json"])
+
+        assert result.exit_code == 0
+        assert mock_client.get_event.call_args.kwargs["calendar_id"] == "primary"
+        assert mock_client.delete.call_args.kwargs["calendar_id"] == "primary"
+
+    def test_delete_resolves_once_for_lookup_and_delete(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.get_event.return_value = {"summary": "Dinner", "attendeeCount": 0}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal, ["delete", "e1", "-c", "Family", "--yes", "--json"]
+        )
+
+        assert result.exit_code == 0
+        cal_id = "family@group.calendar.google.com"
+        # The event previewed must be the event deleted.
+        assert mock_client.get_event.call_args.kwargs["calendar_id"] == cal_id
+        assert mock_client.delete.call_args.kwargs["calendar_id"] == cal_id
+        assert json.loads(result.output)["targets"][0]["calendar_id"] == cal_id
+        # Catalog resolved once, not once per API call.
+        assert mock_client.list_calendars.call_count == 1
+
+    def test_delete_dry_run_shows_resolved_calendar(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.get_event.return_value = {"summary": "Dinner", "attendeeCount": 0}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal, ["delete", "e1", "-c", "Family", "--dry-run", "--json"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert (
+            output["targets"][0]["calendar_id"]
+            == "family@group.calendar.google.com"
+        )
+        mock_client.delete.assert_not_called()

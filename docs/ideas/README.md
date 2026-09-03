@@ -69,6 +69,10 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 076 | [Headless slides fit/overflow check](076-slides-fit-check.md) | implemented | M | slides-fit skill: overflow/dead-space/off-center, no rendering |
 
+| 079 | [Which Timezone a Naive Datetime Means](079-calendar-timezone-semantics.md) | idea | M | Calendar-zone vs machine-zone for bare `--start`/`--end` |
+
+| 080 | [Move an Event Between Calendars](080-calendar-event-move.md) | idea | S | `events.move` — relocate without delete-and-recreate |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`
