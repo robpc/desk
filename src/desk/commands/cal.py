@@ -20,7 +20,7 @@ from desk.agent import (
 )
 from desk.auth import get_credentials, get_last_auth_failure
 from desk.console import error_console
-from desk.services.calendar import CalendarClient
+from desk.services.calendar import CalendarClient, parse_time_input
 
 console = Console()
 
@@ -152,6 +152,29 @@ def _resolve_write_calendar(
             ],
         )
     return _resolve_calendars(client, values, as_json)[0]
+
+
+def _preview_time(value: str, as_json: bool) -> str:
+    """Resolve a --start/--end the way a real write would, for --dry-run.
+
+    Returns the flat string shape ``_parse_event`` produces, so a dry-run
+    target reads the same as the receipt from the real call. Echoing the
+    raw input back instead would hide exactly the class of bug issue #89
+    was — a naive datetime silently landing on a different offset.
+    """
+    try:
+        parsed = parse_time_input(value)
+    except ValueError as e:
+        _emit_resolution_error(
+            as_json,
+            value,
+            f"Could not parse time '{value}': {e}",
+            [
+                "Use ISO 8601: YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD for all-day.",
+                "An explicit offset (2026-11-11T17:30:00-05:00) is honored as given.",
+            ],
+        )
+    return parsed.get("dateTime") or parsed.get("date", "")
 
 
 def _merge_events(per_calendar: list[dict]) -> dict:
@@ -486,8 +509,8 @@ def create(
     if dry_run:
         target = {
             "summary": summary,
-            "start": start,
-            "end": end,
+            "start": _preview_time(start, as_json),
+            "end": _preview_time(end, as_json),
             "calendar_id": calendar_id,
         }
         if attendees:

@@ -655,3 +655,128 @@ class TestWriteCalendarFlag:
             == "family@group.calendar.google.com"
         )
         mock_client.delete.assert_not_called()
+
+
+class TestCreateDryRunResolvesTimes:
+    """`cal create --dry-run` previews resolved times, not raw input.
+
+    Echoing back the string the caller typed tells them nothing they did
+    not already know. It also hides the issue #89 class of bug: a naive
+    datetime silently landing on a different offset was only observable
+    by creating a real event. See idea 031 / ADR-004 — a dry-run exists so
+    the caller can verify what *would happen*.
+    """
+
+    @pytest.fixture
+    def ny_timezone(self):
+        import os
+        import time
+
+        original = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        yield
+        if original is None:
+            del os.environ["TZ"]
+        else:
+            os.environ["TZ"] = original
+        time.tzset()
+
+    def test_naive_datetime_shows_resolved_offset(
+        self, runner, mock_get_credentials, mock_calendar_client_class, ny_timezone
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Reading", "--start", "2026-11-11T17:30:00",
+             "--end", "2026-11-11T18:30:00", "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        target = json.loads(result.output)["targets"][0]
+        # EST, because November is EST — the whole point of issue #89.
+        assert target["start"] == "2026-11-11T17:30:00-05:00"
+        assert target["end"] == "2026-11-11T18:30:00-05:00"
+        mock_client.create.assert_not_called()
+
+    def test_summer_date_shows_summer_offset(
+        self, runner, mock_get_credentials, mock_calendar_client_class, ny_timezone
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Picnic", "--start", "2026-07-04T17:30:00",
+             "--end", "2026-07-04T18:30:00", "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["targets"][0]["start"] == (
+            "2026-07-04T17:30:00-04:00"
+        )
+
+    def test_explicit_offset_passes_through(
+        self, runner, mock_get_credentials, mock_calendar_client_class, ny_timezone
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Call", "--start", "2026-11-11T17:30:00-08:00",
+             "--end", "2026-11-11T18:30:00-08:00", "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["targets"][0]["start"] == (
+            "2026-11-11T17:30:00-08:00"
+        )
+
+    def test_all_day_stays_a_bare_date(
+        self, runner, mock_get_credentials, mock_calendar_client_class, ny_timezone
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Holiday", "--start", "2026-11-11",
+             "--end", "2026-11-12", "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        target = json.loads(result.output)["targets"][0]
+        # All-day events have no offset to resolve; don't invent one.
+        assert target["start"] == "2026-11-11"
+        assert target["end"] == "2026-11-12"
+
+    def test_unparseable_time_is_invalid_input(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            cal,
+            ["create", "Nope", "--start", "next tuesday",
+             "--end", "2026-11-11T18:30:00", "--dry-run", "--json"],
+        )
+
+        # Previously a dry-run never parsed, so bad input surfaced only on
+        # the real call. Now it fails here, which is the point of a preview.
+        assert result.exit_code == 1
+        assert json.loads(result.stderr)["error"]["code"] == "INVALID_INPUT"
+        mock_client.create.assert_not_called()
