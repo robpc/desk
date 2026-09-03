@@ -38,6 +38,7 @@ proposed → accepted → [deprecated | superseded]
 | 029 | [Slides Multi-Element Arrange and Richer Regions (Phase 3b-i)](029-slides-arrange-and-richer-regions.md) | accepted | 2026-06-09 |
 | 030 | [Slides Authoring Refinements + Scope Re-Auth UX](030-slides-authoring-refinements-and-scope-ux.md) | accepted | 2026-06-09 |
 | 031 | [Slides `stack` — flow layout](031-slides-stack-flow-layout.md) | accepted | 2026-06-09 |
+| 034 | [Explicit Calendar Target on Calendar Write Commands](034-calendar-write-target.md) | accepted | 2026-09-03 |
 
 ## Creating a New ADR
 

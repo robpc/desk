@@ -95,6 +95,12 @@ agents that ignored it before continue to work.
 - Write-side commands (`create`, `update`, `delete`) — they already
   accept `--calendar` as a single value; cross-calendar mutations aren't
   on the table here.
+
+  > **Correction (2026-09-03):** this was factually wrong. The
+  > `CalendarClient` *methods* took a `calendar_id` argument, but the
+  > commands never exposed one, so every write went to `primary`.
+  > [ADR-034](034-calendar-write-target.md) closes the gap and supersedes
+  > this bullet. See [issue #88](https://github.com/robpc/desk/issues/88).
 - Per-calendar pagination tokens in the response (deferred per the issue).
 
 ## Alternatives Considered
@@ -282,4 +288,5 @@ def _resolve_calendars(client, raw: tuple[str, ...]) -> list[str]:
   orchestration, not the agent
 - [ADR-019](019-errors-to-stderr.md) — stream discipline for
   resolution-failure errors
+- [ADR-034](034-calendar-write-target.md) — write-side `--calendar`, correcting this ADR's out-of-scope note
 - [Google Calendar `calendarList.list`](https://developers.google.com/calendar/api/v3/reference/calendarList/list)
