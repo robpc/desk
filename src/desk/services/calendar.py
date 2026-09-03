@@ -416,11 +416,13 @@ class CalendarClient:
         # If it looks like a date-only (YYYY-MM-DD), use date format
         if len(time_str) == 10 and time_str[4] == "-":
             return {"date": time_str}
-        # Parse and attach local timezone if the datetime is naive
+        # A naive datetime means local wall-clock time *on its own date*, so
+        # localize it with astimezone(), which applies the offset in effect
+        # that day. Stamping on datetime.now()'s offset instead is an hour
+        # out for any date on the far side of a DST boundary (issue #89).
         dt = datetime.fromisoformat(time_str)
         if dt.tzinfo is None:
-            local_tz = datetime.now().astimezone().tzinfo
-            dt = dt.replace(tzinfo=local_tz)
+            dt = dt.astimezone()
         return {"dateTime": dt.isoformat()}
 
     def invitations(
@@ -537,15 +539,14 @@ class CalendarClient:
             Dict mapping email to list of busy periods.
             Each busy period is a dict with "start" and "end" keys.
         """
-        # Parse times to ensure they have timezone info
+        # Parse times to ensure they have timezone info. Naive values are
+        # localized per their own date (see _parse_time_input, issue #89).
         start_dt = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
         if start_dt.tzinfo is None:
-            local_tz = datetime.now().astimezone().tzinfo
-            start_dt = start_dt.replace(tzinfo=local_tz)
+            start_dt = start_dt.astimezone()
         if end_dt.tzinfo is None:
-            local_tz = datetime.now().astimezone().tzinfo
-            end_dt = end_dt.replace(tzinfo=local_tz)
+            end_dt = end_dt.astimezone()
 
         body = {
             "timeMin": start_dt.isoformat(),
