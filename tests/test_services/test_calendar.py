@@ -498,24 +498,30 @@ class TestParseTimeInputTimezone:
 
             return CalendarClient(mock_credentials)
 
+    @staticmethod
+    def _parse(value):
+        from desk.services.calendar import parse_time_input
+
+        return parse_time_input(value)
+
     def test_naive_winter_datetime_uses_winter_offset(self, client, ny_timezone):
-        result = client._parse_time_input("2026-11-11T17:30:00")
+        result = self._parse("2026-11-11T17:30:00")
 
         # EST, not EDT — and the wall-clock time is preserved.
         assert result == {"dateTime": "2026-11-11T17:30:00-05:00"}
 
     def test_naive_summer_datetime_uses_summer_offset(self, client, ny_timezone):
-        result = client._parse_time_input("2026-07-04T17:30:00")
+        result = self._parse("2026-07-04T17:30:00")
 
         assert result == {"dateTime": "2026-07-04T17:30:00-04:00"}
 
     def test_explicit_offset_is_preserved(self, client, ny_timezone):
-        result = client._parse_time_input("2026-11-11T17:30:00-08:00")
+        result = self._parse("2026-11-11T17:30:00-08:00")
 
         assert result == {"dateTime": "2026-11-11T17:30:00-08:00"}
 
     def test_date_only_stays_all_day(self, client, ny_timezone):
-        result = client._parse_time_input("2026-11-11")
+        result = self._parse("2026-11-11")
 
         assert result == {"date": "2026-11-11"}
 

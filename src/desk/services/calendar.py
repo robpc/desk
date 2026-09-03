@@ -7,6 +7,25 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 
+def parse_time_input(time_str: str) -> dict:
+    """Parse a time string into Calendar API format.
+
+    Public so the command layer can preview what a ``--start`` / ``--end``
+    will actually resolve to without performing the write.
+    """
+    # If it looks like a date-only (YYYY-MM-DD), use date format
+    if len(time_str) == 10 and time_str[4] == "-":
+        return {"date": time_str}
+    # A naive datetime means local wall-clock time *on its own date*, so
+    # localize it with astimezone(), which applies the offset in effect
+    # that day. Stamping on datetime.now()'s offset instead is an hour
+    # out for any date on the far side of a DST boundary (issue #89).
+    dt = datetime.fromisoformat(time_str)
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    return {"dateTime": dt.isoformat()}
+
+
 class CalendarClient:
     """Client for Google Calendar API operations."""
 
@@ -157,8 +176,8 @@ class CalendarClient:
         """
         body = {
             "summary": summary,
-            "start": self._parse_time_input(start),
-            "end": self._parse_time_input(end),
+            "start": parse_time_input(start),
+            "end": parse_time_input(end),
         }
         if description:
             body["description"] = description
@@ -246,9 +265,9 @@ class CalendarClient:
             if summary is not None:
                 event["summary"] = summary
             if start is not None:
-                event["start"] = self._parse_time_input(start)
+                event["start"] = parse_time_input(start)
             if end is not None:
-                event["end"] = self._parse_time_input(end)
+                event["end"] = parse_time_input(end)
             if description is not None:
                 event["description"] = description
             if add_attendees:
@@ -411,20 +430,6 @@ class CalendarClient:
             parsed["calendar_id"] = calendar_id
         return parsed
 
-    def _parse_time_input(self, time_str: str) -> dict:
-        """Parse a time string into Calendar API format."""
-        # If it looks like a date-only (YYYY-MM-DD), use date format
-        if len(time_str) == 10 and time_str[4] == "-":
-            return {"date": time_str}
-        # A naive datetime means local wall-clock time *on its own date*, so
-        # localize it with astimezone(), which applies the offset in effect
-        # that day. Stamping on datetime.now()'s offset instead is an hour
-        # out for any date on the far side of a DST boundary (issue #89).
-        dt = datetime.fromisoformat(time_str)
-        if dt.tzinfo is None:
-            dt = dt.astimezone()
-        return {"dateTime": dt.isoformat()}
-
     def invitations(
         self,
         max_results: int = 20,
@@ -540,7 +545,7 @@ class CalendarClient:
             Each busy period is a dict with "start" and "end" keys.
         """
         # Parse times to ensure they have timezone info. Naive values are
-        # localized per their own date (see _parse_time_input, issue #89).
+        # localized per their own date (see parse_time_input, issue #89).
         start_dt = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
         if start_dt.tzinfo is None:
