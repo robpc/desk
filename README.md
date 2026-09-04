@@ -101,6 +101,24 @@ desk mail --help               # All mail commands
 desk mail search --help        # Detailed help for a command
 ```
 
+### Checking which build you have
+
+```bash
+desk --version
+# desk, version 0.3.0 (a837d65, 2026-09-03)
+
+desk --version --json          # Same, as fields
+```
+
+The commit is baked in at build time, so it identifies the build even when
+installed straight from git — where the version number alone cannot, since
+that install tracks a branch rather than a release. It is also how to confirm
+`uv tool upgrade desk` actually changed anything.
+
+`desk --capabilities all` reports the same commit alongside the machine-readable
+command list, so a script can check whether a fix is present before relying on
+it.
+
 ### Mail (Gmail)
 
 ```bash
