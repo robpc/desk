@@ -73,6 +73,8 @@ idea → exploring → planned → adr-created → (implemented)
 
 | 080 | [Move an Event Between Calendars](080-calendar-event-move.md) | idea | S | `events.move` — relocate without delete-and-recreate |
 
+| 081 | [Resolve Person-Calendar Names via Contacts](081-person-calendar-contact-names.md) | idea | M | Name a person's calendar when no `summaryOverride` exists |
+
 ## Adding an Idea
 
 1. Copy `_template.md` to `NNN-short-title.md`

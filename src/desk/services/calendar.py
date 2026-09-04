@@ -136,14 +136,22 @@ class CalendarClient:
         """List all calendars.
 
         Returns:
-            List of calendar dicts
+            List of calendar dicts. ``summary`` is the display name —
+            the user's ``summaryOverride`` when set, else the owner's
+            title — and ``summary_original`` is always the owner's
+            title. They are equal when the calendar has not been
+            renamed. See ADR-035.
         """
         try:
             results = self.service.calendarList().list().execute()
             return [
                 {
                     "id": cal["id"],
-                    "summary": cal.get("summary", ""),
+                    # summaryOverride is the name *this* user gave the
+                    # calendar and is what Google's own UI shows; it is
+                    # absent unless they renamed it. See ADR-035.
+                    "summary": cal.get("summaryOverride") or cal.get("summary", ""),
+                    "summary_original": cal.get("summary", ""),
                     "primary": cal.get("primary", False),
                     "accessRole": cal.get("accessRole", ""),
                 }

@@ -76,10 +76,16 @@ def _resolve_calendars(
                 catalog = client.list_calendars()
             except Exception as e:
                 _handle_api_error(e, as_json, {"step": "resolve_calendar"})
+        # Match the display name or the owner's title, so a user can type
+        # the name they see and older scripts keep working (ADR-035).
+        wanted = value.casefold()
         matches = [
             c
             for c in (catalog or [])
-            if c.get("summary", "").casefold() == value.casefold()
+            if wanted in {
+                c.get("summary", "").casefold(),
+                c.get("summary_original", "").casefold(),
+            }
         ]
         if len(matches) == 1:
             resolved.append(matches[0]["id"])
@@ -469,7 +475,15 @@ def list_calendars(as_json: bool) -> None:
     for cal_item in calendars:
         primary = " [green](primary)[/green]" if cal_item.get("primary") else ""
         console.print(f"{cal_item['summary']}{primary}")
-        console.print(f"  [dim]{cal_item['id']}[/dim]")
+        original = cal_item.get("summary_original", "")
+        # Only worth showing when the user renamed the calendar, otherwise
+        # it just repeats the line above (ADR-035).
+        if original and original != cal_item["summary"]:
+            console.print(
+                f"  [dim]{cal_item['id']} — owner's title: {escape(original)}[/dim]"
+            )
+        else:
+            console.print(f"  [dim]{cal_item['id']}[/dim]")
 
 
 @cal.command()
