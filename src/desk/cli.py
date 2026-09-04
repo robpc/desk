@@ -22,6 +22,7 @@ from desk.auth import (
 )
 from desk.config import CONFIG_DIR, CREDENTIALS_FILE, migrate_legacy_config
 from desk.console import error_console
+from desk.version import format_version, get_version_info
 
 console = Console()
 
@@ -42,8 +43,10 @@ def _get_credentials_or_exit():
 
 def _get_capabilities() -> dict:
     """Return structured capabilities for agent introspection."""
+    _info = get_version_info()
     return {
         "version": __version__,
+        "commit": _info["commit"],
         "agent_first": True,
         "services": {
             "mail": {
@@ -207,18 +210,35 @@ def _get_capabilities() -> dict:
 
 
 @click.group(invoke_without_command=True)
-@click.version_option(version=__version__)
+# Not click.version_option: it cannot vary its output by another flag, and
+# `--version --json` is the case agents need (ADR-036).
+@click.option("--version", "show_version", is_flag=True, help="Show version and build provenance, then exit")
+@click.option("--json", "as_json", is_flag=True, help="JSON output (applies to --version)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option("--capabilities", "capabilities_service", default=None, required=False,
               help="Show capabilities. Use 'all' for everything or specify service: mail, drive, cal, sheets, docs, forms, slides")
 @click.pass_context
-def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) -> None:
+def main(
+    ctx: click.Context,
+    show_version: bool,
+    as_json: bool,
+    verbose: bool,
+    capabilities_service: str | None,
+) -> None:
     """Desk - Google Workspace from the command line."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
 
+    if show_version:
+        if as_json:
+            print(json.dumps(get_version_info(), indent=2))
+        else:
+            print(format_version())
+        ctx.exit(0)
+
     # Audit logging — see ADR-020 + atrium ADR-004.
-    # Skip for --capabilities (introspection-only, no user-visible side effects).
+    # Skip for --capabilities and --version (introspection-only, no
+    # user-visible side effects).
     if capabilities_service is None:
         ctx.obj["audit"] = get_audit_logger(CONFIG_DIR)
 
@@ -228,6 +248,7 @@ def main(ctx: click.Context, verbose: bool, capabilities_service: str | None) ->
             # Filter to just the requested service
             filtered = {
                 "version": caps["version"],
+                "commit": caps["commit"],
                 "agent_first": caps["agent_first"],
                 "service": capabilities_service,
                 "commands": caps["services"][capabilities_service]["commands"],

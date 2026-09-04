@@ -37,6 +37,14 @@ desk = "desk.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/desk"]
 
+# Bakes desk/_build_info.py into the distribution so `desk --version` can
+# name the commit it was built from. See ADR-036.
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "hatch_build.py"
+
 [tool.ruff]
 src = ["src"]
 line-length = 140
