@@ -780,3 +780,106 @@ class TestCreateDryRunResolvesTimes:
         assert result.exit_code == 1
         assert json.loads(result.stderr)["error"]["code"] == "INVALID_INPUT"
         mock_client.create.assert_not_called()
+
+
+class TestRenamedCalendarResolution:
+    """`-c` accepts the name you see or the owner's title (ADR-035, #92)."""
+
+    @staticmethod
+    def _catalog():
+        return [
+            {"id": "primary", "summary": "Home",
+             "summary_original": "Home", "primary": True},
+            {"id": "gvc.wdc@gmail.com", "summary": "Grace Cannon",
+             "summary_original": "gvc.wdc@gmail.com"},
+            {"id": "family@group.calendar.google.com", "summary": "Family",
+             "summary_original": "Family"},
+        ]
+
+    def test_resolves_by_display_name(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.today.return_value = {"events": []}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["today", "-c", "Grace Cannon", "--json"])
+
+        assert result.exit_code == 0
+        assert mock_client.today.call_args.kwargs["calendar_id"] == "gvc.wdc@gmail.com"
+
+    def test_resolves_by_owners_title(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        """A script written before the rename keeps working."""
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.today.return_value = {"events": []}
+        mock_calendar_client_class.return_value = mock_client
+
+        # An "@" short-circuits ID matching, so use a non-ID original.
+        catalog = self._catalog()
+        catalog[1]["summary_original"] = "Shared Calendar"
+        mock_client.list_calendars.return_value = catalog
+
+        result = runner.invoke(cal, ["today", "-c", "Shared Calendar", "--json"])
+
+        assert result.exit_code == 0
+        assert mock_client.today.call_args.kwargs["calendar_id"] == "gvc.wdc@gmail.com"
+
+    def test_display_name_matching_is_case_insensitive(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_client.today.return_value = {"events": []}
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["today", "-c", "grace cannon", "--json"])
+
+        assert result.exit_code == 0
+        assert mock_client.today.call_args.kwargs["calendar_id"] == "gvc.wdc@gmail.com"
+
+    def test_ambiguity_across_the_two_fields_is_rejected(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        """One calendar's display name colliding with another's title."""
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = [
+            {"id": "a@group.calendar.google.com", "summary": "Shared",
+             "summary_original": "Team A"},
+            {"id": "b@group.calendar.google.com", "summary": "Team B",
+             "summary_original": "Shared"},
+        ]
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["today", "-c", "Shared", "--json"])
+
+        assert result.exit_code == 1
+        assert json.loads(result.stderr)["error"]["code"] == "INVALID_INPUT"
+
+    def test_listing_shows_owners_title_only_when_renamed(
+        self, runner, mock_get_credentials, mock_calendar_client_class
+    ):
+        from desk.commands.cal import cal
+
+        mock_client = MagicMock()
+        mock_client.list_calendars.return_value = self._catalog()
+        mock_calendar_client_class.return_value = mock_client
+
+        result = runner.invoke(cal, ["list"])
+
+        assert result.exit_code == 0
+        assert "Grace Cannon" in result.output
+        assert "owner's title: gvc.wdc@gmail.com" in result.output
+        # Un-renamed calendars don't get a redundant repeat of their own name.
+        assert "owner's title: Family" not in result.output

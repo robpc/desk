@@ -39,6 +39,7 @@ proposed → accepted → [deprecated | superseded]
 | 030 | [Slides Authoring Refinements + Scope Re-Auth UX](030-slides-authoring-refinements-and-scope-ux.md) | accepted | 2026-06-09 |
 | 031 | [Slides `stack` — flow layout](031-slides-stack-flow-layout.md) | accepted | 2026-06-09 |
 | 034 | [Explicit Calendar Target on Calendar Write Commands](034-calendar-write-target.md) | accepted | 2026-09-03 |
+| 035 | [Calendar Display Name Prefers `summaryOverride`](035-calendar-display-name.md) | accepted | 2026-09-03 |
 
 ## Creating a New ADR
 

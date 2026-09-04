@@ -557,3 +557,71 @@ class TestParseTimeInputTimezone:
         body = mock_events.update.call_args.kwargs["body"]
         assert body["start"]["dateTime"] == "2026-11-11T17:30:00-05:00"
         assert body["end"]["dateTime"] == "2026-11-11T18:30:00-05:00"
+
+
+class TestListCalendarsDisplayName:
+    """`summary` is the display name, `summary_original` the owner's title.
+
+    Google's calendarList carries both `summary` (the owner's title) and
+    `summaryOverride` (the name this user gave it, and what Google's own
+    UI shows). desk dropped the override entirely. See ADR-035, issue #92.
+    """
+
+    @pytest.fixture
+    def client(self, mock_credentials):
+        with patch("desk.services.calendar.build") as mock_build:
+            mock_build.return_value = MagicMock()
+            from desk.services.calendar import CalendarClient
+
+            return CalendarClient(mock_credentials)
+
+    @staticmethod
+    def _entries(client, items):
+        client.service.calendarList.return_value.list.return_value.execute.return_value = {
+            "items": items
+        }
+        return client.list_calendars()
+
+    def test_override_becomes_the_display_name(self, client):
+        result = self._entries(client, [{
+            "id": "gvc.wdc@gmail.com",
+            "summary": "gvc.wdc@gmail.com",
+            "summaryOverride": "Grace Cannon",
+            "accessRole": "reader",
+        }])
+
+        assert result[0]["summary"] == "Grace Cannon"
+        # The owner's title stays reachable.
+        assert result[0]["summary_original"] == "gvc.wdc@gmail.com"
+
+    def test_without_override_both_fields_match(self, client):
+        result = self._entries(client, [{
+            "id": "family@group.calendar.google.com",
+            "summary": "Family",
+            "accessRole": "owner",
+        }])
+
+        assert result[0]["summary"] == "Family"
+        assert result[0]["summary_original"] == "Family"
+
+    def test_empty_override_falls_back(self, client):
+        """An empty string is not a rename — don't let it blank the name."""
+        result = self._entries(client, [{
+            "id": "x@group.calendar.google.com",
+            "summary": "Real Title",
+            "summaryOverride": "",
+            "accessRole": "reader",
+        }])
+
+        assert result[0]["summary"] == "Real Title"
+
+    def test_both_keys_always_present(self, client):
+        """Predictable shape beats a smaller payload (ADR-035)."""
+        result = self._entries(client, [
+            {"id": "a", "summary": "A", "summaryOverride": "Renamed"},
+            {"id": "b", "summary": "B"},
+        ])
+
+        for entry in result:
+            assert "summary" in entry
+            assert "summary_original" in entry
