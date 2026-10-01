@@ -227,6 +227,26 @@ class TestClearCommand:
         payload = json.loads(result.output)
         assert "Non-interactive" in payload["error"]
 
+    def test_clear_declined_prompt_deletes_nothing(self, fake_keyring, isolated_token_file):
+        _seed_token(fake_keyring, {"token": "ya29.abc"})
+        _seed_client(fake_keyring)
+        isolated_token_file["token"].write_text(json.dumps({"refresh_token": "1//legacy"}))
+
+        # CliRunner swaps sys.stdin for its own wrapper during invoke, so make that
+        # wrapper claim to be a terminal: the confirmation prompt is reached, we say no.
+        from click.testing import _NamedTextIOWrapper
+
+        from desk.cli import main
+
+        with patch.object(_NamedTextIOWrapper, "isatty", return_value=True):
+            result = CliRunner().invoke(main, ["auth", "clear"], input="n\n")
+
+        assert result.exit_code == 0, result.output
+        assert "Cancelled" in result.output
+        assert (KEYRING_SERVICE, "oauth:token") in fake_keyring
+        assert (KEYRING_SERVICE, "client:credentials") in fake_keyring
+        assert json.loads(isolated_token_file["token"].read_text()) == {"refresh_token": "1//legacy"}
+
     def test_clear_idempotent(self, fake_keyring, isolated_token_file):
         from desk.cli import main
 
