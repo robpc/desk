@@ -423,6 +423,94 @@ def _save_credentials(creds: Credentials) -> None:
     TOKEN_FILE.write_text(json_module.dumps(scrubbed))
 
 
+def _get_configured_client_id() -> str | None:
+    """Return the client_id of the OAuth client desk would use for the next login.
+
+    Same resolution order as login(): keyring client credentials, then
+    ~/.desk/credentials.json. None when neither is present.
+    """
+    keyring_creds = keyring_store.get_client_credentials()
+    if keyring_creds:
+        return keyring_creds.get("installed", {}).get("client_id")
+
+    if CREDENTIALS_FILE.exists():
+        try:
+            data = json_module.loads(CREDENTIALS_FILE.read_text())
+            return data.get("installed", {}).get("client_id")
+        except (json_module.JSONDecodeError, OSError):
+            pass
+
+    return None
+
+
+def _get_token_source_and_data() -> tuple[str, dict | None]:
+    """Return (source, token_dict) for the stored OAuth token.
+
+    source is "keyring", "file", or "none". The dict is the raw stored JSON,
+    so callers can read the client_id the token was minted against.
+    """
+    keyring_token = keyring_store.get_token()
+    if keyring_token:
+        return ("keyring", keyring_token)
+
+    if TOKEN_FILE.exists():
+        try:
+            data = json_module.loads(TOKEN_FILE.read_text())
+        except (json_module.JSONDecodeError, OSError):
+            return ("none", None)
+        if isinstance(data, dict) and ("token" in data or "refresh_token" in data):
+            return ("file", data)
+    return ("none", None)
+
+
+def logout() -> dict:
+    """Remove the OAuth token from the keychain (and scrub the legacy file).
+
+    Idempotent. Keeps the stored client credentials so `desk auth login` works
+    again without re-provisioning. Returns what was removed.
+    """
+    keyring_removed = keyring_store.delete_token()
+
+    file_scrubbed = False
+    if TOKEN_FILE.exists():
+        try:
+            data = json_module.loads(TOKEN_FILE.read_text())
+        except (json_module.JSONDecodeError, OSError):
+            data = None
+        if isinstance(data, dict) and any(field in data for field in _TOKEN_SENSITIVE_FIELDS):
+            scrubbed = {k: v for k, v in data.items() if k not in _TOKEN_SENSITIVE_FIELDS}
+            TOKEN_FILE.write_text(json_module.dumps(scrubbed))
+            file_scrubbed = True
+
+    return {
+        "keyring_token_removed": keyring_removed,
+        "token_file_scrubbed": file_scrubbed,
+    }
+
+
+def clear(token: bool = True, client: bool = True) -> dict:
+    """Remove credentials from the keychain.
+
+    Args:
+        token: Remove the OAuth token (via logout(), which also scrubs the file).
+        client: Remove the stored OAuth client credentials.
+
+    Returns what was removed.
+    """
+    result: dict[str, bool] = {
+        "keyring_token_removed": False,
+        "token_file_scrubbed": False,
+        "keyring_client_removed": False,
+    }
+    if token:
+        token_result = logout()
+        result["keyring_token_removed"] = token_result["keyring_token_removed"]
+        result["token_file_scrubbed"] = token_result["token_file_scrubbed"]
+    if client:
+        result["keyring_client_removed"] = keyring_store.delete_client_credentials()
+    return result
+
+
 def get_auth_status(verify: bool = False) -> dict:
     """Get current authentication status.
 
@@ -430,6 +518,7 @@ def get_auth_status(verify: bool = False) -> dict:
         verify: If True, test actual API access for each service (slower but accurate)
     """
     gcloud_available = _gcloud_available()
+    token_source, token_data = _get_token_source_and_data()
 
     status = {
         "method": AuthMethod.NONE,
@@ -439,8 +528,14 @@ def get_auth_status(verify: bool = False) -> dict:
         "credentials_in_keyring": keyring_store.get_client_credentials() is not None,
         "credentials_path": str(CREDENTIALS_FILE),
         "token_file": TOKEN_FILE.exists(),
-        "token_in_keyring": keyring_store.get_token() is not None,
+        "token_in_keyring": token_source == "keyring",
         "token_path": str(TOKEN_FILE),
+        # Which OAuth client the next login would use, and which one the stored
+        # token was minted against. When they differ the token cannot refresh;
+        # `desk auth logout` is the fix. See ADR-040.
+        "client_id": _get_configured_client_id(),
+        "token_client_id": token_data.get("client_id") if token_data else None,
+        "token_source": token_source,
         "email": None,
         "services": None,  # Populated if verify=True
         "missing_scopes": None,  # Populated when granted scopes are known
@@ -461,6 +556,8 @@ def get_auth_status(verify: bool = False) -> dict:
     if creds:
         status["authenticated"] = True
         status["method"] = AuthMethod.GCLOUD_ADC
+        if status["token_source"] == "none":
+            status["token_source"] = "gcloud_adc"
         status["missing_scopes"] = _missing_scopes(creds)
         if verify:
             status["services"] = verify_service_access(creds)
