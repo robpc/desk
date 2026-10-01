@@ -336,6 +336,8 @@ class TestStatusFields:
 
 
 class TestStatusCommandOutput:
+    # Opaque client ids on purpose: a hostname-shaped literal in an `in` assertion
+    # trips CodeQL's incomplete-url-substring-sanitization rule.
     def _status(self, **fields):
         base = {
             "method": "oauth_client",
@@ -347,8 +349,8 @@ class TestStatusCommandOutput:
             "token_file": False,
             "token_in_keyring": True,
             "token_path": "/x/token.json",
-            "client_id": "new.apps.googleusercontent.com",
-            "token_client_id": "new.apps.googleusercontent.com",
+            "client_id": "configured-client",
+            "token_client_id": "configured-client",
             "token_source": "keyring",
             "email": None,
             "services": None,
@@ -362,12 +364,12 @@ class TestStatusCommandOutput:
 
         with patch(
             "desk.cli.get_auth_status",
-            return_value=self._status(token_client_id="old.apps.googleusercontent.com"),
+            return_value=self._status(token_client_id="stale-client"),
         ):
             result = CliRunner().invoke(main, ["auth", "status"])
 
         assert result.exit_code == 0, result.output
-        assert "old.apps.googleusercontent.com" in result.output
+        assert "stale-client" in result.output
         assert "does not match" in result.output
         assert "desk auth logout" in result.output
 
@@ -378,7 +380,7 @@ class TestStatusCommandOutput:
             result = CliRunner().invoke(main, ["auth", "status"])
 
         assert result.exit_code == 0, result.output
-        assert "client_id: new.apps.googleusercontent.com" in result.output
+        assert "client_id: configured-client" in result.output
         assert "token source: keyring" in result.output
         assert "does not match" not in result.output
 
@@ -387,13 +389,13 @@ class TestStatusCommandOutput:
 
         with patch(
             "desk.cli.get_auth_status",
-            return_value=self._status(token_client_id="old.apps.googleusercontent.com"),
+            return_value=self._status(token_client_id="stale-client"),
         ):
             result = CliRunner().invoke(main, ["auth", "status", "--json"])
 
         payload = json.loads(result.output)
-        assert payload["client_id"] == "new.apps.googleusercontent.com"
-        assert payload["token_client_id"] == "old.apps.googleusercontent.com"
+        assert payload["client_id"] == "configured-client"
+        assert payload["token_client_id"] == "stale-client"
         assert payload["token_source"] == "keyring"
         assert "scopes" not in payload
 
