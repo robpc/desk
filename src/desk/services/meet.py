@@ -1,7 +1,7 @@
 """Google Meet API wrapper.
 
 Covers meeting-space artifact settings — auto-recording, auto-transcription, and
-auto smart notes. See ADR-036.
+auto smart notes. See ADR-039.
 
 Co-host membership (`spaces.members.create` with `role: COHOST`) is deliberately
 absent: it's gated behind Google's Developer Preview Program, so shipping it
@@ -13,7 +13,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # CLI values for the API's AutoGenerationType. `default` defers to the user's
-# Workspace policy rather than forcing the setting either way. See ADR-036.
+# Workspace policy rather than forcing the setting either way. See ADR-039.
 AUTO_GENERATION_CHOICES = ("on", "off", "default")
 _AUTO_GENERATION_API = {
     "on": "ON",
@@ -47,7 +47,7 @@ def space_resource_name(space: str) -> str:
     Both `spaces.get` and `spaces.patch` accept `spaces/{space}` (a
     server-assigned ID) or `spaces/{meetingCode}` (the typeable
     `abc-mnop-xyz` form), so callers can pass a Calendar event's
-    `conferenceId` straight through. See ADR-036.
+    `conferenceId` straight through. See ADR-039.
     """
     space = space.strip()
     if space.startswith("spaces/"):

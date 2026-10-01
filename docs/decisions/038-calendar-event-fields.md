@@ -1,5 +1,5 @@
 ---
-id: 035
+id: 038
 title: Calendar Event Fields — Conferencing, Guest Permissions, Notification Control
 status: accepted
 date: 2026-07-31
@@ -8,7 +8,7 @@ superseded_by: null
 tags: [cal, api, agent-first]
 ---
 
-# ADR-035: Calendar Event Fields — Conferencing, Guest Permissions, Notification Control
+# ADR-038: Calendar Event Fields — Conferencing, Guest Permissions, Notification Control
 
 ## Context
 
@@ -46,7 +46,7 @@ None of this needs a scope change — `auth/calendar` already covers it.
 `get_event` — gets it for free.
 
 `conferenceId` is included because it is the handle the Meet API addresses a space by
-(`spaces/{meetingCode}`), which is what makes ADR-036 composable from the CLI.
+(`spaces/{meetingCode}`), which is what makes ADR-039 composable from the CLI.
 
 ### 2. `--meet` on `create` and `update`
 
@@ -168,7 +168,7 @@ a reschedule). Revisited and closed with the user 2026-08-12: leave the default 
 - The scope story differs — Calendar needs no new scope, Meet does. Bundling them would
   make `cal create` gated on a scope most of its uses don't need.
 
-**Why rejected**: ADR-003. The Meet settings become their own primitive in ADR-036, and the
+**Why rejected**: ADR-003. The Meet settings become their own primitive in ADR-039, and the
 agent writes the two-step. `conferenceId` on read (decision 1) is what makes that cheap.
 
 ## Consequences
@@ -180,7 +180,7 @@ agent writes the two-step. `conferenceId` on read (decision 1) is what makes tha
   an event can be deleted without mailing every attendee
 - Guest lists can be hidden, which is the case that actually blocked the reporter
 - Meet links appear on every event read, useful independent of the write side
-- `conferenceId` gives ADR-036 a handle without a second lookup
+- `conferenceId` gives ADR-039 a handle without a second lookup
 
 ### Negative
 
@@ -209,4 +209,4 @@ agent writes the two-step. `conferenceId` on read (decision 1) is what makes tha
 - Issue #80
 - [Calendar events.insert](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert)
 - ADR-002 (no invented vocabulary), ADR-003 (no cross-service commands)
-- ADR-036 (Meet support — the other half of #80/#81)
+- ADR-039 (Meet support — the other half of #80/#81)

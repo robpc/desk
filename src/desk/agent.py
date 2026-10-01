@@ -677,7 +677,7 @@ def enforce_scopes(scopes: list[str] | tuple[str, ...], as_json: bool = False) -
     the fix (`desk auth login`) — before any API call, so the user doesn't pay a
     round trip to learn the call was never going to work.
 
-    Two deliberate properties (ADR-034):
+    Two deliberate properties (ADR-037):
 
     - **Scopes resolve when the command runs, never at import time.** `desk.cli`
       imports every command module at startup and resolving scopes reads the
@@ -719,7 +719,7 @@ def enforce_scopes(scopes: list[str] | tuple[str, ...], as_json: bool = False) -
     raise SystemExit(1)
 
 
-# A per-command `@requires_scope` decorator was removed in ADR-036: every scope
+# A per-command `@requires_scope` decorator was removed in ADR-039: every scope
 # Desk gates on covers a whole service, so `enforce_scopes()` in that service's
 # `_get_client()` is the only call site. Reintroduce a decorator when a scope
 # genuinely covers only part of a service.

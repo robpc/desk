@@ -1,19 +1,19 @@
 ---
-id: 081
+id: 084
 title: Meet Co-Hosts (blocked on Developer Preview)
 status: parked
 effort: S
 value: Name co-hosts from the CLI instead of clicking through the Meet UI
 created: 2026-07-31
 updated: 2026-07-31
-adr: docs/decisions/036-google-meet-support.md
+adr: docs/decisions/039-google-meet-support.md
 ---
 
-# Idea 081: Meet Co-Hosts
+# Idea 084: Meet Co-Hosts
 
 ## Problem
 
-The remaining half of issue #81. ADR-036 shipped auto-recording, auto-transcription, and auto
+The remaining half of issue #81. ADR-039 shipped auto-recording, auto-transcription, and auto
 smart notes via `desk meet update`, but co-hosts are still UI-only.
 
 ## Sketch
@@ -55,4 +55,4 @@ gating, not the code.
   the manual path): co-hosts are picked from the event's *invited guests*, so a staged event
   with no attendees shows an empty picker. Add guests, then set co-hosts, then add any
   remaining lists.
-- ADR-036 alternative 2 records why we didn't ship this behind a `--preview` flag.
+- ADR-039 alternative 2 records why we didn't ship this behind a `--preview` flag.

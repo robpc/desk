@@ -1,5 +1,5 @@
 ---
-id: 036
+id: 039
 title: Google Meet Support — Space Artifact Settings
 status: accepted
 date: 2026-07-31
@@ -8,13 +8,13 @@ superseded_by: null
 tags: [meet, auth, api, agent-first]
 ---
 
-# ADR-036: Google Meet Support — Space Artifact Settings
+# ADR-039: Google Meet Support — Space Artifact Settings
 
 ## Context
 
 Issue #81: Desk has no Google Meet API support, so the settings that govern *how a meeting
 runs* — auto-recording, auto-transcription, auto smart notes, co-hosts — can only be clicked
-in by hand. Hit while scripting training invites: after ADR-035 everything about the *event*
+in by hand. Hit while scripting training invites: after ADR-038 everything about the *event*
 was scriptable, but recording had to be set in the UI, which for a session published to
 people who can't attend is the difference between a working artifact and a forgotten one.
 
@@ -25,7 +25,7 @@ against current docs:
   artifact generation for **spaces created by other apps**" and is a **non-sensitive** scope,
   so no Google verification review. `artifactConfig` carries no preview label.
 - **A Calendar conference is addressable.** `spaces.get` accepts `spaces/{meetingCode}`, so
-  the `conferenceId` that ADR-035 now surfaces on every event read resolves a space directly.
+  the `conferenceId` that ADR-038 now surfaces on every event read resolves a space directly.
   `meetings.space.created` — which only covers spaces the *app* created — is not needed.
 - **Co-hosts are not shippable.** `spaces.members.create` with `role: COHOST` is labeled
   **Developer Preview Program** (enrollment-gated), and moderation must be `on` for co-host
@@ -36,7 +36,7 @@ So the issue's own fallback — "if it can't, this whole issue is a docs note in
 feature" — applies to co-hosts only. The artifact settings are a feature.
 
 The re-consent cost that #81 identified as "the real cost of the feature" is handled by
-ADR-034: the scope gate and `--capabilities` make an ungranted scope legible instead of a
+ADR-037: the scope gate and `--capabilities` make an ungranted scope legible instead of a
 mid-task 403, so the scope can be added without coordinating a re-auth.
 
 ## Decision
@@ -54,7 +54,7 @@ ADR-003 forbids. It would also bundle two failure modes — event created, artif
 rejected has no clean receipt — and would gate `cal create` on a scope most of its uses don't
 need.
 
-The agent writes the two-step instead, which `conferenceId` on read (ADR-035) makes cheap:
+The agent writes the two-step instead, which `conferenceId` on read (ADR-038) makes cheap:
 
 ```
 desk cal create "Training" --start … --end … --meet --json   # → conferenceId
@@ -83,7 +83,7 @@ the `updateMask`, so an unmentioned setting is untouched.
 Added to `config.SCOPES`, and registered in `SCOPE_COMMANDS` against the whole `meet`
 service. Existing tokens keep working for every other service; `desk meet` reports itself
 disabled in `--capabilities` and fails fast with `INSUFFICIENT_SCOPES` naming
-`desk auth login`, per ADR-034.
+`desk auth login`, per ADR-037.
 
 `meetings.space.created` and `.readonly` are deliberately **not** requested. `.created` only
 covers app-created spaces, which isn't our case, and `.settings` already permits
@@ -98,7 +98,7 @@ fails for anyone not enrolled in a preview program would be worse than not shipp
 
 ### 5. `requires_scope` is removed from `agent.py`
 
-ADR-034 shipped `enforce_scopes()` plus a `@requires_scope` decorator, the latter justified
+ADR-037 shipped `enforce_scopes()` plus a `@requires_scope` decorator, the latter justified
 by an anticipated Meet feature that would cover only *part* of the `cal` service. Decision 1
 makes Meet its own service, so the scope is service-wide and the decorator has no user and
 no reader — nothing consumes the `_required_scopes` attribute it set, since
@@ -106,7 +106,7 @@ no reader — nothing consumes the `_required_scopes` attribute it set, since
 
 Rather than ship a tested-but-unused extension point, we delete it. A genuine
 partial-coverage scope can reintroduce a per-command variant in ~15 lines when one actually
-arrives. This amends ADR-034 §2.
+arrives. This amends ADR-037 §2.
 
 ## Alternatives Considered
 
@@ -165,7 +165,7 @@ Revisit when `spaces.members` reaches GA.
 ### Positive
 
 - A recorded, transcribed training session is fully scriptable end to end
-- The scope addition costs no forced re-auth, thanks to ADR-034
+- The scope addition costs no forced re-auth, thanks to ADR-037
 - `meet read` gives an agent a way to verify settings took effect — self-verification rather
   than asking the user to check the UI
 
@@ -175,7 +175,7 @@ Revisit when `spaces.members` reaches GA.
   `auth status` as missing until they re-auth. Intended: that's the honest report, and only
   `desk meet` is affected.
 - Two commands instead of one for "create a recorded meeting". Accepted cost of ADR-003.
-- Co-hosts remain UI-only, so #81 is only partly closed. Tracked in idea 081.
+- Co-hosts remain UI-only, so #81 is only partly closed. Tracked in idea 084.
 - Artifact settings apply to the *space*, so on a recurring event they affect every
   occurrence — there's no per-occurrence override in the API. Documented in `--help`.
 
@@ -200,4 +200,4 @@ scope simply carry an unused grant.
 - [Meet spaces.patch](https://developers.google.com/workspace/meet/api/reference/rest/v2/spaces/patch)
 - [Meet spaces.get](https://developers.google.com/workspace/meet/api/reference/rest/v2/spaces/get)
 - [Configure meeting spaces and members](https://developers.google.com/workspace/meet/api/guides/meeting-spaces-configuration)
-- ADR-003 (no cross-service commands), ADR-034 (scope-aware commands), ADR-035 (Calendar fields)
+- ADR-003 (no cross-service commands), ADR-037 (scope-aware commands), ADR-038 (Calendar fields)

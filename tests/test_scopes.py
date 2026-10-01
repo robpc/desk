@@ -2,7 +2,7 @@
 
 Covers issue #82: the granted scope set was never persisted, so
 `_missing_scopes()` compared `SCOPES` against `SCOPES` and returned `[]` for
-every user. See ADR-034.
+every user. See ADR-037.
 """
 
 from __future__ import annotations
@@ -253,7 +253,7 @@ class TestKeyringlessHost:
     `--capabilities` is pure introspection, so it reads the granted set on every
     invocation. Without this, adding that read regressed startup on headless
     Linux, containers, and CI runners into a NoKeyringError traceback — the
-    failure mode Cafe's ADR-024 was written to undo. See ADR-034.
+    failure mode Cafe's ADR-024 was written to undo. See ADR-037.
     """
 
     @pytest.fixture

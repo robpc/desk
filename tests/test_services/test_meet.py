@@ -1,4 +1,4 @@
-"""Tests for the Meet service wrapper (ADR-036, issue #81)."""
+"""Tests for the Meet service wrapper (ADR-039, issue #81)."""
 
 from __future__ import annotations
 

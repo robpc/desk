@@ -616,7 +616,7 @@ def create(
     }
     if meet:
         # Conference creation is asynchronous, so the link can be absent from the
-        # immediate response. Report what Google actually said. See ADR-035.
+        # immediate response. Report what Google actually said. See ADR-038.
         target["meetLink"] = event.get("meetLink") or None
         target["conferenceId"] = event.get("conferenceId") or None
         if not event.get("meetLink"):

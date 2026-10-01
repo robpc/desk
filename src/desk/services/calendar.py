@@ -9,7 +9,7 @@ from googleapiclient.errors import HttpError
 
 # Notification control. The CLI uses hyphenated values like every other Desk
 # flag; the API spells the middle one `externalOnly`. Translated here so the
-# mapping lives in one place. See ADR-035.
+# mapping lives in one place. See ADR-038.
 SEND_UPDATES_CHOICES = ("all", "external-only", "none")
 _SEND_UPDATES_API = {
     "all": "all",
@@ -211,7 +211,7 @@ class CalendarClient:
             hide_guest_list: Hide other guests from attendees
             no_guest_invites: Prevent guests from inviting others
             guests_can_modify: Let guests edit the event
-            send_updates: "all", "external-only", or "none". See ADR-035.
+            send_updates: "all", "external-only", or "none". See ADR-038.
 
         Returns:
             Created event dict
@@ -267,7 +267,7 @@ class CalendarClient:
 
         Each field is only set when asked for, so Google's defaults stand
         otherwise — important on update, where an unset flag must not silently
-        flip an existing value. See ADR-035.
+        flip an existing value. See ADR-038.
         """
         if location is not None:
             body["location"] = location
@@ -287,7 +287,7 @@ class CalendarClient:
 
         `requestId` is derived from the event rather than random: Calendar treats
         it as an idempotency key, so a retried create must not produce a second
-        conference. See ADR-035.
+        conference. See ADR-038.
         """
         seed = f"{summary}|{start}".encode()
         request_id = f"desk-{hashlib.sha256(seed).hexdigest()[:16]}"
@@ -329,7 +329,7 @@ class CalendarClient:
             calendar_id: Calendar ID
             send_updates: "all", "external-only", or "none". Deleting an event
                 mails a cancellation to every attendee unless this says
-                otherwise. See ADR-035.
+                otherwise. See ADR-038.
         """
         try:
             self.service.events().delete(
@@ -377,7 +377,7 @@ class CalendarClient:
             hide_guest_list: Hide other guests from attendees
             no_guest_invites: Prevent guests from inviting others
             guests_can_modify: Let guests edit the event
-            send_updates: "all", "external-only", or "none". See ADR-035.
+            send_updates: "all", "external-only", or "none". See ADR-038.
 
         Returns:
             Updated event dict
@@ -423,7 +423,7 @@ class CalendarClient:
                 guests_can_modify=guests_can_modify,
             )
             # Idempotent: an event that already has a conference keeps it rather
-            # than requesting a second one. See ADR-035.
+            # than requesting a second one. See ADR-038.
             conference_added = False
             if meet and not event.get("conferenceData"):
                 event["conferenceData"] = self._conference_create_request(
@@ -555,7 +555,7 @@ class CalendarClient:
             "status": event.get("status", ""),
             # Conference details. `conferenceId` is the handle the Meet API
             # addresses a space by (`spaces/{meetingCode}`), which is what makes
-            # `desk meet` composable from a `desk cal` read. See ADR-035/036.
+            # `desk meet` composable from a `desk cal` read. See ADR-038/039.
             "meetLink": event.get("hangoutLink", ""),
             "conferenceId": conference.get("conferenceId", ""),
             "conferenceStatus": (
@@ -643,7 +643,7 @@ class CalendarClient:
             event_id: The event ID
             response: Response status ('accepted', 'declined', 'tentative')
             calendar_id: Calendar ID
-            send_updates: "all", "external-only", or "none". See ADR-035.
+            send_updates: "all", "external-only", or "none". See ADR-038.
 
         Returns:
             Updated event dict

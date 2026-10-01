@@ -1,4 +1,4 @@
-"""Tests for Calendar event fields added in ADR-035 (issue #80).
+"""Tests for Calendar event fields added in ADR-038 (issue #80).
 
 Focused on the request bodies Desk sends, since that's where the gaps were:
 no conferenceData, no guest permissions, and a hardcoded sendUpdates="all".

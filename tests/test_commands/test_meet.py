@@ -1,4 +1,4 @@
-"""Tests for meet CLI commands (ADR-036, issue #81)."""
+"""Tests for meet CLI commands (ADR-039, issue #81)."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -178,7 +178,7 @@ class TestMeetRead:
 
 
 class TestMeetScopeGate:
-    """The scope no existing token has — this gate is the common path (ADR-036)."""
+    """The scope no existing token has — this gate is the common path (ADR-039)."""
 
     def test_blocked_without_scope(
         self, runner, mock_get_credentials, mock_meet_client_class

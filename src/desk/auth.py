@@ -405,7 +405,7 @@ def _save_credentials(creds: Credentials) -> None:
         data["quota_project_id"] = creds.quota_project_id
     # Persist the *granted* scope set separately. `to_json()` only serializes
     # `scopes` (what Desk asked for), so without this the consented set is lost
-    # and scope drift is undetectable. See issue #82, ADR-034.
+    # and scope drift is undetectable. See issue #82, ADR-037.
     granted = getattr(creds, "granted_scopes", None)
     if granted:
         data[GRANTED_SCOPES_KEY] = sorted(granted)
@@ -494,7 +494,7 @@ def _missing_scopes(credentials: Credentials) -> list[str] | None:
     """Return SCOPES the granted token lacks, or None if grant set is unknown.
 
     Lets `auth status` flag scope drift proactively after Desk adds a scope, so
-    the user is told to re-auth before hitting a 403. See ADR-030, ADR-034.
+    the user is told to re-auth before hitting a 403. See ADR-030, ADR-037.
 
     Reads `granted_scopes` (what the user consented to), never `scopes` (what
     Desk requested) — the latter is always the full `SCOPES` constant, which
@@ -619,7 +619,7 @@ def verify_service_access(credentials: Credentials) -> dict[str, bool]:
         results["forms"] = False
 
     # Meet - get a non-existent space: 404 = scopes OK, 403 = no scope.
-    # Expected to report False until the user re-auths for the scope ADR-036
+    # Expected to report False until the user re-auths for the scope ADR-039
     # added, which is the honest answer.
     try:
         service = build("meet", "v2", credentials=credentials)

@@ -1,6 +1,6 @@
 """Meet commands — meeting-space recording and transcription settings.
 
-See ADR-036. Co-hosts are not here: `spaces.members.create` is gated behind
+See ADR-039. Co-hosts are not here: `spaces.members.create` is gated behind
 Google's Developer Preview Program, so it stays a UI-only step.
 """
 
@@ -32,7 +32,7 @@ console = Console()
 def _get_client(as_json: bool = False) -> MeetClient:
     """Get authenticated Meet client or exit.
 
-    Gates the whole service on `meetings.space.settings` (ADR-034/036) — this is
+    Gates the whole service on `meetings.space.settings` (ADR-037/039) — this is
     a scope no existing token has, so the fast fail here is the common path until
     users re-auth.
     """

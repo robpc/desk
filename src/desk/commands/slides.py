@@ -41,7 +41,7 @@ console = Console()
 def _get_client(as_json: bool = False) -> SlidesClient:
     """Get authenticated Slides client or exit.
 
-    Gates the whole service on the `presentations` scope (ADR-034). Tokens
+    Gates the whole service on the `presentations` scope (ADR-037). Tokens
     issued before ADR-026 added that scope get a "run `desk auth login`" error
     here instead of a 403 from the first API call.
     """

@@ -1,15 +1,15 @@
 ---
-id: 079
+id: 082
 title: Scope-Aware Commands
 status: adr-created
 effort: M
 value: Build features behind scopes users haven't granted yet, without a forced re-auth flag day
 created: 2026-07-31
 updated: 2026-07-31
-adr: docs/decisions/034-scope-aware-commands.md
+adr: docs/decisions/037-scope-aware-commands.md
 ---
 
-# Idea 079: Scope-Aware Commands
+# Idea 082: Scope-Aware Commands
 
 ## Problem
 
@@ -37,7 +37,7 @@ Port the pattern Cafe landed in its ADR-006 + ADR-024, adapted to Desk:
    existing `INSUFFICIENT_SCOPES` structured error before any API call, naming the scope
    and the affected commands. Called from a service's `_get_client()` for service-wide
    scopes. (A `@requires_scope` decorator for partial-coverage scopes shipped and was then
-   removed in ADR-036 — Meet became its own service, so nothing needed it.)
+   removed in ADR-039 — Meet became its own service, so nothing needed it.)
 2. A `SCOPE_COMMANDS` map in `config.py` keyed by scope, whose targets are either a service
    name or a `"service command"` pair.
 3. `--capabilities` gains a per-command `scope` list and a tri-state `enabled` flag
@@ -54,7 +54,7 @@ between users.
       non-sensitive.
 - [x] Hide unscoped commands or show them disabled? — Show disabled (see ADR).
 - [ ] Should `desk auth login` request new scopes by default, or opt in per feature
-      (`--with meet`)? ADR-034 picks default-request; revisit if a sensitive or
+      (`--with meet`)? ADR-037 picks default-request; revisit if a sensitive or
       restricted scope ever lands.
 - [ ] Does the gcloud ADC path (`GCLOUD_SCOPES`) ever yield a knowable grant set? It
       reports unknown today, so the gate fails open there.

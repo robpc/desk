@@ -1,14 +1,14 @@
 ---
-id: 034
+id: 037
 title: Scope-Aware Commands
-status: accepted (§2 amended by ADR-036 — the `@requires_scope` decorator was removed as unused)
+status: accepted (§2 amended by ADR-039 — the `@requires_scope` decorator was removed as unused)
 date: 2026-07-31
 supersedes: []
 superseded_by: null
 tags: [auth, cli, agent-first, api]
 ---
 
-# ADR-034: Scope-Aware Commands
+# ADR-037: Scope-Aware Commands
 
 Amends ADR-030 §3, whose "proactive" scope-drift detection never functioned (issue #82).
 
@@ -64,8 +64,8 @@ Desk's scopes are service-shaped: `presentations` covers all 25 `slides` command
 one of them already funnels through `_get_client(as_json)`. One call there gates the whole
 service, versus decorating 25 commands and keeping them in sync.
 
-*(Amended by ADR-036 §5: this section originally also shipped a `@requires_scope` decorator
-for scopes covering only part of a service, anticipating Meet. ADR-036 made Meet its own
+*(Amended by ADR-039 §5: this section originally also shipped a `@requires_scope` decorator
+for scopes covering only part of a service, anticipating Meet. ADR-039 made Meet its own
 service group, so the scope is service-wide, the decorator had no user, and it was removed.
 `enforce_scopes()` is the sole mechanism.)*
 
@@ -176,7 +176,7 @@ feature.
 
 **Why rejected**: not worth the machinery for a non-sensitive scope. Worth revisiting if a
 sensitive or restricted scope ever lands, since those carry verification cost — noted as an
-open question in idea 079.
+open question in idea 082.
 
 ### Alternative 4: Rely on the reactive 403 path only (ADR-030 §3 as built)
 

@@ -888,7 +888,7 @@ class TestRenamedCalendarResolution:
 
 
 class TestCalCreateEventFields:
-    """Flags added in ADR-035 (issue #80)."""
+    """Flags added in ADR-038 (issue #80)."""
 
     def _client(self, mock_class, event=None):
         client = MagicMock()

@@ -41,7 +41,7 @@ def get_client_credentials() -> dict | None:
     try:
         data = keyring.get_password(KEYRING_SERVICE, "client:credentials")
     except keyring.errors.NoKeyringError:
-        return None  # No backend at all — nothing can be stored. See ADR-034.
+        return None  # No backend at all — nothing can be stored. See ADR-037.
     if data is None:
         return None
     try:
@@ -64,7 +64,7 @@ def get_token() -> dict | None:
     nothing *can* be stored there, so None is truthful, and read-only paths like
     `--capabilities` must not crash. Writes still fail loudly — putting a secret
     nowhere must never be silent. Other keyring errors (locked keychain, denied
-    access) still propagate. See ADR-034.
+    access) still propagate. See ADR-037.
     """
     try:
         data = keyring.get_password(KEYRING_SERVICE, "oauth:token")

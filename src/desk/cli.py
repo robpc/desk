@@ -225,7 +225,7 @@ def _annotate_scopes(caps: dict) -> None:
     Scopes come from `config.SCOPE_COMMANDS` rather than being written into each
     entry by hand, so the map stays the single source of truth. `enabled` is
     tri-state: True, False, or None when the granted set is unknown (an
-    unauthenticated user, or a token predating issue #82). See ADR-034.
+    unauthenticated user, or a token predating issue #82). See ADR-037.
     """
     from desk.auth import granted_scopes
     from desk.config import scopes_for_command
