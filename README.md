@@ -79,7 +79,7 @@ desk setup --credentials ~/Downloads/credentials.json
 This takes about 10 minutes the first time.
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a project
-2. Go to **APIs & Services** → **Library** and enable: **Gmail API**, **Google Drive API**, **Google Sheets API**, **Google Docs API**, **Google Calendar API**, **Google Forms API**
+2. Go to **APIs & Services** → **Library** and enable: **Gmail API**, **Google Drive API**, **Google Sheets API**, **Google Docs API**, **Google Calendar API**, **Google Forms API**, **Google Slides API**, **Google Meet REST API**
 3. Go to **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID**
 4. If prompted, configure the OAuth consent screen (User type: External, App name: "Desk")
 5. Application type: **Desktop app**, Name: "Desk", click **Create**
@@ -90,6 +90,12 @@ mkdir -p ~/.desk
 mv ~/Downloads/client_secret_*.json ~/.desk/credentials.json
 desk auth login
 ```
+
+Already have a project from an earlier install? `desk slides` and `desk meet` need
+the **Google Slides API** and **Google Meet REST API** enabled in that same project
+(the Library page above), then `desk auth login` again to grant their scopes. A
+disabled API shows up as a `403 ... has not been used in project` error from Google,
+not as a missing scope.
 
 ## Usage
 
@@ -187,7 +193,10 @@ desk cal next --max 5             # Upcoming events
 desk cal list                     # List calendars
 desk cal find "standup"           # Search events
 desk cal create "Meeting" --start 2024-01-15T10:00:00 --end 2024-01-15T11:00:00
+desk cal create "Training" --start ... --end ... --meet --hide-guest-list
 desk cal update <event-id> --summary "New Title"
+desk cal update <event-id> --meet            # Add a Meet link to an existing event
+desk cal delete <event-id> --send-updates none   # Delete without mailing attendees
 desk cal delete <event-id>
 
 # Any command takes -c/--calendar: a calendar ID, a friendly name from
@@ -198,6 +207,23 @@ desk cal create "Dinner" -c Family \
 desk cal update <event-id> -c Family --summary "Late dinner"
 desk cal delete <event-id> -c Family
 ```
+
+### Meet
+
+Meeting-space settings — recording and transcription. Needs the **Google Meet REST
+API** enabled in your Cloud project (see Setup) and a scope older tokens don't have, so
+run `desk auth login` again if `desk meet` reports a missing scope.
+
+```bash
+# The conferenceId from a cal read addresses the space
+desk cal create "Training" --start ... --end ... --meet --json
+desk meet read abc-defg-hij                  # Current settings
+desk meet update abc-defg-hij --auto-record on --auto-transcript on
+desk meet update abc-defg-hij --auto-record default   # Defer to your Workspace policy
+```
+
+Co-hosts are UI-only — Google restricts the Meet space-members API to its Developer
+Preview Program. See `desk meet --help`.
 
 ### Forms
 

@@ -38,9 +38,14 @@ proposed → accepted → [deprecated | superseded]
 | 029 | [Slides Multi-Element Arrange and Richer Regions (Phase 3b-i)](029-slides-arrange-and-richer-regions.md) | accepted | 2026-06-09 |
 | 030 | [Slides Authoring Refinements + Scope Re-Auth UX](030-slides-authoring-refinements-and-scope-ux.md) | accepted | 2026-06-09 |
 | 031 | [Slides `stack` — flow layout](031-slides-stack-flow-layout.md) | accepted | 2026-06-09 |
+| 032 | [Slides `group` / `ungroup` — persistent element grouping](032-slides-group-ungroup.md) | accepted | 2026-06-10 |
+| 033 | [Slides use 1-based slide numbers (match the Slides UI)](033-slides-1-based-numbering.md) | accepted | 2026-06-12 |
 | 034 | [Explicit Calendar Target on Calendar Write Commands](034-calendar-write-target.md) | accepted | 2026-09-03 |
 | 035 | [Calendar Display Name Prefers `summaryOverride`](035-calendar-display-name.md) | accepted | 2026-09-03 |
 | 036 | [Build Provenance in `--version`](036-version-build-provenance.md) | accepted | 2026-09-03 |
+| 037 | [Scope-Aware Commands](037-scope-aware-commands.md) | accepted | 2026-07-31 |
+| 038 | [Calendar Event Fields — Conferencing, Guest Permissions, Notification Control](038-calendar-event-fields.md) | accepted | 2026-07-31 |
+| 039 | [Google Meet Support — Space Artifact Settings](039-google-meet-support.md) | accepted | 2026-07-31 |
 
 ## Creating a New ADR
 
