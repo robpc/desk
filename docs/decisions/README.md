@@ -46,6 +46,7 @@ proposed → accepted → [deprecated | superseded]
 | 037 | [Scope-Aware Commands](037-scope-aware-commands.md) | accepted | 2026-07-31 |
 | 038 | [Calendar Event Fields — Conferencing, Guest Permissions, Notification Control](038-calendar-event-fields.md) | accepted | 2026-07-31 |
 | 039 | [Google Meet Support — Space Artifact Settings](039-google-meet-support.md) | accepted | 2026-07-31 |
+| 040 | [Auth logout/clear commands and stale-token detection](040-auth-logout-clear-and-stale-token-detection.md) | accepted | 2026-04-27 |
 
 ## Creating a New ADR
 

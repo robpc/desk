@@ -97,6 +97,17 @@ the **Google Slides API** and **Google Meet REST API** enabled in that same proj
 disabled API shows up as a `403 ... has not been used in project` error from Google,
 not as a missing scope.
 
+### Signing out and resetting
+
+```bash
+desk auth status          # Shows the configured client_id, the token's client_id, missing scopes
+desk auth logout          # Remove the OAuth token; keep the client credentials
+desk auth clear --yes     # Remove token and client credentials (--token / --client to pick one)
+```
+
+If `auth status` says the token's client_id doesn't match the configured client, the token
+can't refresh — `desk auth logout` then `desk auth login` fixes it.
+
 ## Usage
 
 ### Discovering commands

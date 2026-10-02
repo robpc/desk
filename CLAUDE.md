@@ -57,7 +57,9 @@ desk cal today
 desk (CLI entry point)
 ├── setup              → Interactive auth setup
 ├── auth login         → OAuth flow, stores tokens
-├── auth status        → Show current auth state
+├── auth status        → Show current auth state (client_id mismatch, missing scopes)
+├── auth logout        → Remove the OAuth token, keep client credentials
+├── auth clear         → Remove token and/or client credentials (--token/--client, --yes)
 ├── mail               → Gmail operations
 │   ├── search         → List messages matching query
 │   ├── threads        → Search for threads (conversations)
